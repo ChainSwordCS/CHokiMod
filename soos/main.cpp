@@ -32,19 +32,23 @@ extern "C"
 #include <errno.h>
 #include <stdarg.h>
 #include <fcntl.h>
+#include <sys/iosupport.h>
+
 #include <poll.h>
 #include <arpa/inet.h>
 
 #include "miscdef.h"
+//#include "service/screen.h"
 #include "service/mcu.h"
 #include "misc/pattern.h"
 
 #include "tga/targa.h"
-#include "lz4/lz4.h"
 #include <turbojpeg.h>
 }
 
 #include <exception>
+
+#include "utils.hpp"
 
 
 
@@ -55,10 +59,10 @@ extern "C"
     memset(&pat.r[0], 0x7F, 16);\
     memset(&pat.g[0], 0x7F, 16);\
     memset(&pat.b[0], 0x00, 16);\
-    memset(&pat.r[16],0x30, 16);\
-    memset(&pat.g[16],0x30, 16);\
-    memset(&pat.b[16],0x30, 16);\
-    pat.ani = 0x1806;\
+    memset(&pat.r[16], 0, 16);\
+    memset(&pat.g[16], 0, 16);\
+    memset(&pat.b[16], 0, 16);\
+    pat.ani = 0x1006;\
     PatApply();\
     while(1)\
     {\
@@ -121,6 +125,8 @@ public:
     
     ~bufsoc()
     {
+        if(!this) return;
+        close(sock);
         delete[] buf;
     }
     
@@ -196,29 +202,26 @@ public:
     
     int errformat(char* c, ...)
     {
-        char* wat = nullptr;
+        packet* p = pack();
+        
         int len = 0;
         
         va_list args;
         va_start(args, c);
-        len = vasprintf(&wat, c, args);
+        len = vsprintf((char*)p->data + 1, c, args);
         va_end(args);
         
         if(len < 0)
         {
-            puts("out of memory");
+            puts("out of memory"); //???
             return -1;
         }
         
-        packet* p = pack();
-        
-        printf("Packet error %i: %s\n", p->packetid, wat);
+        //printf("Packet error %i: %s\n", p->packetid, p->data + 1);
         
         p->data[0] = p->packetid;
         p->packetid = 1;
         p->size = len + 2;
-        strcpy((char*)(p->data + 1), wat);
-        delete wat;
         
         return wribuf();
     }
@@ -287,7 +290,8 @@ static u32 offs[2] = {0, 0};
 static u32 limit[2] = {1, 1};
 static u32 stride[2] = {80, 80};
 static u32 format[2] = {0xF00FCACE, 0xF00FCACE};
-static u8* fbuf[2] = {0, 0};
+
+static u8 cfgblk[0x100];
 
 static int sock = 0;
 
@@ -303,7 +307,6 @@ static vu32 threadrunning = 0;
 
 static u32* screenbuf = nullptr;
 
-static int imgq = 60;
 static tga_image img;
 static tjhandle jencode = nullptr;
 
@@ -311,6 +314,11 @@ static tjhandle jencode = nullptr;
 void netfunc(void* __dummy_arg__)
 {
     u32 siz = 0x80;
+    u32 bsiz = 1;
+    u32 scrw = 1;
+    u32 bits = 8;
+    
+    int scr = 0;
     
     if(isold);// screenbuf = (u32*)k->data;
     else osSetSpeedupEnable(1);
@@ -321,14 +329,33 @@ void netfunc(void* __dummy_arg__)
     
     format[0] = 0xF00FCACE; //invalidate
     
-    Handle prochand = 0;
+    u32 procid = 0;
     Handle dmahand = 0;
     u8 dmaconf[0x18];
     memset(dmaconf, 0, sizeof(dmaconf));
     dmaconf[0] = -1; //don't care
+    //dmaconf[2] = 4;
+    
+    //screenInit();
     
     PatPulse(0x7F007F);
     threadrunning = 1;
+    
+    do
+    {
+        k->packetid = 2; //MODE
+        k->size = 4 * 4;
+        
+        u32* kdata = (u32*)k->data;
+        
+        kdata[0] = 1;
+        kdata[1] = 240 * 3;
+        kdata[2] = 1;
+        kdata[3] = 240 * 3;
+        soc->wribuf();
+    }
+    while(0);
+    
     while(threadrunning)
     {
         if(soc->avail())
@@ -357,11 +384,15 @@ void netfunc(void* __dummy_arg__)
                 reread:
                 switch(k->packetid)
                 {
-                    case 0: //CONNECT
-                    case 1: //ERROR
+                    case 0x00: //CONNECT
+                    case 0x01: //ERROR
                         puts("forced dc");
                         delete soc;
                         soc = nullptr;
+                        break;
+                        
+                    case 0x7E: //CFGBLK_IN
+                        memcpy(cfgblk + k->data[0], &k->data[4], min((u32)(0x100 - k->data[0]), (u32)(k->size - 4)));
                         break;
                         
                     default:
@@ -377,7 +408,7 @@ void netfunc(void* __dummy_arg__)
         
         if(!soc) break;
         
-        if(GSPGPU_ImportDisplayCaptureInfo(&capin) >= 0)
+        if(cfgblk[0] && GSPGPU_ImportDisplayCaptureInfo(&capin) >= 0)
         {
             //test for changed framebuffers
             if\
@@ -385,16 +416,12 @@ void netfunc(void* __dummy_arg__)
                 capin.screencapture[0].format != format[0]\
                 ||\
                 capin.screencapture[1].format != format[1]\
-                ||\
-                (u8*)capin.screencapture[0].framebuf0_vaddr != fbuf[0]\
-                ||\
-                (u8*)capin.screencapture[1].framebuf0_vaddr != fbuf[1]\
             )
             {
-                PatStay(0xFF7F7F);
+                PatStay(0xFFFF00);
                 
-                fbuf[0] = (u8*)capin.screencapture[0].framebuf0_vaddr;
-                fbuf[1] = (u8*)capin.screencapture[1].framebuf0_vaddr;
+                //fbuf[0] = (u8*)capin.screencapture[0].framebuf0_vaddr;
+                //fbuf[1] = (u8*)capin.screencapture[1].framebuf0_vaddr;
                 format[0] = capin.screencapture[0].format;
                 format[1] = capin.screencapture[1].format;
                 
@@ -422,11 +449,8 @@ void netfunc(void* __dummy_arg__)
                     dmahand = 0;
                 }
                 
-                if(prochand)
-                {
-                    svcCloseHandle(prochand);
-                    prochand = 0;
-                }
+                procid = 0;
+                
                 
                 //test for VRAM
                 if\
@@ -449,7 +473,6 @@ void netfunc(void* __dummy_arg__)
                     PatApply();
                     
                     u64 progid = -1ULL;
-                    u32 procid = -1U;
                     bool loaded = false;
                     
                     while(1)
@@ -468,48 +491,40 @@ void netfunc(void* __dummy_arg__)
                         if(NS_LaunchTitle(progid, 0, &procid) >= 0) break;
                     }
                     
-                    if(loaded) svcOpenProcess(&prochand, procid);
+                    if(loaded);// svcOpenProcess(&prochand, procid);
                     else format[0] = 0xF00FCACE; //invalidate
                 }
                 
                 PatStay(0xFF00);
             }
             
-            if\
-            (\
-                format[0] != 0xF00FCACE\
-            )
+            int loopcnt = 2;
+            
+            while(--loopcnt)
             {
-                siz = (capin.screencapture[0].framebuf_widthbytesize * stride[0]);
-                
-                u32 bsiz = capin.screencapture[0].framebuf_widthbytesize / 240;
-                u32 scrw = capin.screencapture[0].framebuf_widthbytesize / bsiz;
-                u32 fboffs = siz * offs[0];
-                u32 bits = 4 << bsiz;
-                
-                if((format[0] & 7) == 2) bits = 17;
-                if((format[0] & 7) == 4) bits = 18;
+                if(format[scr] == 0xF00FCACE)
+                {
+                    scr = !scr;
+                    continue;
+                }
                 
                 k->size = 0;
-                
-                //memcpy(screenbuf, ((u8*)capin.screencapture[0].framebuf0_vaddr) + fboffs, siz);
                 
                 if(dmahand)
                 {
                     svcStopDma(dmahand);
                     svcCloseHandle(dmahand);
                     dmahand = 0;
-                    GSPGPU_FlushDataCache(screenbuf, siz);
+                    if(!isold) svcFlushProcessDataCache(0xFFFF8001, (u8*)screenbuf, capin.screencapture[scr].framebuf_widthbytesize * 400);
                 }
-                if(++offs[0] == limit[0]) offs[0] = 0;                
                 
                 int imgsize = 0;
                 
-                if((format[0] & 7) >> 1 || !imgq)
+                if((format[scr] & 7) >> 1 || !cfgblk[3])
                 {
-                    init_tga_image(&img, (u8*)screenbuf, scrw, stride[0], bits);
+                    init_tga_image(&img, (u8*)screenbuf, scrw, stride[scr], bits);
                     img.image_type = TGA_IMAGE_TYPE_BGR_RLE;
-                    img.origin_y = offs[0] * stride[0];
+                    img.origin_y = (scr * 400) + (stride[scr] * offs[scr]);
                     tga_write_to_FILE(k->data, &img, &imgsize);
                     
                     k->packetid = 3; //DATA (Targa)
@@ -517,44 +532,69 @@ void netfunc(void* __dummy_arg__)
                 }
                 else
                 {
-                    *(u16*)&k->data[0] = stride[0] * offs[0];
+                    *(u32*)&k->data[0] = (scr * 400) + (stride[scr] * offs[scr]);
                     u8* dstptr = &k->data[8];
-                    if(!tjCompress2(jencode, (u8*)screenbuf, scrw, bsiz * scrw, stride[0], format[0] ? TJPF_RGB : TJPF_RGBX, &dstptr, (u32*)&imgsize, TJSAMP_420, imgq, TJFLAG_NOREALLOC | TJFLAG_FASTDCT))
+                    if(!tjCompress2(jencode, (u8*)screenbuf, scrw, bsiz * scrw, stride[scr], format[scr] ? TJPF_RGB : TJPF_RGBX, &dstptr, (u32*)&imgsize, TJSAMP_420, cfgblk[3], TJFLAG_NOREALLOC | TJFLAG_FASTDCT))
                         k->size = imgsize + 8;
                     k->packetid = 4; //DATA (JPEG)
                 }
                 //k->size += 4;
                 
-                svcStartInterProcessDma(&dmahand, 0xFFFF8001, screenbuf, prochand ? prochand : 0xFFFF8001, fbuf[0] + fboffs, siz, dmaconf);
+                //svcStartInterProcessDma(&dmahand, 0xFFFF8001, screenbuf, prochand ? prochand : 0xFFFF8001, fbuf[0] + fboffs, siz, dmaconf);
+                //svcFlushProcessDataCache(prochand ? prochand : 0xFFFF8001, capin.screencapture[0].framebuf0_vaddr, capin.screencapture[0].framebuf_widthbytesize * 400);
+                //svcStartInterProcessDma(&dmahand, 0xFFFF8001, screenbuf, prochand ? prochand : 0xFFFF8001, (u8*)capin.screencapture[0].framebuf0_vaddr + fboffs, siz, dmaconf);
+                //screenDMA(&dmahand, screenbuf, 0x600000 + fboffs, siz, dmaconf);
+                //screenDMA(&dmahand, screenbuf, dbgo, siz, dmaconf);
+                
+                if(++offs[scr] == limit[scr]) offs[scr] = 0;
+                
+                scr = !scr;
+                
+                siz = (capin.screencapture[scr].framebuf_widthbytesize * stride[scr]);
+                
+                bsiz = capin.screencapture[scr].framebuf_widthbytesize / 240;
+                scrw = capin.screencapture[scr].framebuf_widthbytesize / bsiz;
+                bits = 4 << bsiz;
+                
+                if((format[scr] & 7) == 2) bits = 17;
+                if((format[scr] & 7) == 4) bits = 18;
+                
+                Handle prochand = 0;
+                if(procid) if(svcOpenProcess(&prochand, procid) < 0) procid = 0;
+                
+                if\
+                (\
+                    svcStartInterProcessDma\
+                    (\
+                        &dmahand, 0xFFFF8001, screenbuf, prochand ? prochand : 0xFFFF8001,\
+                        (u8*)capin.screencapture[scr].framebuf0_vaddr + (siz * offs[scr]), siz, dmaconf\
+                    )\
+                    < 0 \
+                )
+                {
+                    procid = 0;
+                    format[scr] = 0xF00FCACE; //invalidate
+                }
+                
+                if(prochand)
+                {
+                    svcCloseHandle(prochand);
+                    prochand = 0;
+                }
                 
                 if(k->size) soc->wribuf();
-                
-            }
-            
-            /*
-            if\
-            (\
-                (u32)capin.screencapture[1].framebuf0_vaddr >= 0x1F000000\
-                &&\
-                (u32)capin.screencapture[1].framebuf0_vaddr <  0x1F600000\
-            )
-            {
-                siz = (capin.screencapture[1].framebuf_widthbytesize * stride[1]);
-                
-                k->packetid = 3; //DATA
-                k->size = siz;
-                *(u32*)k->data = siz * offs[1];
-                memcpy(k->data + 4, ((u8*)capin.screencapture[1].framebuf0_vaddr) + *(u32*)k->data, siz);
-                if(++offs[1] == limit[1]) offs[1] = 0;
-                k->size += 4;
-                *(u32*)k->data += 256 * 400 * 4;
+                /*
+                k->packetid = 0xFF;
+                k->size = 4;
+                *(u32*)k->data = dbgo;
                 soc->wribuf();
                 
-            }*/
-            
-            //svcSleepThread(2e7);
-            
-            //gspWaitForVBlank();
+                dbgo += 240 * 3;
+                if(dbgo >= 0x600000) dbgo = 0;
+                */
+                
+                if(isold) svcSleepThread(5e6);
+            }
         }
         else yield();
     }
@@ -580,28 +620,62 @@ void netfunc(void* __dummy_arg__)
         svcCloseHandle(dmahand);
     }
     
-    if(prochand) svcCloseHandle(prochand);
+    //if(prochand) svcCloseHandle(prochand);
+    //screenExit();
     
     threadrunning = 0;
 }
+
+static FILE* f = nullptr;
+
+ssize_t stdout_write(struct _reent* r, int fd, const char* ptr, size_t len)
+{
+    if(!f) return 0;
+    fputs("[STDOUT] ", f);
+    return fwrite(ptr, 1, len, f);
+}
+
+ssize_t stderr_write(struct _reent* r, int fd, const char* ptr, size_t len)
+{
+    if(!f) return 0;
+    fputs("[STDERR] ", f);
+    return fwrite(ptr, 1, len, f);
+}
+
+static const devoptab_t devop_stdout = { "stdout", 0, nullptr, nullptr, stdout_write, nullptr, nullptr, nullptr };
+static const devoptab_t devop_stderr = { "stderr", 0, nullptr, nullptr, stderr_write, nullptr, nullptr, nullptr };
 
 int main()
 {
     mcuInit();
     nsInit();
     
+    soc = nullptr;
+    
+    f = fopen("/HzLog.log", "w");
+    if(f <= 0) f = nullptr;
+    else
+    {
+        devoptab_list[STD_OUT] = &devop_stdout;
+		devoptab_list[STD_ERR] = &devop_stderr;
+
+		setvbuf(stdout, nullptr, _IONBF, 0);
+		setvbuf(stderr, nullptr, _IONBF, 0);
+    }
+    
     memset(&pat, 0, sizeof(pat));
     memset(&capin, 0, sizeof(capin));
+    memset(cfgblk, 0, sizeof(cfgblk));
     
     isold = APPMEMTYPE <= 5;
     
     
     if(isold)
     {
-        limit[0] = 2;
-        limit[1] = 2;
-        stride[0] = 200;
-        stride[1] = 160;
+        limit[0] = 8;
+        limit[1] = 8;
+        stride[0] = 50;
+        stride[1] = 40;
     }
     else
     {
@@ -632,7 +706,7 @@ int main()
     //gxInit();
     
     if(isold)
-        screenbuf = (u32*)memalign(8, 200 * 240 * 4);
+        screenbuf = (u32*)memalign(8, 50 * 240 * 4);
     else
         screenbuf = (u32*)memalign(8, 400 * 240 * 4);
     
@@ -652,6 +726,12 @@ int main()
 #endif
     
     netreset:
+    
+    if(sock)
+    {
+        close(sock);
+        sock = 0;
+    }
     
     if(haznet && errno == EINVAL)
     {
@@ -696,7 +776,9 @@ int main()
     
     if(!isold) osSetSpeedupEnable(1);
     
+    PatPulse(0xFF40FF);
     if(haznet) PatStay(0xCCFF00);
+    else PatStay(0xFFFF);
     
     while(1)
     {
@@ -723,19 +805,21 @@ int main()
                 {
                     printf("Failed to accept client: (%i) %s\n", errno, strerror(errno));
                     if(errno == EINVAL) goto netreset;
+                    PatPulse(0xFF);
                 }
                 else
                 {
-                    soc = new bufsoc(cli, isold ? 0x2F000 : 0x70000);
+                    PatPulse(0xFF00);
+                    soc = new bufsoc(cli, isold ? 0xC000 : 0x70000);
                     k = soc->pack();
                     
                     if(isold)
                     {
-                        netthread = threadCreate(netfunc, nullptr, 0x2000, 16, 0, true);
+                        netthread = threadCreate(netfunc, nullptr, 0x2000, 0x21, 1, true);
                     }
                     else
                     {
-                        netthread = threadCreate(netfunc, nullptr, 0x4000, 16, 3, true);
+                        netthread = threadCreate(netfunc, nullptr, 0x4000, 8, 3, true);
                     }
                     
                     if(!netthread)
@@ -793,7 +877,8 @@ int main()
     {
         threadrunning = 0;
         
-        while(soc) yield();
+        volatile bufsoc** vsoc = (volatile bufsoc**)&soc;
+        while(*vsoc) yield(); //pls don't optimize kthx
     }
     
     if(soc) delete soc;
@@ -809,6 +894,12 @@ int main()
     gspExit();
     
     acExit();
+    
+    if(f)
+    {
+        fflush(f);
+        fclose(f);
+    }
     
     PatStay(0);
     

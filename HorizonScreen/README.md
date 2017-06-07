@@ -11,6 +11,7 @@ slave application for HorizonM's screen streaming feature
 ## Building (Linux)
 - install `gcc` and `g++` 5.x
 - compile and install `libSDL2-dev` **2.0.4+**
+- compile and install libjpeg-turbo
 - `make`
 
 ## Building (Linux -> Windows 32bit)
@@ -19,11 +20,13 @@ slave application for HorizonM's screen streaming feature
 
 ## Building (Windows, 32bit only)
 - install TDM-GCC and msys (the devkitPro one will suffice)
+- compile and install libjpeg-turbo (force 32bit!)
 - `make`
 
-## Building (macOS) ???
+## Building (macOS)
 - install GNU find and alias it as `find`
 - install SDL2 development binaries
+- compile and install libjpeg-turbo
 - `make`
 
 ## Getting started

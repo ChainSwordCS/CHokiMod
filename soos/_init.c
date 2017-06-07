@@ -18,7 +18,7 @@ void __system_allocateHeaps(void)
     u32 tmp = 0;
     Result res = 0;
     
-    u32 mem = APPMEMTYPE > 5 ? 0x320000 : 0x88000; //max is 0x88000 on old3DS, but it prevents programs from starting
+    u32 mem = APPMEMTYPE > 5 ? 0x320000 : 0x64000; //max is 0x88000 on old3DS, but it prevents programs from starting
     
     // Distribute available memory into halves, aligning to page size.
     //u32 size = (osGetMemRegionFree(MEMREGION_SYSTEM) / 2) & 0xFFFFF000;

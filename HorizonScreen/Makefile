@@ -145,23 +145,23 @@ $(OUTPUT)-PC.$(POSTFIX)	:	$(OFILES)
 
 %.$(POSTFIX):
 	@echo [LD] $(notdir $@)
-	@$(LD) $(LDFLAGS) $(OFILES) $(LIBPATHS) $(LIBS) -o $@
+	$(LD) $(LDFLAGS) $(OFILES) $(LIBPATHS) $(LIBS) -o $@
 
 #---------------------------------------------------------------------------------
 # you need a rule like this for each extension you use as binary data
 #---------------------------------------------------------------------------------
-%.png.o	:	%.png
+%.bin.o	:	%.bin
 #---------------------------------------------------------------------------------
-%.png.o	:	%.png
 	@echo $(notdir $<)
-ifeq ($(OS),Windows_NT)
-	cd $(dir $<) && $(PLPREFIX)ld -r -b binary -o $(CURDIR)/$(@) $(notdir $<) && cd $(CURDIR)
-else
-	@bin2s $< | $(AS) -o $(@)
-endif
-	@echo "extern const u8" `(echo $(<F) | sed -e 's/^\([0-9]\)/_\1/' | tr . _)`"_end[];" > `(echo $(<F) | tr . _)`.h
+#ifeq ($(OS),Windows_NT)
+#	bin2c $< $(@).c_tmp `(echo $(<F) | tr . _)` && cat $(@).c_tmp | sed 's/static //g' >$(@).c && $(CC) $(CFLAGS) -c $(@).c -o $(@)
+#else
+	bin2c -o $(@).c_tmp -n `(echo $(<F) | tr . _)` $< && cat $(@).c_tmp | sed 's/static //g' >$(@).c && $(CC) $(CFLAGS) -c $(@).c -o $(@)
+#endif
+#	@echo "extern const u8" `(echo $(<F) | sed -e 's/^\([0-9]\)/_\1/' | tr . _)`"_end[];" > `(echo $(<F) | tr . _)`.h
 	@echo "extern const u8" `(echo $(<F) | sed -e 's/^\([0-9]\)/_\1/' | tr . _)`"[];" >> `(echo $(<F) | tr . _)`.h
-	@echo "extern const u32" `(echo $(<F) | sed -e 's/^\([0-9]\)/_\1/' | tr . _)`_size";" >> `(echo $(<F) | tr . _)`.h
+#	@echo "extern const u32" `(echo $(<F) | sed -e 's/^\([0-9]\)/_\1/' | tr . _)`_size";" >> `(echo $(<F) | tr . _)`.h
+	@echo "extern const u32 size_"`(echo $(<F) | sed -e 's/^\([0-9]\)/_\1/' | tr . _)`";" >> `(echo $(<F) | tr . _)`.h
 
 -include $(DEPENDS)
 

@@ -33,14 +33,14 @@ typedef struct pollfd WSAPOLLFD;
 #include "tga/targa.h"
 #include <turbojpeg.h>
 //#include "lz4/lz4.h"
+
+#include "ctrufont_bin.h"
 }
 
 #ifdef WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
-//#include <mstcpip.h>
 typedef int socklen_t;
-#define errno WSAGetLastError()
 #endif
 
 #include <exception>
@@ -56,16 +56,44 @@ u32 fpstick = 0;
 int currwrite = 0;
 int oldwrite = 0;
 
+char printbuf[0x100];
+
 int dbg = 0;
 
 #define errfail(wut) { printf(#wut " fail (line #%03i): (%i) %s\n", __LINE__, errno, strerror(errno)); goto killswitch; }
 #define errtga(wut) { printf(#wut " fail (line #%03i): (%i) %s\n", __LINE__, res, tga_error(res)); goto killswitch; }
 #define errjpeg() { printf("JPEG fail (line #%03i): %s\n", __LINE__, tjGetErrorStr()); goto killswitch; }
 
+#ifdef WIN32
+#define wsafail(func)\
+{\
+    wchar_t *s = NULL;\
+    FormatMessageW\
+    (\
+        FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,\
+        NULL, WSAGetLastError(), MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPWSTR)&s, 0, NULL\
+    );\
+    printf(#func " fail (line #%03i): (%i) %S\n", __LINE__, WSAGetLastError(), s);\
+    LocalFree(s);\
+    goto killswitch;\
+}
+#else
+#define wsafail errfail
+#endif
 
 int pollsock(SOCKET sock, int wat, int timeout = 0)
 {
-#ifndef WIN32
+#ifdef WIN32
+    fd_set fd;
+    fd.fd_count = 1;
+    fd.fd_array[0] = sock;
+    TIMEVAL t;
+    t.tv_sec = timeout / 1000;
+    t.tv_usec = (timeout % 1000) * 1e6;
+    int ret = select(1, (wat & POLLIN) ? &fd : nullptr , nullptr, (wat & POLLERR) ? &fd : nullptr, &t);
+    if(ret == SOCKET_ERROR) return (wat & POLLERR) == POLLERR;
+    return ret ? wat : 0;
+#else
     WSAPOLLFD pd;
     pd.fd = sock;
     pd.events = wat;
@@ -103,6 +131,8 @@ public:
     
     ~bufsoc()
     {
+        if(!this) return;
+        close(sock);
         delete[] buf;
     }
     
@@ -263,6 +293,51 @@ SDL_Renderer* rendertop = 0;
 SDL_Texture* tex[2] = {0, 0};
 SDL_Surface* img[2] = {0, 0};
 
+SDL_Texture* font = 0;
+
+
+void drawtext(char* wat, int sx, int sy, int color = 0, int scx = 1, int scy = 1)
+{
+    if(color >> 24) SDL_SetTextureAlphaMod(font, color >> 24); else SDL_SetTextureAlphaMod(font, 0xFF);
+    SDL_SetTextureColorMod(font, (color & 0xFF), (color >> 8) & 0xFF, (color >> 16) & 0xFF);
+    
+    SDL_Rect dest;
+    dest.w = scx * 8;
+    dest.h = scy * 8;
+    
+    SDL_Rect src;
+    src.w = 8;
+    src.h = 8;
+    
+    //int i = 0;
+    int x = sx;
+    int y = sy;
+    char c;
+    
+    while(y < 240)
+    {
+        while(x < 720)
+        {
+            c = *(wat++);
+            
+            if(!c) return;
+            if(c == '\n') break;
+            
+            dest.x = x;
+            dest.y = y;
+            src.x = (c & 0xF) << 3;
+            src.y = ((c >> 4) & 0xF) << 3;
+            
+            SDL_RenderCopyEx(rendertop, font, &src, &dest, 0.0, nullptr, SDL_FLIP_NONE);
+            
+            x += dest.w;
+        }
+        
+        x = sx;
+        y += dest.h;
+    }
+}
+
 
 int port = 6464;
 SOCKET sock = 0;
@@ -322,12 +397,22 @@ int main(int argc, char** argv)
     sao.sin_port = htons(port);
     
     sock = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
-    if(sock <= 0) errfail(socket);
+    if(sock <= 0) wsafail(socket);
     soc = new bufsoc(sock, 0x200000);
     p = soc->pack();
     
+    do
+    {
+        struct timeval timeout;
+        timeout.tv_sec = 15;
+        timeout.tv_usec = 0;
+        
+        //setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout, sizeof(timeout));
+    }
+    while(0);
+    
     ret = connect(sock, (sockaddr*)&sao, sizeof_sao);
-    if(ret < 0) errfail(connect); 
+    if(ret < 0) wsafail(connect); 
     
     puts("Connected");
     
@@ -356,12 +441,25 @@ int main(int argc, char** argv)
     img[0] = mksurface(240, 400, 3, 1);
     img[1] = mksurface(240, 320, 3, 1);
     
+    font = SDL_CreateTexture(rendertop, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STATIC, 128, 128);
+    
     SDL_RenderSetLogicalSize(rendertop, 720, 240);
     
     do
     {
-        int i = sizeof(sbuf) >> 2;
         u32* _1 = (u32*)sbuf;
+        
+        int i, j, k;
+        for(i = 0; i != 0x100; i++)
+            for(j = 0; j != 8; j++)
+                for(k = 0; k != 8; k++)
+                    _1[((i >> 4) << 10) + ((i & 0xF) << 3) + (j << 7) + k] = (ctrufont_bin[(i << 3) + j] & (1 << (~k & 7))) ? -1U : 0;
+        
+        SDL_UpdateTexture(font, nullptr, sbuf, 128 * 4);
+        SDL_SetTextureBlendMode(font, SDL_BLENDMODE_BLEND);
+        
+        i = sizeof(sbuf) >> 2;
+        _1 = (u32*)sbuf;
         while(i--)
         {
             *(_1++) = rand();
@@ -369,25 +467,59 @@ int main(int argc, char** argv)
     }
     while(0);
     
+    puts("Sending JPEG quality cfgblk");
+    p->packetid = 0x7E; //CFGBLK_IN
+    p->size = 4 + 1;
+    p->data[0] = 3; //JPEG_QUALITY
+    p->data[4] = 60;
+    if(soc->wribuf() <= 0) wsafail(soc->wribuf);
+    
+    puts("Sending stream enable cfgblk");
+    p->packetid = 0x7E; //CFGBLK_IN
+    p->size = 4 + 1;
+    p->data[0] = 0; //STREAM_ENABLE
+    p->data[4] = 1 | 2; //SCREEN_TOP | SCREEN_BOTTOM
+    if(soc->wribuf() <= 0) wsafail(soc->wribuf);
+    
+    puts("Setup done");
+    
+    
     while(PumpEvent())
     {
         //if(!soc->avail()) goto nocoffei;
         
         ret = soc->readbuf();
-        if(ret <= 0) errfail(soc->readbuf);
+        if(ret <= 0) wsafail(soc->readbuf);
         
         switch(p->packetid)
         {
-            case 2:
+            case 0x01: //ERROR
+                printf("Disconnected by error (%i): ", p->data[0]);
+                int i;
+                for(i = 1; i != p->size; i++)
+                    putchar(p->data[i]);
+                putchar('\n');
+                errno = 1;
+                wsafail(slave);
+                break;
+                
+            case 0x02: //MODESET
                 pdata = (u32*)p->data;
                 
                 printf("ModeTOP: %04X (o: %i, bytesize: %i)\n", pdata[0], pdata[0] & 7, pdata[1]);
                 printf("ModeBOT: %04X (o: %i, bytesize: %i)\n", pdata[2], pdata[2] & 7, pdata[3]);
                 
-                srcfmt[0] = pdata[0];
-                stride[0] = pdata[1];
-                srcfmt[1] = pdata[2];
-                stride[1] = pdata[3];
+                if(pdata[1])
+                {
+                    srcfmt[0] = pdata[0];
+                    stride[0] = pdata[1];
+                }
+                
+                if(pdata[3])
+                {
+                    srcfmt[1] = pdata[2];
+                    stride[1] = pdata[3];
+                }
                 
                 bsiz[0] = stride[0] / 240;
                 bsiz[1] = stride[1] / 240;
@@ -399,13 +531,16 @@ int main(int argc, char** argv)
                 img[1] = mksurface(stride[1] / bsiz[1], 320, bsiz[1], srcfmt[1]);
                 break;
             
-            case 3:
+            case 0x03: //DATA_TGA
             {
                 tga.image_data = decbuf;
                 res = tga_read_from_FILE(&tga, p->data);
                 if(res) errtga(read_from_FILE);
                 
-                memcpy(sbuf + (tga.origin_y * stride[0]), decbuf, tga.height * stride[0]);
+                u32 offs = tga.origin_y;
+                offs = offs / 400 ? (stride[0] * 400) + (stride[1] * (offs % 400)) : stride[0] * offs;
+                
+                memcpy(sbuf + offs, decbuf, tga.height * stride[tga.origin_y / 400]);
                 
                 if(!tga.origin_y)
                 {
@@ -417,16 +552,19 @@ int main(int argc, char** argv)
                 break;
             }
             
-            case 4:
+            case 0x04: //DATA_JPEG
             {
                 int iw = 240;
                 int ih = 1;
                 int sus = 0;
                 
-                tjDecompressHeader2(jdec, &p->data[8], p->size - 8, &iw, &ih, &sus);
-                tjDecompress2(jdec, &p->data[8], p->size - 8, sbuf + (*(u16*)&p->data[0] * stride[0]), iw, 0, ih, (srcfmt[0] & 1) ? TJPF_RGB : TJPF_RGBA, TJFLAG_FASTUPSAMPLE | TJFLAG_NOREALLOC | TJFLAG_FASTDCT);
+                u32 offs = *(u32*)&p->data[0];
+                offs = offs / 400 ? (stride[0] * 400) + (stride[1] * (offs % 400)) : stride[0] * offs;
                 
-                if(!*(u16*)&p->data[0])
+                tjDecompressHeader2(jdec, &p->data[8], p->size - 8, &iw, &ih, &sus);
+                tjDecompress2(jdec, &p->data[8], p->size - 8, sbuf + offs, iw, 0, ih, (srcfmt[*(u32*)&p->data[0] / 400] & 1) ? TJPF_RGB : TJPF_RGBA, TJFLAG_FASTUPSAMPLE | TJFLAG_NOREALLOC | TJFLAG_FASTDCT);
+                
+                if(!*(u32*)&p->data[0])
                 {
                     u32 prev = SDL_GetTicks() - fpstick;
                     fpsticks[currwrite++] = prev;
@@ -437,7 +575,11 @@ int main(int argc, char** argv)
                 break;
             }
             
-            case 0xFF:
+            case 0x7E: //CFGBLK_IN
+                //TODO: configblk
+                break;
+            
+            case 0xFF: //DEBUG
             {
                 printf("DebugMSG (0x%X):", p->size);
                 int i = 0;
@@ -473,7 +615,7 @@ int main(int argc, char** argv)
         if(img[1])
         {
             SDL_LockSurface(img[1]);
-            memcpy(img[1]->pixels, sbuf + (256 * 400 * 4), stride[1] * 320);
+            memcpy(img[1]->pixels, sbuf + (stride[0] * 400), stride[1] * 320);
             SDL_UnlockSurface(img[1]);
             
             SDL_DestroyTexture(tex[1]);
@@ -509,6 +651,16 @@ int main(int argc, char** argv)
         dest.h = 320;
         SDL_RenderCopyEx(rendertop, tex[1], &soos, &dest, 270.0F, &center, SDL_FLIP_NONE);
         
+        
+        snprintf(printbuf, sizeof(printbuf), "HzScreen " BUILDTIME "\n\nFPS: %.1f", fps);
+        drawtext(printbuf, 408, 8, 0xFF7F00, 2, 3);
+        //drawtext("ohaii :D\nmultiline test\nkek\n\neh", 16, 8, 0xFF);
+        //drawtext("scaled text\nmultiline too!", 16, 80, 0xFF7F00, 2, 4);
+        //drawtext(";)", 16, 144, 0xFF00, 5, 5);
+        //drawtext("\x0B", 122, 144, 0xFF0000, 5, 5);
+        //drawtext("\x0B", 122 + 16, 144 + 16, 0x0000FF, 5, 5);
+        
+        
         SDL_RenderPresent(rendertop);
         
         if(oldwrite != currwrite)
@@ -517,8 +669,7 @@ int main(int argc, char** argv)
             for(int i = 0; i != FPSNO; i++) currfps += fpsticks[i];
             currfps /= FPSNO;
             fps = 1000.0F / currfps;
-            printf("FPS: %f\n", fps);
-            
+            //printf("FPS: %f\n", fps);            
             oldwrite = currwrite;
         }
     }
@@ -531,6 +682,8 @@ int main(int argc, char** argv)
     if(tex[1]) SDL_DestroyTexture(tex[1]);
     if(img[0]) SDL_FreeSurface(img[0]);
     if(img[1]) SDL_FreeSurface(img[1]);
+    
+    if(font) SDL_DestroyTexture(font);
     
     if(rendertop) SDL_DestroyRenderer(rendertop);    
     if(win) SDL_DestroyWindow(win);
