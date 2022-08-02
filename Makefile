@@ -1,4 +1,5 @@
-DATESTRING	:=	$(shell date +%Y)$(shell date +%m)$(shell date +%d)
+DATESTRING	:=	$(shell date +%Y)-$(shell date +%m)-$(shell date +%d)
+BUILDOUT    :=  chokimod-build-out
 
 #---------------------------------------------------------------------------------
 .SUFFIXES:
@@ -28,8 +29,8 @@ include $(DEVKITARM)/3ds_rules
 #     - icon.png
 #     - <libctru folder>/default_icon.png
 #---------------------------------------------------------------------------------
-TARGET		    :=	$(notdir $(CURDIR))
-BUILD		    :=	build
+TARGET		    :=	$(notdir $(CURDIR))_$(DATESTRING)
+BUILD		    :=	chokimod-build
 SOURCES		    :=	soos
 DATA		    :=	data
 INCLUDES	    :=	inc
@@ -62,7 +63,7 @@ CXXFLAGS	:= $(CFLAGS) -fno-rtti -std=gnu++11
 ASFLAGS	:=	-g $(ARCH)
 LDFLAGS	=	-specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
 
-LIBS	:= $(3ds-pkg-config -3ds-zlib -3ds-libjpeg-turbo -libctru --libs) -lm
+LIBS	:=  $(3ds-pkg-config -3ds-zlib -3ds-libjpeg-turbo --libs) -lcitro2d -lcitro3d -lctru -lm -lz -lturbojpeg
 
 #---------------------------------------------------------------------------------
 # list of directories containing libraries, this must be the top level containing
@@ -78,7 +79,7 @@ LIBDIRS	:= $(CTRULIB) $(DEVKITPRO)/portlibs/armv6k $(PORTLIBS)
 ifneq ($(BUILD),$(notdir $(CURDIR)))
 #---------------------------------------------------------------------------------
 
-export OUTPUT	:=	$(CURDIR)/$(TARGET)
+export OUTPUT	:=	$(CURDIR)/$(BUILDOUT)/$(TARGET)
 export TOPDIR	:=	$(CURDIR)
 
 export VPATH	:=	$(foreach dir,$(SOURCES),$(CURDIR)/$(dir)) \
@@ -142,7 +143,7 @@ $(BUILD):
 #---------------------------------------------------------------------------------
 clean:
 	@echo clean ...
-	@rm -rf $(BUILD) $(TARGET).3dsx $(OUTPUT).smdh $(TARGET).elf $(TARGET).3ds $(TARGET).cia
+	@rm -rf $(BUILD) $(BUILDOUT)/$(TARGET).3dsx $(BUILDOUT)/$(OUTPUT).smdh $(BUILDOUT)/$(TARGET).elf $(BUILDOUT)/$(TARGET).3ds $(BUILDOUT)/$(TARGET).cia
 
 
 #---------------------------------------------------------------------------------

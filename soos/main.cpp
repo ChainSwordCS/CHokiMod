@@ -1,4 +1,5 @@
-#include <3ds.h> 
+#include <3ds.h>
+#include <3ds/services/hid.h> // Maybe not necessary. This may not help at all.
 /*
     HorizonM - utility background process for the Horizon operating system
     Copyright (C) 2017 MarcusD (https://github.com/MarcuzD)
@@ -124,7 +125,7 @@ public:
     
     ~bufsoc()
     {
-        if(!this) return;
+        if(!this) return; // Compiler throws a warning, but this should be logically sound.
         close(sock);
         delete[] buf;
     }
