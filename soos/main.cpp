@@ -1,5 +1,4 @@
-#include <3ds.h>
-
+#include <3ds.h> 
 /*
     HorizonM - utility background process for the Horizon operating system
     Copyright (C) 2017 MarcusD (https://github.com/MarcuzD)
@@ -43,7 +42,7 @@ extern "C"
 #include "misc/pattern.h"
 
 #include "tga/targa.h"
-#include <turbojpeg.h>
+#include "turbojpeg.h"
 }
 
 #include <exception>
