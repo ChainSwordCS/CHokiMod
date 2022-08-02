@@ -43,7 +43,7 @@ int main()
     nsInit();
     
 #ifndef _HIMEM
-    NS_TerminateProcessTID(0x000401300CF00F02ULL);
+    NS_TerminateProcessTID(0x000401300CF00F02ULL, 0); // "ULL"?
     
     hidScanInput();
     
