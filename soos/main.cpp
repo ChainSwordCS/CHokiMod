@@ -269,7 +269,7 @@ void CPPCrashHandler()
 }
 
 
-extern "C" u32 __get_bytes_per_pixel(GSPGPU_FramebufferFormats format);
+extern "C" u32 __get_bytes_per_pixel(GSPGPU_FramebufferFormat format);
 
 const int port = 6464;
 
@@ -330,9 +330,13 @@ void netfunc(void* __dummy_arg__)
     
     u32 procid = 0;
     Handle dmahand = 0;
-    u8 dmaconf[0x18];
-    memset(dmaconf, 0, sizeof(dmaconf));
-    dmaconf[0] = -1; //don't care
+    
+	//u8 dmaconf[0x18];
+	DmaConfig dmaconf = {}; // zeroes itself out (:
+	dmaconf.channelId = -1; // auto-assign to a free channel (Arm11: 3-7, Arm9: 0-1)
+	
+    //memset(dmaconf, 0, sizeof(dmaconf));
+    //dmaconf[0] = -1; //don't care
     //dmaconf[2] = 4;
     
     //screenInit();
@@ -514,7 +518,8 @@ void netfunc(void* __dummy_arg__)
                     svcStopDma(dmahand);
                     svcCloseHandle(dmahand);
                     dmahand = 0;
-                    if(!isold) svcFlushProcessDataCache(0xFFFF8001, (u8*)screenbuf, capin.screencapture[scr].framebuf_widthbytesize * 400);
+                    //if(!isold) svcFlushProcessDataCache(0xFFFF8001, (u8*)screenbuf, capin.screencapture[scr].framebuf_widthbytesize * 400);
+					if(!isold) svcFlushProcessDataCache(0xFFFF8001, reinterpret_cast<u32>(screenbuf), capin.screencapture[scr].framebuf_widthbytesize * 400);
                 }
                 
                 int imgsize = 0;
@@ -565,8 +570,8 @@ void netfunc(void* __dummy_arg__)
                 (\
                     svcStartInterProcessDma\
                     (\
-                        &dmahand, 0xFFFF8001, screenbuf, prochand ? prochand : 0xFFFF8001,\
-                        (u8*)capin.screencapture[scr].framebuf0_vaddr + (siz * offs[scr]), siz, dmaconf\
+                        &dmahand, 0xFFFF8001, reinterpret_cast<u32>(screenbuf), prochand ? prochand : 0xFFFF8001,\
+                        reinterpret_cast<u32>(capin.screencapture[scr].framebuf0_vaddr + (siz * offs[scr])), siz, &dmaconf\
                     )\
                     < 0 \
                 )
@@ -627,19 +632,30 @@ void netfunc(void* __dummy_arg__)
 
 static FILE* f = nullptr;
 
-ssize_t stdout_write(struct _reent* r, int fd, const char* ptr, size_t len)
+ssize_t stdout_write(struct _reent* r, void* fd, const char* ptr, size_t len) //used to be "int fd" not "void* fd"
 {
     if(!f) return 0;
     fputs("[STDOUT] ", f);
     return fwrite(ptr, 1, len, f);
 }
 
-ssize_t stderr_write(struct _reent* r, int fd, const char* ptr, size_t len)
+ssize_t stderr_write(struct _reent* r, void* fd, const char* ptr, size_t len)
 {
     if(!f) return 0;
     fputs("[STDERR] ", f);
     return fwrite(ptr, 1, len, f);
 }
+
+// The below two lines of code are* attempting to convert from.....THIS:  'ssize_t (*)(_reent*, int, const char*, size_t)'       {aka 'int (*)(_reent*, int, const char*, unsigned int)'}
+//                                                          to.....THIS:  'ssize_t (*)(_reent*, void*, const char*, size_t)'     {aka 'int (*)(_reent*, void*, const char*, unsigned int)'}
+//
+//                                                                        That's here
+//                                                                             |
+//                                                                             V
+//static const devoptab_t devop_stdout = { "stdout", 0, nullptr, nullptr, stdout_write, nullptr, nullptr, nullptr };
+//
+// Make the "fd" a void pointer? Maybe?
+//
 
 static const devoptab_t devop_stdout = { "stdout", 0, nullptr, nullptr, stdout_write, nullptr, nullptr, nullptr };
 static const devoptab_t devop_stderr = { "stderr", 0, nullptr, nullptr, stderr_write, nullptr, nullptr, nullptr };
@@ -652,7 +668,8 @@ int main()
     soc = nullptr;
     
     f = fopen("/HzLog.log", "w");
-    if(f <= 0) f = nullptr;
+    if(reinterpret_cast<s32>(f) <= 0)
+		f = nullptr;
     else
     {
         devoptab_list[STD_OUT] = &devop_stdout;
