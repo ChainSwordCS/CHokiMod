@@ -123,9 +123,9 @@ public:
         this->sock = sock;
     }
     
-    ~bufsoc()
+    ~bufsoc() // Destructor
     {
-        if(!this) return; // Compiler throws a warning, but this should be logically sound.
+        if(!this) return; // If this instance of a "bufsoc" object is null, then don't try to delete it :)
         close(sock);
         delete[] buf;
     }
