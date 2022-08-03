@@ -2,15 +2,15 @@ BasicInfo:
   Title                   : CHokiMod
   ProductCode             : CTR-N-AHZA
   Logo                    : None # Nintendo / Licensed / Distributed / iQue / iQueForSystem
-  ContentType             : Application
 
 RomFs:
   # Specifies the root path of the read only file system to include in the ROM.
-  RootPath: $(APP_ROMFS)
+  #RootPath               : $(APP_ROMFS)
 
 TitleInfo:
   Category                : Base
   UniqueId                : 0xCF00F
+  Version                 : 2
 
 Option:
   UseOnSD                 : false # true if App is to be installed to SD
@@ -25,9 +25,9 @@ AccessControlInfo:
   # Exheader Format Version
   DescVersion                   : 2
   
-  # Minimum Required Kernel Version (below is for 11.0.0)
+  # Minimum Required Kernel Version (below is for 4.5.0)
   ReleaseKernelMajor            : "02"
-  ReleaseKernelMinor            : "51"
+  ReleaseKernelMinor            : "33" 
 
   # ExtData
   UseExtSaveData                : false # enables ExtData       
@@ -46,36 +46,26 @@ AccessControlInfo:
    - DirectSdmc
    - Core
    - CtrNandRo
-   - CtrNandRw
-   - CtrNandRoWrite
+   #- CtrNandRw
+   #- CtrNandRoWrite
    - CategorySystemSettings
    - CardBoard
    - ExportImportIvs
-   - DirectSdmcWrite
+   #- DirectSdmcWrite
    - SwitchCleanup
-   - SaveDataMove
+   #- SaveDataMove
    - Shop
    - Shell
    - CategoryHomeMenu
-   #- SeedDB
-   
-  # IoAccessControl:
-   # - FsMountNand
-   # - FsMountNandRoWrite
-   # - FsMountTwln
-   # - FsMountWnand
-   # - FsMountCardSpi
-   # - UseSdif3
-   # - CreateSeed
-   # - UseCardSpi
+   - SeedDB
 
   # Process Settings
-  MemoryType                    : Base # Application/System/Base
+  MemoryType                    : Application # Application/System/Base
   SystemMode                    : 64MB # 64MB(Default)/96MB/80MB/72MB/32MB
   IdealProcessor                : 1
-  AffinityMask                  : 15
-  Priority                      : 16 # default (previously was 20)
-  MaxCpu                        : 0 # Let system decide
+  AffinityMask                  : 3
+  Priority                      : 48
+  MaxCpu                        : 158 # 0 = Let system decide
   HandleTableSize               : 0x200
   DisableDebug                  : false
   EnableForceDebug              : false
@@ -86,22 +76,33 @@ AccessControlInfo:
   CanShareDeviceMemory          : true
   RunnableOnSleep               : true
   SpecialMemoryArrange          : false
-  
-  # ResourceLimitCategory         : Other
 
   # New3DS Exclusive Process Settings
-  SystemModeExt                 : 128MB # Legacy(Default)/128MB/178MB  Legacy:Use Old3DS SystemMode
+  SystemModeExt                 : 124MB # Legacy(Default)/124MB/178MB  Legacy:Use Old3DS SystemMode
   CpuSpeed                      : 804MHz # 268MHz(Default)/804MHz
   EnableL2Cache                 : true # false(default)/true
   CanAccessCore2                : true 
 
   # Virtual Address Mappings
   IORegisterMapping:
-   - 1ff00000-1ff7ffff    # DSP memory
+   - 1ff00000-1ff7ffff   # DSP memory
   MemoryMapping: 
-   - 1f000000-1f5fffff:rw # VRAM, maybe change "rw" to "r"
+   - 1f000000-1f5fffff:r # VRAM
 
-  # Accessible SVCs, <Name>:<ID>
+  # Accessible SVCs, <Name>:<ID>, https://www.3dbrew.org/wiki/Kernel_ABI
+  # 
+  # ChainSwordCS Notes
+  # 
+  # Missing from this list (but included in 2020-build):
+  # 
+  # 0x04   4 GetProcessAffinityMask (makerom throws RSF error)
+  # 0x05   5 SetProcessAffinityMask
+  # 0x07   7 SetProcessIdealProcessor
+  # 0x0D  13 GetThreadAffinityMask
+  # 0x0E  14 SetThreadAffinityMask
+  # 0x10  16 SetThreadIdealProcessor
+  # 
+  # 
   SystemCallAccess: 
     ArbitrateAddress: 34
     Break: 60
@@ -110,22 +111,22 @@ AccessControlInfo:
     ClearTimer: 29
     CloseHandle: 35
     ConnectToPort: 45
-    ControlMemory: 1
+    ControlMemory: 1 #					0x01
     CreateAddressArbiter: 33
     CreateEvent: 23
     CreateMemoryBlock: 30
     CreateMutex: 19
     CreateSemaphore: 21
-    CreateThread: 8
+    CreateThread: 8 #					0x08
     CreateTimer: 26
     DuplicateHandle: 39
-    ExitProcess: 3
-    ExitThread: 9
-    GetCurrentProcessorNumber: 17
+    ExitProcess: 3 #					0x03
+    ExitThread: 9 #						0x09
+    GetCurrentProcessorNumber: 17 #		
     GetHandleInfo: 41
     GetProcessId: 53
     GetProcessIdOfThread: 54
-    GetProcessIdealProcessor: 6
+    GetProcessIdealProcessor: 6 #		0x06
     GetProcessInfo: 43
     GetResourceLimit: 56
     GetResourceLimitCurrentValues: 58
@@ -134,12 +135,12 @@ AccessControlInfo:
     GetSystemTick: 40
     GetThreadContext: 59
     GetThreadId: 55
-    GetThreadIdealProcessor: 15
+    GetThreadIdealProcessor: 15 #		0x0F
     GetThreadInfo: 44
-    GetThreadPriority: 11
+    GetThreadPriority: 11 #				0x0B
     MapMemoryBlock: 31
     OutputDebugString: 61
-    QueryMemory: 2
+    QueryMemory: 2 #					0x02
     ReleaseMutex: 20
     ReleaseSemaphore: 22
     SendSyncRequest1: 46
@@ -147,104 +148,132 @@ AccessControlInfo:
     SendSyncRequest3: 48
     SendSyncRequest4: 49
     SendSyncRequest: 50
-    SetThreadPriority: 12
+    SetThreadPriority: 12 #				0x0C
     SetTimer: 27
     SignalEvent: 24
-    SleepThread: 10
+    SleepThread: 10 #					0x0A
     UnmapMemoryBlock: 32
     WaitSynchronization1: 36
     WaitSynchronizationN: 37
     Backdoor: 123
     KernelSetState: 124
     QueryProcessMemory: 125
-  
-  # These Syscalls might be special? And the bottom two aren't default
-  
+
   # Service List
-  # Maximum 34 services (32 if firmware is prior to 9.6.0)
+  # Maximum 34 services (32 if firmware is prior to 9.3.0)
+  # 
+  # ChainSwordCS notes
+  # 
+  # "Extracted" and recommended by rando python script I found...
+  # - APT:S
+  # - ac:u
+  # - am:net
+  # - csnd:SND
+  # - dsp::DSP
+  # - fs:USER
+  # - gsp::Gpu
+  # - hid:USER
+  # - ir:rst
+  # - mcu::HWC
+  # - ns:s
+  # - ptm:sysm
+  # - soc:U
+  # - ssl:C
+  # 
   ServiceAccessControl:
-   - APT:S # Default is U, I suppose we want System level access
+   - APT:S
    - ac:u
+   - act:u
    - am:net
+   - boss:U
+   #- cam:u
+   #- cecd:u
+   - cfg:u
    - csnd:SND
-   - dsp::DSP #Was enabled, non-default... Does this work?
+   - dsp::DSP
+   #- frd:u
    - fs:USER
    - gsp::Gpu
    - hid:USER
    - http:C
-   #- ir:rst
-   - mcu::HWC #Was enabled, non-default... Does this work?
-   - ns:s #Was enabled, non-default... Does this work?
-   - ptm:sysm #Default is u, I suppose we want System level access
-   - soc:U
-   - ssl:C
-   #- cfg:u
-   #- ndm:u
-   #- pxi:dev
-   #- act:u
-   #- boss:U
-   #- cam:u
-   #- cecd:u
-   #- frd:u
    #- ir:USER
    #- ir:u
    #- ir:rst
-   #- ldr:ro
+   - ldr:ro
+   - mcu::HWC
    #- mic:u
+   - ndm:u
    #- news:u
    #- nfc:u
    #- nim:aoc
+   - ns:s
    #- nwm::UDS
-   #- qtm:u
-   #- y2r:u
-   
-   
+   - ptm:sysm
+   - pxi:dev
+   - qtm:u
+   - soc:U
+   - ssl:C
+   - y2r:u
 
 
 SystemControlInfo:
-  SaveDataSize: 0KB # Change if the app uses savedata
-  RemasterVersion: 2
+  SaveDataSize: 0K
+  RemasterVersion: 0
   StackSize: 0x8000 # Default is 0x40000
 
   # Modules that run services listed above should be included below
   # Maximum 48 dependencies
   # If a module is listed that isn't present on the 3DS, the title will get stuck at the logo (3ds waves)
   # So act, nfc and qtm are commented for 4.x support. Uncomment if you need these.
-  #
-  # Note from ChainSwordCS: I commented the ones that weren't here previously. Will un- and re- comment as needed.
-  #
   # <module name>:<module titleid>
+  # 
+  # ChainSwordCS notes
+  # 
+  # same deal as last section,
+  # 
+  # ac: 0x0004013000002402
+  # am: 0x0004013000001502
+  # csnd: 0x0004013000002702
+  # dsp: 0x0004013000001a02
+  # gsp: 0x0004013000001c02
+  # hid: 0x0004013000001d02
+  # http: 0x0004013000002902
+  # i2c: 0x0004013000001e02
+  # mcu: 0x0004013000001f02
+  # socket: 0x0004013000002e02
+  # ssl: 0x0004013000002f02
+  # 
   Dependency: 
     ac: 0x0004013000002402
-	#act: 0x0004013000003802
+    #act: 0x0004013000003802
     am: 0x0004013000001502
-    #boss: 0x0004013000003402
-    #camera: 0x0004013000001602
-    #cecd: 0x0004013000002602
-    #cfg: 0x0004013000001702
-    #codec: 0x0004013000001802
+    boss: 0x0004013000003402
+    camera: 0x0004013000001602
+    cecd: 0x0004013000002602
+    cfg: 0x0004013000001702
+    codec: 0x0004013000001802
     csnd: 0x0004013000002702
-	#dlp: 0x0004013000002802
+    dlp: 0x0004013000002802
     dsp: 0x0004013000001a02
-	#friends: 0x0004013000003202
-    #gpio: 0x0004013000001b02
+    friends: 0x0004013000003202
+    gpio: 0x0004013000001b02
     gsp: 0x0004013000001c02
     hid: 0x0004013000001d02
     http: 0x0004013000002902
     i2c: 0x0004013000001e02
-	#ir: 0x0004013000003302
+    ir: 0x0004013000003302
     mcu: 0x0004013000001f02
-	#mic: 0x0004013000002002
-    #ndm: 0x0004013000002b02
-    #news: 0x0004013000003502
+    mic: 0x0004013000002002
+    ndm: 0x0004013000002b02
+    news: 0x0004013000003502
     #nfc: 0x0004013000004002
-    #nim: 0x0004013000002c02
-    #nwm: 0x0004013000002d02
-    #pdn: 0x0004013000002102
-    #ps: 0x0004013000003102
-    #ptm: 0x0004013000002202
+    nim: 0x0004013000002c02
+    nwm: 0x0004013000002d02
+    pdn: 0x0004013000002102
+    ps: 0x0004013000003102
+    ptm: 0x0004013000002202
     #qtm: 0x0004013020004202
-    #ro: 0x0004013000003702
+    ro: 0x0004013000003702
     socket: 0x0004013000002e02
-	#spi: 0x0004013000002302
+    spi: 0x0004013000002302
     ssl: 0x0004013000002f02
