@@ -1,4 +1,6 @@
 #include <3ds.h>
+#include <string.h>
+#include <stdio.h>
 
 #ifndef _HIMEM
 Handle mcuHandle = 0;
@@ -67,7 +69,7 @@ int main()
         {
             gfxInitDefault();
             consoleInit(GFX_BOTTOM, 0);
-            printf("\nLaunchTitle failed: %08X\nPlease refer to 3DS error codes for details\n\nPress SELECT to exit", ret);
+            printf("\nLaunchTitle failed: %ld08\nPlease refer to 3DS error codes for details\n\nPress SELECT to exit", ret);
             while(aptMainLoop())
             {
                 hidScanInput();
