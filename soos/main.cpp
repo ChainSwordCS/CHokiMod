@@ -74,7 +74,7 @@ extern "C"
     }\
 }
 
-static int haznet = 0;
+static int haznet = 0; // Move this somewhere else maybe
 int checkwifi()
 {
     haznet = 0;
@@ -666,11 +666,12 @@ static const devoptab_t devop_stderr = { "stderr", 0, nullptr, nullptr, stderr_w
 
 int main()
 {
-    mcuInit();
-    nsInit();
 	gfxInitDefault();
 	consoleInit(GFX_BOTTOM, 0);
 	printf("\n~Hello World~ CHokiMod is now booting...");
+    mcuInit();
+    nsInit();
+
     
     soc = nullptr;
     
