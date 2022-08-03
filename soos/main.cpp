@@ -631,20 +631,20 @@ void netfunc(void* __dummy_arg__)
     threadrunning = 0;
 }
 
-static FILE* f = nullptr;
+static FILE* file = nullptr;
 
 ssize_t stdout_write(struct _reent* r, void* fd, const char* ptr, size_t len) //used to be "int fd" not "void* fd"
 {
-    if(!f) return 0;
-    fputs("[STDOUT] ", f);
-    return fwrite(ptr, 1, len, f);
+    if(!file) return 0;
+    fputs("[STDOUT] ", file);
+    return fwrite(ptr, 1, len, file);
 }
 
 ssize_t stderr_write(struct _reent* r, void* fd, const char* ptr, size_t len)
 {
-    if(!f) return 0;
-    fputs("[STDERR] ", f);
-    return fwrite(ptr, 1, len, f);
+    if(!file) return 0;
+    fputs("[STDERR] ", file);
+    return fwrite(ptr, 1, len, file);
 }
 
 // The below two lines of code are* attempting to convert from.....THIS:  'ssize_t (*)(_reent*, int, const char*, size_t)'       {aka 'int (*)(_reent*, int, const char*, unsigned int)'}
@@ -668,9 +668,9 @@ int main()
     
     soc = nullptr;
     
-    f = fopen("/HzLog.log", "w");
-    if(reinterpret_cast<s32>(f) <= 0)
-		f = nullptr;
+    file = fopen("/HzLog.log", "w");
+    if(reinterpret_cast<s32>(file) <= 0)
+		file = nullptr;
     else
     {
         devoptab_list[STD_OUT] = &devop_stdout;
@@ -912,10 +912,10 @@ int main()
     
     acExit();
     
-    if(f)
+    if(file)
     {
-        fflush(f);
-        fclose(f);
+        fflush(file);
+        fclose(file);
     }
     
     PatStay(0);
