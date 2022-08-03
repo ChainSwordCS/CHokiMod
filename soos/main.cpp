@@ -51,7 +51,6 @@ extern "C"
 #include "utils.hpp"
 
 
-
 #define yield() svcSleepThread(1e8)
 
 #define hangmacro()\
@@ -280,7 +279,7 @@ static u32 kUp = 0;
 
 static GSPGPU_CaptureInfo capin;
 
-static int isold = 1;
+static int is_old = 1; //formerly "isold"
 
 static Result ret = 0;
 //static int cx = 0;
@@ -305,7 +304,7 @@ static bufsoc::packet* k = nullptr;
 static Thread netthread = 0;
 static vu32 threadrunning = 0;
 
-static u32* screenbuf = nullptr;
+static u8* screenbuf; // Beginning of the data in the packet we are going to draw this frame.
 
 static tga_image img;
 static tjhandle jencode = nullptr;
@@ -320,7 +319,7 @@ void netfunc(void* __dummy_arg__)
     
     int scr = 0;
     
-    if(isold);// screenbuf = (u32*)k->data;
+    if(is_old);// screenbuf = (u8*)k->data;
     else osSetSpeedupEnable(1);
     
     k = soc->pack(); //Just In Case (tm)
@@ -519,9 +518,13 @@ void netfunc(void* __dummy_arg__)
                     svcStopDma(dmahand);
                     svcCloseHandle(dmahand);
                     dmahand = 0;
-                    //if(!isold) svcFlushProcessDataCache(0xFFFF8001, (u8*)screenbuf, capin.screencapture[scr].framebuf_widthbytesize * 400);
-					if(!isold) svcFlushProcessDataCache(0xFFFF8001, reinterpret_cast<u32>(screenbuf), capin.screencapture[scr].framebuf_widthbytesize * 400);
-                }
+                    //if(!is_old) svcFlushProcessDataCache(0xFFFF8001, (u8*)screenbuf, capin.screencapture[scr].framebuf_widthbytesize * 400);
+					if(!is_old){
+						svcFlushProcessDataCache(0xFFFF8001,\
+						(u32)(screenbuf),\
+						capin.screencapture[scr].framebuf_widthbytesize * 400);
+					}
+				}
                 
                 int imgsize = 0;
                 
@@ -545,9 +548,9 @@ void netfunc(void* __dummy_arg__)
                 }
                 //k->size += 4;
                 
-                //svcStartInterProcessDma(&dmahand, 0xFFFF8001, screenbuf, prochand ? prochand : 0xFFFF8001, fbuf[0] + fboffs, siz, dmaconf);
+                //svcStartInterProcessDma(&dmahand, 0xFFFF8001, (u32)screenbuf, prochand ? prochand : 0xFFFF8001, fbuf[0] + fboffs, siz, dmaconf);
                 //svcFlushProcessDataCache(prochand ? prochand : 0xFFFF8001, capin.screencapture[0].framebuf0_vaddr, capin.screencapture[0].framebuf_widthbytesize * 400);
-                //svcStartInterProcessDma(&dmahand, 0xFFFF8001, screenbuf, prochand ? prochand : 0xFFFF8001, (u8*)capin.screencapture[0].framebuf0_vaddr + fboffs, siz, dmaconf);
+                //svcStartInterProcessDma(&dmahand, 0xFFFF8001, (u32)screenbuf, prochand ? prochand : 0xFFFF8001, (u8*)capin.screencapture[0].framebuf0_vaddr + fboffs, siz, dmaconf);
                 //screenDMA(&dmahand, screenbuf, 0x600000 + fboffs, siz, dmaconf);
                 //screenDMA(&dmahand, screenbuf, dbgo, siz, dmaconf);
                 
@@ -567,15 +570,15 @@ void netfunc(void* __dummy_arg__)
                 Handle prochand = 0;
                 if(procid) if(svcOpenProcess(&prochand, procid) < 0) procid = 0;
                 
-                if\
-                (\
-                    svcStartInterProcessDma\
-                    (\
-                        &dmahand, 0xFFFF8001, reinterpret_cast<u32>(screenbuf), prochand ? prochand : 0xFFFF8001,\
-                        reinterpret_cast<u32>(capin.screencapture[scr].framebuf0_vaddr + (siz * offs[scr])), siz, &dmaconf\
-                    )\
-                    < 0 \
-                )
+				// compares the function Result (s32) to 0, to see if it succeeds
+                if( 0 > svcStartInterProcessDma( \
+                    &dmahand, \
+					0xFFFF8001, \
+					(u32)screenbuf, \
+					prochand ? prochand : 0xFFFF8001, \
+                    (u32)(capin.screencapture[scr].framebuf0_vaddr + (siz * offs[scr])), \
+					siz, \
+					&dmaconf) )
                 {
                     procid = 0;
                     format[scr] = 0xF00FCACE; //invalidate
@@ -598,7 +601,7 @@ void netfunc(void* __dummy_arg__)
                 if(dbgo >= 0x600000) dbgo = 0;
                 */
                 
-                if(isold) svcSleepThread(5e6);
+                if(is_old) svcSleepThread(5e6);
             }
         }
         else yield();
@@ -665,6 +668,9 @@ int main()
 {
     mcuInit();
     nsInit();
+	gfxInitDefault();
+	consoleInit(GFX_BOTTOM, 0);
+	printf("\n~Hello World~ CHokiMod is now booting...");
     
     soc = nullptr;
     
@@ -684,10 +690,10 @@ int main()
     memset(&capin, 0, sizeof(capin));
     memset(cfgblk, 0, sizeof(cfgblk));
     
-    isold = APPMEMTYPE <= 5;
+    is_old = APPMEMTYPE <= 5;
     
     
-    if(isold)
+    if(is_old)
     {
         limit[0] = 8;
         limit[1] = 8;
@@ -709,7 +715,7 @@ int main()
     
     do
     {
-        u32 siz = isold ? 0x10000 : 0x200000;
+        u32 siz = is_old ? 0x10000 : 0x200000;
         ret = socInit((u32*)memalign(0x1000, siz), siz);
     }
     while(0);
@@ -722,12 +728,12 @@ int main()
     
     //gxInit();
     
-    if(isold)
-        screenbuf = (u32*)memalign(8, 50 * 240 * 4);
+    if(is_old)
+        screenbuf = (u8*)memalign(8, 50 * 240 * 4);
     else
-        screenbuf = (u32*)memalign(8, 400 * 240 * 4);
+        screenbuf = (u8*)memalign(8, 400 * 240 * 4);
     
-    if(!screenbuf)
+    if(!screenbuf) // Should this be allowed to be negative? I might be misunderstanding though.
     {
         makerave();
         svcSleepThread(2e9);
@@ -791,7 +797,7 @@ int main()
     
     reloop:
     
-    if(!isold) osSetSpeedupEnable(1);
+    if(!is_old) osSetSpeedupEnable(1);
     
     PatPulse(0xFF40FF);
     if(haznet) PatStay(0xCCFF00);
@@ -827,10 +833,10 @@ int main()
                 else
                 {
                     PatPulse(0xFF00);
-                    soc = new bufsoc(cli, isold ? 0xC000 : 0x70000);
+                    soc = new bufsoc(cli, is_old ? 0xC000 : 0x70000);
                     k = soc->pack();
                     
-                    if(isold)
+                    if(is_old)
                     {
                         netthread = threadCreate(netfunc, nullptr, 0x2000, 0x21, 1, true);
                     }
@@ -876,12 +882,12 @@ int main()
             goto reloop;
         }
         
-        if((kHeld & (KEY_ZL | KEY_ZR)) == (KEY_ZL | KEY_ZR))
-        {
-            u32* ptr = (u32*)0x1F000000;
-            int o = 0x00600000 >> 2;
-            while(o--) *(ptr++) = rand();
-        }
+        //if((kHeld & (KEY_ZL | KEY_ZR)) == (KEY_ZL | KEY_ZR))
+        //{
+        //    u32* ptr = (u32*)0x1F000000;
+		//	int o = 0x00600000 >> 2;
+        //    while(o--) *(ptr++) = rand();
+        //}
         
         yield();
     }

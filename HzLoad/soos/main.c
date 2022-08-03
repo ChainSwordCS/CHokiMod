@@ -29,10 +29,12 @@ Result mcuWriteRegister(u8 reg, void* data, u32 size)
 }
 #endif
 
-int main()
+void bootChokiMod()
 {
+	
 #if _HIMEM
-    
+    //printf("\n_HIMEM = true");
+	
     srvPublishToSubscriber(0x204, 0);
     srvPublishToSubscriber(0x205, 0);
     
@@ -41,16 +43,18 @@ int main()
         svcSleepThread(5e7);
     }
 #endif
-    
-    nsInit();
-    
+	
+	//nsInit();
+	
 #ifndef _HIMEM
+	//printf("\n_HIMEM = false");
     NS_TerminateProcessTID(0x000401300CF00F02ULL, 0); // "ULL"?
+	//printf("\nTerminateProcess success");
     
     hidScanInput();
-    
-    if(hidKeysHeld() & (KEY_X | KEY_B))
+    if(hidKeysHeld() & (KEY_B))
     {
+		//printf("\nB Button pressed");
         if(mcuInit() >= 0)
         {
             u8 blk[0x64];
@@ -62,24 +66,65 @@ int main()
     }
     else
 #endif
-    {
+	{
         u32 pid;
+		//printf("\nAttempting LaunchTitle");
         Result ret = NS_LaunchTitle(0x000401300CF00F02ULL, 0, &pid);
-        if(ret < 0)
+		if(ret > -1)
+		{
+			//printf("\nLaunchTitle success.");
+		}
+		else
         {
-            gfxInitDefault();
-            consoleInit(GFX_BOTTOM, 0);
-            printf("\nLaunchTitle failed: %ld08\nPlease refer to 3DS error codes for details\n\nPress SELECT to exit", ret);
+            //printf("\nLaunchTitle failed: %ld08\nPlease refer to 3DS error codes for details\n\nPress SELECT to exit", ret);
             while(aptMainLoop())
             {
                 hidScanInput();
-                if(hidKeysHeld() & KEY_SELECT) break;
+                if(hidKeysHeld() & KEY_SELECT)
+					return;
             }
-            gfxExit();
         }
     }
-    
-    nsExit();
-    
-    return 0;
+	return;
+}
+
+int main()
+{
+	nsInit();
+	hidScanInput();
+    if(hidKeysHeld() & KEY_SELECT)
+	{
+		//gfxInitDefault();
+		//consoleInit(GFX_BOTTOM, 0);
+		//printf("Hello world!\n\nWelcome to CHzLoad Debug Mode!\n\nTo proceed, press the button that corresponds to the desired option.\n\n    A - Boot CHokiMod\nSTART - Cancel and return to Home Menu");
+		while(aptMainLoop())
+		{
+			hidScanInput();
+			if(hidKeysHeld() & KEY_START) // Return to 3DS Home Menu (?)
+			{
+				//gfxExit();
+				nsExit();
+				return 0;
+			}
+			else if(hidKeysHeld() & KEY_A)
+			{
+				bootChokiMod();
+				//gfxExit();
+				nsExit();
+				return 0;
+			}
+		}
+	}
+	else
+	{
+		//gfxInitDefault();
+		//consoleInit(GFX_BOTTOM, 0);
+		
+		bootChokiMod();
+		
+		//gfxExit();
+		nsExit();
+		return 0;
+	}
+	// end of main function
 }
