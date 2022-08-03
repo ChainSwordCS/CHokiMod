@@ -99,6 +99,7 @@ static u32 kUp = 0;
 
 static GSPGPU_CaptureInfo capin;
 
+//is_old stores if the 3DS is a new or old model?
 static int is_old = 1; //formerly "isold"
 
 static Result ret = 0;
@@ -517,7 +518,7 @@ void netfunc(void* __dummy_arg__)
             }
             
             int loopcnt = 2;
-            
+            //lmao, I think this loop runs once. -H
             while(--loopcnt)
             {
                 if(format[scr] == 0xF00FCACE)
@@ -749,7 +750,7 @@ int main()
         screenbuf = (u8*)memalign(8, 400 * 240 * 4);
     
     if(!screenbuf) // Should this be allowed to be negative? I might be misunderstanding though.
-    {
+    {				// Yes. This tests if screenbuf is NULL aka memalign() failed. -H
         makerave();
         svcSleepThread(2e9);
         hangmacro();
@@ -838,6 +839,7 @@ int main()
             }
             else if(pollsock(sock, POLLIN) == POLLIN)
             {
+				//I think cli stands for client
                 int cli = accept(sock, (struct sockaddr*)&sai, &sizeof_sai);
                 if(cli < 0)
                 {
@@ -870,6 +872,7 @@ int main()
                         svcSleepThread(2e9);
                     }
                     
+					//Could above and below if statements be combined? lol -H
                     
                     if(netthread)
                     {
