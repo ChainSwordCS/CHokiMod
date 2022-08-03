@@ -94,7 +94,7 @@ LIBDIRS	:= $(CTRULIB)
 ifneq ($(BUILD),$(notdir $(CURDIR)))
 #---------------------------------------------------------------------------------
 
-export OUTPUT	:=	$(CURDIR)/$(BUILDOUT)/$(TARGET)
+export OUTPUT	:=	$(CURDIR)/$(BUILDOUT)/$(TARGET)_$(DATESTRING)
 export TOPDIR	:=	$(CURDIR)
 
 export VPATH	:=	$(foreach dir,$(SOURCES),$(CURDIR)/$(dir)) \
