@@ -283,7 +283,7 @@ static GSPGPU_CaptureInfo capin;
 static int isold = 1;
 
 static Result ret = 0;
-static int cx = 0;
+//static int cx = 0;
 static int cy = 0;
 
 static u32 offs[2] = {0, 0};
@@ -385,7 +385,7 @@ void netfunc(void* __dummy_arg__)
             {
                 printf("#%i 0x%X | %i\n", k->packetid, k->size, cy);
                 
-                reread:
+                //reread:
                 switch(k->packetid)
                 {
                     case 0x00: //CONNECT
