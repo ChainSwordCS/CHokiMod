@@ -50,6 +50,8 @@ extern "C"
 
 #include "utils.hpp"
 
+// comment
+
 
 #define yield() svcSleepThread(1e8)
 
@@ -74,7 +76,59 @@ extern "C"
     }\
 }
 
-static int haznet = 0; // Move this somewhere else maybe
+// All global variable declarations are now here instead.
+
+
+// for uh checkwifi()
+static int haznet = 0;
+
+
+// for uh CPPCrashHandler
+static jmp_buf __exc;
+static int  __excno;
+
+
+//Everything else lol
+extern "C" u32 __get_bytes_per_pixel(GSPGPU_FramebufferFormat format);
+
+const int port = 6464;
+
+static u32 kDown = 0;
+static u32 kHeld = 0;
+static u32 kUp = 0;
+
+static GSPGPU_CaptureInfo capin;
+
+static int is_old = 1; //formerly "isold"
+
+static Result ret = 0;
+//static int cx = 0;
+static int cy = 0;
+
+static u32 offs[2] = {0, 0};
+static u32 limit[2] = {1, 1};
+static u32 stride[2] = {80, 80};
+static u32 format[2] = {0xF00FCACE, 0xF00FCACE};
+
+static u8 cfgblk[0x100];
+
+static int sock = 0;
+
+static struct sockaddr_in sai;
+static socklen_t sizeof_sai = sizeof(sai);
+
+static Thread netthread = 0;
+static vu32 threadrunning = 0;
+
+static u8* screenbuf; // Beginning of the data in the packet we are going to draw this frame.
+
+static tga_image img;
+static tjhandle jencode = nullptr;
+
+static FILE* file = nullptr;
+
+// End of global variable declarations
+
 int checkwifi()
 {
     haznet = 0;
@@ -226,8 +280,8 @@ public:
     }
 };
 
-static jmp_buf __exc;
-static int  __excno;
+static bufsoc* soc = nullptr;
+static bufsoc::packet* k = nullptr;
 
 void CPPCrashHandler()
 {
@@ -269,45 +323,6 @@ void CPPCrashHandler()
 }
 
 
-extern "C" u32 __get_bytes_per_pixel(GSPGPU_FramebufferFormat format);
-
-const int port = 6464;
-
-static u32 kDown = 0;
-static u32 kHeld = 0;
-static u32 kUp = 0;
-
-static GSPGPU_CaptureInfo capin;
-
-static int is_old = 1; //formerly "isold"
-
-static Result ret = 0;
-//static int cx = 0;
-static int cy = 0;
-
-static u32 offs[2] = {0, 0};
-static u32 limit[2] = {1, 1};
-static u32 stride[2] = {80, 80};
-static u32 format[2] = {0xF00FCACE, 0xF00FCACE};
-
-static u8 cfgblk[0x100];
-
-static int sock = 0;
-
-static struct sockaddr_in sai;
-static socklen_t sizeof_sai = sizeof(sai);
-
-static bufsoc* soc = nullptr;
-
-static bufsoc::packet* k = nullptr;
-
-static Thread netthread = 0;
-static vu32 threadrunning = 0;
-
-static u8* screenbuf; // Beginning of the data in the packet we are going to draw this frame.
-
-static tga_image img;
-static tjhandle jencode = nullptr;
 
 
 void netfunc(void* __dummy_arg__)
@@ -634,7 +649,6 @@ void netfunc(void* __dummy_arg__)
     threadrunning = 0;
 }
 
-static FILE* file = nullptr;
 
 ssize_t stdout_write(struct _reent* r, void* fd, const char* ptr, size_t len) //used to be "int fd" not "void* fd"
 {
@@ -660,7 +674,7 @@ ssize_t stderr_write(struct _reent* r, void* fd, const char* ptr, size_t len)
 //
 // Make the "fd" a void pointer? Maybe?
 //
-
+//Also, maybe move these for organization... Not sure.
 static const devoptab_t devop_stdout = { "stdout", 0, nullptr, nullptr, stdout_write, nullptr, nullptr, nullptr };
 static const devoptab_t devop_stderr = { "stderr", 0, nullptr, nullptr, stderr_write, nullptr, nullptr, nullptr };
 
