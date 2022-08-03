@@ -29,7 +29,7 @@ include $(DEVKITARM)/3ds_rules
 #     - icon.png
 #     - <libctru folder>/default_icon.png
 #---------------------------------------------------------------------------------
-TARGET		    :=	$(notdir $(CURDIR))_$(DATESTRING)
+TARGET		    :=	$(notdir $(CURDIR))
 BUILD		    :=	chokimod-build
 SOURCES		    :=	soos
 DATA		    :=	data

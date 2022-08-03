@@ -7,3 +7,5 @@
 /Hz.tar.lzma
 /misclib/
 /chokimod-build/
+chokimod-build-out/CHokiMod-nightly-stripped.elf
+chokimod-build-out/CHokiMod-nightly.elf
