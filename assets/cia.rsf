@@ -1,16 +1,16 @@
 BasicInfo:
   Title                   : $(APP_TITLE)
   ProductCode             : $(APP_PRODUCT_CODE)
-  Logo                    : None # Nintendo / Licensed / Distributed / iQue / iQueForSystem
-  ContentType             : Application
+  Logo                    : None # Nintendo / Licensed / Distributed / iQue / iQueForSystem / Homebrew / HomebrewLegacy
+  ContentType             : Application # I assume this is required...
 
 RomFs:
   RootPath: $(APP_ROMFS)
 
 TitleInfo:
-  Category                : Base
+  Category                : Base # This can't be set to Application.
   UniqueId                : $(APP_UNIQUE_ID)
-  Version                 : 2
+  Version                 : 2 # Changing this fucks with the Title ID, FYI. (IIRC)
 
 Option:
   UseOnSD                 : false # true if App is to be installed to SD
@@ -20,10 +20,10 @@ Option:
   EnableCompress          : false # Compresses where applicable (currently only exefs:/.code)
   
 AccessControlInfo:
-  CoreVersion                   : 2
+  CoreVersion                   : 2 # don't change
 
   # Exheader Format Version
-  DescVersion                   : 2
+  DescVersion                   : 2 # don't change
   
   # Minimum Required Kernel Version (below is for 11.0.0)
   ReleaseKernelMajor            : "02"
@@ -34,7 +34,7 @@ AccessControlInfo:
   #ExtSaveDataId                : 0x300 # only set this when the ID is different to the UniqueId
 
   # FS:USER Archive Access Permissions
-  # Uncomment as required
+  # I feel like all of these shouldn't be necessary but idk
   FileSystemAccess:
    - CategorySystemApplication
    - CategoryHardwareCheck
@@ -72,9 +72,9 @@ AccessControlInfo:
   MemoryType                    : Base # Application/System/Base
   SystemMode                    : 64MB # 64MB(Default)/96MB/80MB/72MB/32MB
   IdealProcessor                : 1
-  AffinityMask                  : 15
-  Priority                      : 20
-  MaxCpu                        : 0x9E # Default
+  AffinityMask                  : 15 # Shouldn't be 15. Try 1 or 3 etc.
+  Priority                      : 20 # Maybe try 48, I forget why
+  MaxCpu                        : 0x9E # 0 = Let System Decide. Maybe try 158, I forget why
   HandleTableSize               : 0x200
   DisableDebug                  : false
   EnableForceDebug              : false
@@ -85,7 +85,7 @@ AccessControlInfo:
   CanShareDeviceMemory          : true
   RunnableOnSleep               : true
   SpecialMemoryArrange          : false
-  ResourceLimitCategory         : Other
+  ResourceLimitCategory         : Other # I don't know if this is a setting but it doesn't break so
 
   # New3DS Exclusive Process Settings
   SystemModeExt                 : 124MB # Legacy(Default)/124MB/178MB  Legacy:Use Old3DS SystemMode
@@ -97,9 +97,10 @@ AccessControlInfo:
   IORegisterMapping:
    - 1ff00000-1ff7ffff    # DSP memory
   MemoryMapping: 
-   - 1f000000-1f5fffff:rw # VRAM
+   - 1f000000-1f5fffff:rw # VRAM (Maybe try changing "rw" to "r", but more than likely will break.
 
-  # Accessible SVCs, <Name>:<ID>
+  # Accessible SVCs, <Name>:<ID> , https://www.3dbrew.org/wiki/Kernel_ABI
+  # Note that we prob need all of these. And keep them in numerical order.
   SystemCallAccess: 
     ControlMemory: 1
     QueryMemory: 2
@@ -230,11 +231,10 @@ AccessControlInfo:
    - soc:U
    - ssl:C
 
-
 SystemControlInfo:
-  SaveDataSize: 0KB # Change if the app uses savedata
-  RemasterVersion: 2
-  StackSize: 0x8000
+  SaveDataSize: 0KB # Change if the app uses savedata (Is "0K" acceptable syntax? Forget it...)
+  RemasterVersion: 2 # don't change
+  StackSize: 0x8000 # The default is 0x40000, but we're a background process.
 
   # Modules that run services listed above should be included below
   # Maximum 48 dependencies
