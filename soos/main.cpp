@@ -75,15 +75,24 @@ extern "C"
     }\
 }
 
-static int haznet = 0;
+static int haznet = 0; // Is connected to wifi?
 int checkwifi()
 {
     haznet = 0;
     u32 wifi = 0;
     hidScanInput();
-    if(hidKeysHeld() == (KEY_SELECT | KEY_START)) return 0;
-    if(ACU_GetWifiStatus(&wifi) >= 0 && wifi) haznet = 1;
-    return haznet;
+    // Start + Select forcibly return 0
+    // There has got to be a better way of doing that.
+    if(hidKeysHeld() == (KEY_SELECT | KEY_START))
+    {
+    	return 0;
+    }
+
+    if(ACU_GetStatus(&wifi) >= 0 && wifi == 3) // formerly ACU_GetWifiStatus
+    {
+    	haznet = 1;
+    }
+    return haznet; // whyy use haznet in the first place
 }
 
 
@@ -308,7 +317,7 @@ static vu32 threadrunning = 0;
 static u32* screenbuf = nullptr;
 
 static tga_image img;
-static tjhandle jencode = nullptr;
+static tjhandle turbo_jpeg_instance_handle = nullptr;
 
 
 void netfunc(void* __dummy_arg__)
@@ -539,7 +548,7 @@ void netfunc(void* __dummy_arg__)
                 {
                     *(u32*)&k->data[0] = (scr * 400) + (stride[scr] * offs[scr]);
                     u8* dstptr = &k->data[8];
-                    if(!tjCompress2(jencode, (u8*)screenbuf, scrw, bsiz * scrw, stride[scr], format[scr] ? TJPF_RGB : TJPF_RGBX, &dstptr, (u32*)&imgsize, TJSAMP_420, cfgblk[3], TJFLAG_NOREALLOC | TJFLAG_FASTDCT))
+                    if(!tjCompress2(turbo_jpeg_instance_handle, (u8*)screenbuf, scrw, bsiz * scrw, stride[scr], format[scr] ? TJPF_RGB : TJPF_RGBX, &dstptr, (u32*)&imgsize, TJSAMP_420, cfgblk[3], TJFLAG_NOREALLOC | TJFLAG_FASTDCT))
                         k->size = imgsize + 8;
                     k->packetid = 4; //DATA (JPEG)
                 }
@@ -710,44 +719,77 @@ int main()
     acInit(); // Initialize AC service; 3DS's service for connecting to Wifi
     
     // whyyyyyyyy? You don't even do this more than once.
-    do
-    {
-        u32 siz = isold ? 0x10000 : 0x200000; // If Old-3DS,
-        ret = socInit((u32*)memalign(0x1000, siz), siz);
-    }
-    while(0);
+    // This code currently works. So I'm gonna modify it to be readable.
+//  do
+//  {
+//      u32 siz = isold ? 0x10000 : 0x200000; // If Old-3DS,
+//      ret = socInit((u32*)memalign(0x1000, siz), siz);
+//  }
+//  while(0);
 
-    PatStay(0x00FF00);
+    // Web socket stuff...
+    // Size of a buffer
+    // Is page-aligned (0x1000)
+    u32 soc_buffer_size;
 
-    if(ret < 0) *(u32*)0x1000F0 = ret;//hangmacro();
-    
-    jencode = tjInitCompress();
-    if(!jencode) *(u32*)0x1000F0 = 0xDEADDEAD;//hangmacro();
-    
-    gspInit();
-    
-    //gxInit();
-    
     if(isold)
-        screenbuf = (u32*)memalign(8, 50 * 240 * 4);
-    else
-        screenbuf = (u32*)memalign(8, 400 * 240 * 4);
+    {
+    	soc_buffer_size = 0x10000; // If Old-3DS
+    }
+    else // do people write else-ifs like this?
+    {
+    	soc_buffer_size = 0x200000; // If New-3DS
+    }
+
+    // Initialize the SOC service.
+    // Note: Programs stuck in userland don't have permission to access this.
+    //This may be a non-issue for us.
+    ret = socInit((u32*)memalign(0x1000, soc_buffer_size), soc_buffer_size);
     
-    if(!screenbuf)
+    if(ret < 0)
+    {
+    	// The returned value of the socInit function
+    	// is written at 0x001000F0 in RAM (for debug).
+    	*(u32*)0x1000F0 = ret;
+    	//hangmacro();
+    }
+
+
+    turbo_jpeg_instance_handle = tjInitCompress();
+
+    if(!turbo_jpeg_instance_handle) // if tjInitCompress() returned null, an error occurred.
+    {
+    	// Write a debug error code in RAM (at 0x001000F0)
+    	*(u32*)0x1000F0 = 0xDEADDEAD;
+    	//hangmacro();
+    }
+    
+    gspInit(); // Initialize GSP GPU
+
+    if(isold)
+    {
+        screenbuf = (u32*)memalign(8, 50 * 240 * 4); // On Old-3DS
+    }
+    else
+    {
+        screenbuf = (u32*)memalign(8, 400 * 240 * 4); // On New-3DS
+    }
+    
+    if(!screenbuf) // If memalign returns null or 0
     {
         makerave();
         svcSleepThread(2e9);
         hangmacro();
     }
     
-    
+    //why
     if((__excno = setjmp(__exc))) goto killswitch;
       
 #ifdef _3DS
     std::set_unexpected(CPPCrashHandler);
     std::set_terminate(CPPCrashHandler);
 #endif
-    
+
     netreset:
     
     if(sock)
@@ -755,7 +797,8 @@ int main()
         close(sock);
         sock = 0;
     }
-    
+
+    // at boot, haznet is set to 0. so skip this on the first run through
     if(haznet && errno == EINVAL)
     {
         errno = 0;
@@ -763,9 +806,11 @@ int main()
         while(checkwifi()) yield();
     }
     
-    if(checkwifi())
+
+
+    if(checkwifi()) // execution seems to fail around here
     {
-        cy = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
+        cy = socket(PF_INET, SOCK_STREAM, IPPROTO_IP); // formerly, "PF-INET" was "AF-INET"
         if(cy <= 0)
         {
             printf("socket error: (%i) %s\n", errno, strerror(errno));
@@ -775,7 +820,7 @@ int main()
         sock = cy;
         
         struct sockaddr_in sao;
-        sao.sin_family = AF_INET;
+        sao.sin_family = PF_INET;
         sao.sin_addr.s_addr = gethostid();
         sao.sin_port = htons(port);
         
@@ -794,6 +839,8 @@ int main()
         }
     }
     
+    PatStay(0x00FF00); // debug
+
     
     reloop:
     
