@@ -1,5 +1,5 @@
 #include <3ds.h>
-#include <3ds/services/hid.h> // Maybe not necessary. This may not help at all.
+//#include <3ds/services/hid.h> // Maybe not necessary. This may not help at all.
 /*
     HorizonM - utility background process for the Horizon operating system
     Copyright (C) 2017 MarcusD (https://github.com/MarcuzD)
@@ -663,11 +663,12 @@ static const devoptab_t devop_stderr = { "stderr", 0, nullptr, nullptr, stderr_w
 
 int main()
 {
-    mcuInit();
+    mcuInit(); // Initialize MCU, so we can poke the Notification LED for debug output without a screen.
     nsInit();
     
     soc = nullptr;
     
+    // This is dumb, we don't even do anything with the file.
     file = fopen("/HzLog.log", "w");
     if(reinterpret_cast<s32>(file) <= 0)
 		file = nullptr;
@@ -684,35 +685,40 @@ int main()
     memset(&capin, 0, sizeof(capin));
     memset(cfgblk, 0, sizeof(cfgblk));
     
+    //isold, or is_old, tells us if we are running on Original/"Old" 3DS (reduced clock speed and RAM...)
     isold = APPMEMTYPE <= 5;
     
     
     if(isold)
     {
-        limit[0] = 8;
-        limit[1] = 8;
-        stride[0] = 50;
-        stride[1] = 40;
+        limit[0] = 8; // Multiply by this to get the full horizontal res of a screen.
+        limit[1] = 8; // I assume we're capturing it in chunks. On Old-3DS this makes it look awful.
+        stride[0] = 50; // Width of the framebuffer we use(?)
+        stride[1] = 40; // On Old-3DS, this is pitiful... But I get it
     }
     else
     {
         limit[0] = 1;
         limit[1] = 1;
-        stride[0] = 400;
+        stride[0] = 400; // Width of the framebuffer we use(?)
         stride[1] = 320;
     }
     
     
-    PatStay(0xFF);
+    PatStay(0x0000FF); // Set Notif LED color to red (debugging status update!
+
+    acInit(); // Initialize AC service; 3DS's service for connecting to Wifi
     
-    acInit();
-    
+    // whyyyyyyyy? You don't even do this more than once.
     do
     {
-        u32 siz = isold ? 0x10000 : 0x200000;
+        u32 siz = isold ? 0x10000 : 0x200000; // If Old-3DS,
         ret = socInit((u32*)memalign(0x1000, siz), siz);
     }
     while(0);
+
+    PatStay(0x00FF00);
+
     if(ret < 0) *(u32*)0x1000F0 = ret;//hangmacro();
     
     jencode = tjInitCompress();
