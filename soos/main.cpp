@@ -80,7 +80,11 @@ int checkwifi()
 {
     haznet = 0;
     u32 wifi = 0;
-    hidScanInput();
+    // This crashes the system! Why? I don't exactly know yet.
+    // Also curiously, hidKeysHeld() doesn't crash.
+    // I'm 80% sure this function crashes... Not 100%
+    //hidScanInput();
+
     // Start + Select forcibly return 0
     // There has got to be a better way of doing that.
     if(hidKeysHeld() == (KEY_SELECT | KEY_START))
@@ -807,7 +811,8 @@ int main()
     }
     
 
-
+    // at the beginning of boot, does this consistently return 0?
+    // (by which i mean, haznet = 0, etc.)
     if(checkwifi()) // execution seems to fail around here
     {
         cy = socket(PF_INET, SOCK_STREAM, IPPROTO_IP); // formerly, "PF-INET" was "AF-INET"
@@ -838,21 +843,47 @@ int main()
             hangmacro();
         }
     }
-    
-    PatStay(0x00FF00); // debug
 
     
     reloop:
     
-    if(!isold) osSetSpeedupEnable(1);
+	// If not on Old-3DS, then increase the clock speed.
+	// Actually, since I specified the higher clock speed in the CIA.RSF,
+	// that may be causing this to crash... Not sure though.
+	// Also not sure why any of these errors couldn't be handled gracefully
+	// but thanks nintendo
+    if(!isold)
+    {
+    	//osSetSpeedupEnable(1);
+    }
     
     PatPulse(0xFF40FF);
-    if(haznet) PatStay(0xCCFF00);
-    else PatStay(0xFFFF);
     
+    if(haznet)
+    {
+    	PatStay(0xCCFF00); // what color is this? 100% green + 75% blue?
+    }
+    else
+    {
+    	PatStay(0x00FFFF); // bright yellow, this means no wifi yet
+    }
+
+    // This conditional statement was previously "while(1)"
+    // Whyyyyy
+    // Are we just taking exclusive control over this CPU thread?
+    // Maybe that's fine actually; it may not matter.
+    // (this IS ChainSwordCS, I'm notoriously slightly uninformed and/or otherwise dumb&stupid so)
+    //
+    // But if nothing else, we really should change this.
+    // You can keep the infinitely running 'while' loop
+    int h;
+    while(0) break;
+
+
     while(1)
     {
-        hidScanInput();
+    	// This hidScanInput() function call might crash.
+        //hidScanInput();
         kDown = hidKeysDown();
         kHeld = hidKeysHeld();
         kUp = hidKeysUp();
@@ -941,13 +972,15 @@ int main()
     
     killswitch:
     
-    PatStay(0xFF0000);
+    PatStay(0xFF0000); // If we ever actually reach killswitch, make the Notif LED blue
     
     if(netthread)
     {
         threadrunning = 0;
         
         volatile bufsoc** vsoc = (volatile bufsoc**)&soc;
+        // Note from ChainSwordCS: I didn't write that comment. lol.
+        // But I'd make a note of it and also ask why
         while(*vsoc) yield(); //pls don't optimize kthx
     }
     
@@ -971,11 +1004,19 @@ int main()
         fclose(file);
     }
     
+    // Why was I thinking of commenting this out again?
+    // Maybe just misc debug testing...
+    //
+    // Commenting this line out *will* break things.
+    // Nintendo didn't put much care or error-checking with the Notif LED.
+    // (For example, its state at boot is undefined IIRC)
+    // This sets the Notif LED to be off, basically.
+    // For when we're about to stop execution.
     PatStay(0);
     
-    nsExit();
+    nsExit(); // Don't change
     
-    mcuExit();
+    mcuExit(); // Probably don't change
     
     return 0;
 }
