@@ -75,13 +75,11 @@ extern "C"
     }\
 }
 
-// Define global variables :D
-
-// Define all our functions, so we can call them from main and keep main towards the top
-// Because keeping main near the top makes intuitive sense.
 void initializeThingsWeNeed();
 void initializeGraphicsAtStart();
 void initializeGraphicsInLegacyMain();
+
+static u32 gsp_gpu_handle;
 
 //I think this is over-commented -H
 
@@ -89,8 +87,7 @@ int main2()
 {
 	initializeThingsWeNeed();
 
-	// Call this function at the beginning of each frame.
-	// So the user is, like, allowed to turn off the system etc.
+	// Beginning of frame
 	while(aptMainLoop())
 	{
 		// If we *really* need this, then just access it once
@@ -98,7 +95,6 @@ int main2()
 		// Note also that we may entirely *not* need this.
 
 	}
-	// Oops, time to shut down
 	return 0;
 }
 
@@ -135,34 +131,20 @@ void initializeGraphicsAtStart()
 }
 void initializeGraphicsInLegacyMain()
 {
-	//gspInit(); // Initialize GSP GPU Service?
-
-	// Basically copied from libctru source
-	// (In this specific context, it can and will break.)
+	PatStay(0x00FF00);
 	Result ret1 = 0;
-	ret1 = gspInit();
-	if(ret1 == 0)
+	// Note that gspInit has changed since 2017, and will just crash for no reason.
+	// We get the handle (assuming the service is running which it near always is)
+	ret1 = srvGetServiceHandle(&gsp_gpu_handle, "gsp::Gpu");
+	if(ret1)
 	{
-		// Success! Maybe! Could have failed at the AtomicPostIncrement function call!
-	}
-	else
-	{
-		// Failure! Woo!!! I have no idea yet!!!
+		PatStay(0x0000FF);
 	}
 
-
-
-	//if(gspHasGpuRight() == false)
-	//{
-		//PatStay(0x7F007F); // Notif LED = Mid-Purple (Debug)
-
-		// Oops! We don't have GPU rights I guess.
-		// Time to take them via Legitimate Means(TM)
-
-		// This function takes a 'u8 flags' as input.
-		// I don't know what those are.
-		//GSPGPU_AcquireRight(0);
-	//}
+	if(GSPGPU_AcquireRight(0))
+	{
+		PatStay(0x0000FF);
+	}
 	return;
 }
 
@@ -410,7 +392,8 @@ static bufsoc::packet* k = nullptr;
 static Thread netthread = 0;
 static vu32 threadrunning = 0;
 
-static u32* screenbuf = nullptr;
+static void* screenbuf = nullptr;
+static u32 screenbuf_address;
 
 static tga_image img;
 static tjhandle turbo_jpeg_instance_handle = nullptr;
@@ -687,7 +670,7 @@ void netfunc(void* __dummy_arg__)
                     // Looks like I broke this, and I just fixed it again hopefully. -C
                     //
                     //if(!isold) svcFlushProcessDataCache(0xFFFF8001, (u8*)screenbuf, capin.screencapture[scr].framebuf_widthbytesize * 400);
-					if(!isold) svcFlushProcessDataCache(0xFFFF8001, (u8*)screenbuf, capin.screencapture[scr].framebuf_widthbytesize * 400);
+					if(!isold) svcFlushProcessDataCache(0xFFFF8001, (u32)&screenbuf, capin.screencapture[scr].framebuf_widthbytesize * 400);
                 }
                 
                 int imgsize = 0;
@@ -766,8 +749,8 @@ void netfunc(void* __dummy_arg__)
                 (\
                     svcStartInterProcessDma\
                     (\
-                        &dmahand, 0xFFFF8001, (u8*)(screenbuf), prochand ? prochand : 0xFFFF8001,\
-                        (u8*)(capin.screencapture[scr].framebuf0_vaddr + (siz * offs[scr])), siz, &dmaconf\
+                        &dmahand, 0xFFFF8001, (u32)&screenbuf, prochand ? prochand : 0xFFFF8001,\
+                        (u32)(capin.screencapture[scr].framebuf0_vaddr + (siz * offs[scr])), siz, &dmaconf\
                     )\
                     < 0 \
                 )
@@ -970,6 +953,7 @@ int main1()
     // near the top of the file. -C
     initializeGraphicsInLegacyMain();
 
+
     // Note: this function is part of gx.c in this repo.
     // But it's dummied out, apparently. Huh.
     //gxInit();
@@ -994,7 +978,7 @@ int main1()
     // Last night I was tired enough that I didn't even know where to begin with rewriting this.
     if((__excno = setjmp(__exc))) goto killswitch;
 
-    PatStay(0x007F7F); // Debug. -ChainSwordCS
+    //PatStay(0x007F7F); // Debug. -ChainSwordCS
 
 #ifdef _3DS
     std::set_unexpected(CPPCrashHandler);
@@ -1073,11 +1057,13 @@ int main1()
     
     if(haznet)
     {
-    	PatStay(0xCCFF00); // what color is this? 100% green + 75% blue? lol
+    	//todo - uncomment
+    	//PatStay(0xCCFF00); // what color is this? 100% green + 75% blue? lol
     }
     else
     {
-    	PatStay(0x00FFFF); // bright yellow, this means no wifi yet?
+    	//todo - uncomment
+    	//PatStay(0x00FFFF); // bright yellow, this means no wifi yet?
     }
 
     // This conditional statement was previously "while(1)"
@@ -1120,11 +1106,11 @@ int main1()
                 {
                     printf("Failed to accept client: (%i) %s\n", errno, strerror(errno));
                     if(errno == EINVAL) goto netreset;
-                    PatPulse(0xFF);
+                    PatPulse(0x0000FF);
                 }
                 else
                 {
-                    PatPulse(0xFF00);
+                    PatPulse(0x00FF00);
                     soc = new bufsoc(cli, isold ? 0xC000 : 0x70000);
                     k = soc->pack();
                     
