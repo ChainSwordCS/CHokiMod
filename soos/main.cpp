@@ -75,18 +75,24 @@ extern "C"
     }\
 }
 
+// Define global variables :D
+
 // Define all our functions, so we can call them from main and keep main towards the top
 // Because keeping main near the top makes intuitive sense.
 void initializeThingsWeNeed();
-void initializeGraphics();
+void initializeGraphicsAtStart();
 
 int main2()
 {
 	initializeThingsWeNeed();
+
 	// Call this function at the beginning of each frame.
 	// So the user is, like, allowed to turn off the system etc.
 	while(aptMainLoop())
 	{
+		// If we *really* need this, then just access it once
+		// and keep it in RAM for us to use repeatedly.
+		// Note also that we may entirely *not* need this.
 
 	}
 	// Oops, time to shut down
@@ -100,10 +106,11 @@ int main2()
 void initializeThingsWeNeed()
 {
 	mcuInit(); // Initialize MCU, so we can poke the Notification LED for debug output without a screen.
-	nsInit();
+	nsInit(); // Initialize NS Service. I suppose we probably need this.
 	aptInit(); // Initialize APT Service. We generally need this.
+	acInit(); // Initialize AC Service. For Wifi stuff.
 
-	initializeGraphics();
+	initializeGraphicsAtStart();
 
 	PatStay(0x0000FF); // Set Notif LED color to red (debugging status update!)
 
@@ -117,7 +124,7 @@ void initializeThingsWeNeed()
 // Hell, I actually don't even know if we *need*
 // to initialize graphics outselves.
 // -C
-void initializeGraphics()
+void initializeGraphicsAtStart()
 {
 	//gspInit();
 	//gfxInitDefault();
@@ -394,7 +401,7 @@ void netfunc(void* __dummy_arg__)
     
     k = soc->pack(); //Just In Case (tm)
     
-    PatStay(0x00FF00);
+    PatStay(0x00FF00); // Notif LED = Green
     
     format[0] = 0xF00FCACE; //invalidate
     
@@ -411,7 +418,7 @@ void netfunc(void* __dummy_arg__)
     
     //screenInit();
     
-    PatPulse(0x7F007F);
+    PatPulse(0x7F007F); // Notif LED = Purple-ish
     threadrunning = 1;
     
     // why???
@@ -736,9 +743,6 @@ int main1()
 
 	// I'm writing this function. It shouldn't break (TM) -C
 	initializeThingsWeNeed();
-    //nsInit(); // Why do we need ns?
-    
-
 
     soc = nullptr;
     
@@ -781,7 +785,7 @@ int main1()
         stride[1] = 320;
     }
 
-    acInit(); // Initialize AC service; 3DS's service for connecting to Wifi
+    //acInit(); // Initialize AC service; 3DS's service for connecting to Wifi
     
     // whyyyyyyyy? You don't even do this more than once.
     // This code currently works. So I'm gonna modify it to be readable.
@@ -807,8 +811,9 @@ int main1()
     }
 
     // Initialize the SOC service.
-    // Note: Programs stuck in userland don't have permission to access this.
-    // This may be a non-issue for us.
+    // Note: Programs stuck in userland don't have permission to
+    // change the buffer address after creation(?)
+    // This is probably a non-issue for us.
     ret = socInit((u32*)memalign(0x1000, soc_buffer_size), soc_buffer_size);
     
     if(ret < 0)
@@ -829,6 +834,8 @@ int main1()
     	//hangmacro();
     }
 
+    // As it is right now, this can't be called here.
+    // Crashes the system.
     //gspInit(); // Initialize GSP GPU Service
 
     if(isold)
