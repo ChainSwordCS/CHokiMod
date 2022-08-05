@@ -677,7 +677,7 @@ static const devoptab_t devop_stderr = { "stderr", 0, nullptr, nullptr, stderr_w
 int main()
 {
     mcuInit(); // Initialize MCU, so we can poke the Notification LED for debug output without a screen.
-    nsInit();
+    //nsInit(); // Why do we need ns?
     
     soc = nullptr;
     
