@@ -858,7 +858,7 @@ ssize_t stderr_write(struct _reent* r, void* fd, const char* ptr, size_t len)
     return fwrite(ptr, 1, len, file);
 }
 
-
+                                     //{name, structSize, *open r, *close r, *write r, *read r, *seek r, *fstat_r}
 static const devoptab_t devop_stdout = { "stdout", 0, nullptr, nullptr, stdout_write, nullptr, nullptr, nullptr };
 static const devoptab_t devop_stderr = { "stderr", 0, nullptr, nullptr, stderr_write, nullptr, nullptr, nullptr };
 
@@ -872,13 +872,15 @@ int main1()
     
     // This is dumb, we don't even do anything with the file.
     file = fopen("/HzLog.log", "w");
-    if((s32)file <= 0)
+    if((s32)file <= 0)  //Maybe switch condition to (file == NULL)?? -H
 		file = nullptr;
     else
     {
+        //devoptab_list is from sys/iosupport.h. Idk what it does. -H
         devoptab_list[STD_OUT] = &devop_stdout;
 		devoptab_list[STD_ERR] = &devop_stderr;
 
+        //Turn off buffering for stdout and stderr.
 		setvbuf(stdout, nullptr, _IONBF, 0);
 		setvbuf(stderr, nullptr, _IONBF, 0);
     }
