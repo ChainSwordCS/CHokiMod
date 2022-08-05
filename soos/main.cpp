@@ -81,6 +81,7 @@ extern "C"
 // Because keeping main near the top makes intuitive sense.
 void initializeThingsWeNeed();
 void initializeGraphicsAtStart();
+void initializeGraphicsInLegacyMain();
 
 int main2()
 {
@@ -128,6 +129,38 @@ void initializeGraphicsAtStart()
 {
 	//gspInit();
 	//gfxInitDefault();
+	return;
+}
+void initializeGraphicsInLegacyMain()
+{
+	//gspInit(); // Initialize GSP GPU Service?
+
+	// Basically copied from libctru source
+	// (In this specific context, it can and will break.)
+	Result ret1 = 0;
+	ret1 = gspInit();
+	if(ret1 == 0)
+	{
+		// Success! Maybe! Could have failed at the AtomicPostIncrement function call!
+	}
+	else
+	{
+		// Failure! Woo!!! I have no idea yet!!!
+	}
+
+
+
+	//if(gspHasGpuRight() == false)
+	//{
+		//PatStay(0x7F007F); // Notif LED = Mid-Purple (Debug)
+
+		// Oops! We don't have GPU rights I guess.
+		// Time to take them via Legitimate Means(TM)
+
+		// This function takes a 'u8 flags' as input.
+		// I don't know what those are.
+		//GSPGPU_AcquireRight(0);
+	//}
 	return;
 }
 
@@ -396,6 +429,8 @@ void netfunc(void* __dummy_arg__)
     }
     else
     {
+    	// This instruction *might* crash. Leaving it commented for now is harmless.
+    	// It may not even be needed in the first place.
     	//osSetSpeedupEnable(1);
     }
     
@@ -414,8 +449,9 @@ void netfunc(void* __dummy_arg__)
 	
     //memset(dmaconf, 0, sizeof(dmaconf));
     //dmaconf[0] = -1; //don't care
+
+	// This was commented out before I got here. -C
     //dmaconf[2] = 4;
-    
     //screenInit();
     
     PatPulse(0x7F007F); // Notif LED = Purple-ish
@@ -437,58 +473,81 @@ void netfunc(void* __dummy_arg__)
     }
     while(0);
     
+    // This might be malfunctional and might be an infinite loop.
+    // Even if it were, I don't know if that's actually *bad*
+    // or if it's intended behavior. -C
     while(threadrunning)
     {
         if(soc->avail())
-        while(1)
         {
-            if((kHeld & (KEY_SELECT | KEY_START)) == (KEY_SELECT | KEY_START))
-            {
-                delete soc;
-                soc = nullptr;
-                break;
-            }
-            
-            puts("reading");
-            cy = soc->readbuf();
-            if(cy <= 0)
-            {
-                printf("Failed to recvbuf: (%i) %s\n", errno, strerror(errno));
-                delete soc;
-                soc = nullptr;
-                break;
-            }
-            else
-            {
-                printf("#%i 0x%X | %i\n", k->packetid, k->size, cy);
-                
-                //reread:
-                switch(k->packetid)
-                {
-                    case 0x00: //CONNECT
-                    case 0x01: //ERROR
-                        puts("forced dc");
-                        delete soc;
-                        soc = nullptr;
-                        break;
-                        
-                    case 0x7E: //CFGBLK_IN
-                        memcpy(cfgblk + k->data[0], &k->data[4], min((u32)(0x100 - k->data[0]), (u32)(k->size - 4)));
-                        break;
-                        
-                    default:
-                        printf("Invalid packet ID: %i\n", k->packetid);
-                        delete soc;
-                        soc = nullptr;
-                        break;
-                }
-                
-                break;
-            }
+        	// why
+			while(1)
+			{
+				if((kHeld & (KEY_SELECT | KEY_START)) == (KEY_SELECT | KEY_START))
+				{
+					delete soc;
+					soc = nullptr;
+					break;
+					// By the way, does this break out of
+					// both while loops or just one? -C
+				}
+
+				puts("reading");
+				// Just using variable cy as another "res". why
+				cy = soc->readbuf();
+				if(cy <= 0)
+				{
+					// I legitimately don't know where debug output is defined.
+					// It might as well not exist to be honest.
+					// But I'm also Dumb Lol, so I won't remove these (yet) -C
+					printf("Failed to recvbuf: (%i) %s\n", errno, strerror(errno));
+					delete soc;
+					soc = nullptr;
+					break;
+				}
+				else
+				{
+					printf("#%i 0x%X | %i\n", k->packetid, k->size, cy);
+
+					//reread: // unused label IIRC. -C
+
+					// Is there any performance benefit to making this
+					// a switch-case instead of if-else statements?
+					// Genuine question. I could go either way to be honest. -C
+					switch(k->packetid)
+					{
+						case 0x00: //CONNECT
+						case 0x01: //ERROR
+							// I don't know if ChokiStream actually
+							// sends any of these. This might be redundant.
+							puts("forced dc");
+							delete soc;
+							soc = nullptr;
+							break;
+
+						case 0x7E: //CFGBLK_IN
+							memcpy(cfgblk + k->data[0], &k->data[4], min((u32)(0x100 - k->data[0]), (u32)(k->size - 4)));
+							break;
+
+						default:
+							printf("Invalid packet ID: %i\n", k->packetid);
+							delete soc;
+							soc = nullptr;
+							break;
+					}
+
+					break;
+				}
+			}
         }
         
-        if(!soc) break;
+        if(!soc)
+        {
+        	break;
+        }
         
+        // If you received any data from the config block (from the PC client, like ChokiStream)
+        // And this ImportDisplayCaptureInfo function doesn't error out...
         if(cfgblk[0] && GSPGPU_ImportDisplayCaptureInfo(&capin) >= 0)
         {
             //test for changed framebuffers
@@ -499,10 +558,13 @@ void netfunc(void* __dummy_arg__)
                 capin.screencapture[1].format != format[1]\
             )
             {
-                PatStay(0xFFFF00);
+                PatStay(0xFFFF00); // Notif LED = Teal (Green + Blue)
                 
+                // Already commented out before I got here. -C
+                //
                 //fbuf[0] = (u8*)capin.screencapture[0].framebuf0_vaddr;
                 //fbuf[1] = (u8*)capin.screencapture[1].framebuf0_vaddr;
+
                 format[0] = capin.screencapture[0].format;
                 format[1] = capin.screencapture[1].format;
                 
@@ -522,7 +584,8 @@ void netfunc(void* __dummy_arg__)
                 *(GSPGPU_CaptureInfo*)k->data = capin;
                 soc->wribuf();
                 
-                
+                // Yeah. If the framebuffers have changed (places?)
+                // Then stop Direct Memory Access there.
                 if(dmahand)
                 {
                     svcStopDma(dmahand);
@@ -561,22 +624,44 @@ void netfunc(void* __dummy_arg__)
                         loaded = false;
                         while(1)
                         {
-                            if(APT_GetAppletInfo((NS_APPID)0x300, &progid, nullptr, &loaded, nullptr, nullptr) < 0) break;
-                            if(loaded) break;
+                        	// &loaded = pRegistered / Pointer to output the registration status to
+                        	// loaded = Registration Status(?) of the specified application(?)
+                        	// If this function returns negative (s32), then break?
+                            if(APT_GetAppletInfo((NS_APPID)0x300, &progid, nullptr, &loaded, nullptr, nullptr) < 0)
+                            {
+                            	break;
+                            }
+                            if(loaded)
+                            {
+                            	break;
+                            }
                             
                             svcSleepThread(15e6);
                         }
                         
-                        if(!loaded) break;
+                        if(!loaded)
+                        {
+                        	break;
+                        }
                         
-                        if(NS_LaunchTitle(progid, 0, &procid) >= 0) break;
+                        if(NS_LaunchTitle(progid, 0, &procid) >= 0)
+                        {
+                        	break;
+                        }
                     }
                     
-                    if(loaded);// svcOpenProcess(&prochand, procid);
-                    else format[0] = 0xF00FCACE; //invalidate
+                    if(loaded)
+                    {
+                    	// Commented out before I got here. -C
+                    	// svcOpenProcess(&prochand, procid);
+                    }
+                    else
+                    {
+                    	format[0] = 0xF00FCACE; //invalidate
+                    }
                 }
                 
-                PatStay(0xFF00);
+                PatStay(0x00FF00); // Notif LED = Green
             }
             
             int loopcnt = 2;
@@ -596,12 +681,21 @@ void netfunc(void* __dummy_arg__)
                     svcStopDma(dmahand);
                     svcCloseHandle(dmahand);
                     dmahand = 0;
+
+                    // Looks like I broke this, and I just fixed it again hopefully. -C
+                    //
                     //if(!isold) svcFlushProcessDataCache(0xFFFF8001, (u8*)screenbuf, capin.screencapture[scr].framebuf_widthbytesize * 400);
-					if(!isold) svcFlushProcessDataCache(0xFFFF8001, reinterpret_cast<u32>(screenbuf), capin.screencapture[scr].framebuf_widthbytesize * 400);
+					if(!isold) svcFlushProcessDataCache(0xFFFF8001, (u8*)screenbuf, capin.screencapture[scr].framebuf_widthbytesize * 400);
                 }
                 
                 int imgsize = 0;
                 
+                // This is nice and all, but absolutely not.
+                // This has to be reorganized.
+                // I still like Targa as an option but y'know. An option.
+                // And right now ChokiStream doesn't support "TGAHz" yet either. But it will.
+                // And I'll bugfix the Targa implementation in this code too. -C
+
                 if((format[scr] & 7) >> 1 || !cfgblk[3])
                 {
                     init_tga_image(&img, (u8*)screenbuf, scrw, stride[scr], bits);
@@ -616,19 +710,27 @@ void netfunc(void* __dummy_arg__)
                 {
                     *(u32*)&k->data[0] = (scr * 400) + (stride[scr] * offs[scr]);
                     u8* dstptr = &k->data[8];
+                    // Please make this not all one line. -C
                     if(!tjCompress2(turbo_jpeg_instance_handle, (u8*)screenbuf, scrw, bsiz * scrw, stride[scr], format[scr] ? TJPF_RGB : TJPF_RGBX, &dstptr, (u32*)&imgsize, TJSAMP_420, cfgblk[3], TJFLAG_NOREALLOC | TJFLAG_FASTDCT))
-                        k->size = imgsize + 8;
+                    {
+                    	k->size = imgsize + 8;
+                    }
                     k->packetid = 4; //DATA (JPEG)
                 }
+
+                // Commented out before I got here. -C
+
                 //k->size += 4;
-                
                 //svcStartInterProcessDma(&dmahand, 0xFFFF8001, screenbuf, prochand ? prochand : 0xFFFF8001, fbuf[0] + fboffs, siz, dmaconf);
                 //svcFlushProcessDataCache(prochand ? prochand : 0xFFFF8001, capin.screencapture[0].framebuf0_vaddr, capin.screencapture[0].framebuf_widthbytesize * 400);
                 //svcStartInterProcessDma(&dmahand, 0xFFFF8001, screenbuf, prochand ? prochand : 0xFFFF8001, (u8*)capin.screencapture[0].framebuf0_vaddr + fboffs, siz, dmaconf);
                 //screenDMA(&dmahand, screenbuf, 0x600000 + fboffs, siz, dmaconf);
                 //screenDMA(&dmahand, screenbuf, dbgo, siz, dmaconf);
                 
-                if(++offs[scr] == limit[scr]) offs[scr] = 0;
+                if(++offs[scr] == limit[scr])
+                {
+                	offs[scr] = 0;
+                }
                 
                 scr = !scr;
                 
@@ -638,18 +740,32 @@ void netfunc(void* __dummy_arg__)
                 scrw = capin.screencapture[scr].framebuf_widthbytesize / bsiz;
                 bits = 4 << bsiz;
                 
-                if((format[scr] & 7) == 2) bits = 17;
-                if((format[scr] & 7) == 4) bits = 18;
+                if((format[scr] & 7) == 2)
+                {
+                	bits = 17;
+                }
+                if((format[scr] & 7) == 4)
+                {
+                	bits = 18;
+                }
                 
                 Handle prochand = 0;
-                if(procid) if(svcOpenProcess(&prochand, procid) < 0) procid = 0;
+                if(procid)
+                {
+                	if(svcOpenProcess(&prochand, procid) < 0)
+                	{
+                		procid = 0;
+                	}
+                }
                 
+
+                // this is written so badly i wanna cry -C
                 if\
                 (\
                     svcStartInterProcessDma\
                     (\
-                        &dmahand, 0xFFFF8001, reinterpret_cast<u32>(screenbuf), prochand ? prochand : 0xFFFF8001,\
-                        reinterpret_cast<u32>(capin.screencapture[scr].framebuf0_vaddr + (siz * offs[scr])), siz, &dmaconf\
+                        &dmahand, 0xFFFF8001, (u8*)(screenbuf), prochand ? prochand : 0xFFFF8001,\
+                        (u8*)(capin.screencapture[scr].framebuf0_vaddr + (siz * offs[scr])), siz, &dmaconf\
                     )\
                     < 0 \
                 )
@@ -664,7 +780,12 @@ void netfunc(void* __dummy_arg__)
                     prochand = 0;
                 }
                 
-                if(k->size) soc->wribuf();
+                if(k->size)
+                {
+                	soc->wribuf();
+                }
+
+                // Commented out before I got here. -C
                 /*
                 k->packetid = 0xFF;
                 k->size = 4;
@@ -675,7 +796,11 @@ void netfunc(void* __dummy_arg__)
                 if(dbgo >= 0x600000) dbgo = 0;
                 */
                 
-                if(isold) svcSleepThread(5e6);
+                // Free up this thread to do other things? (On Old-3DS)
+                if(isold)
+                {
+                	svcSleepThread(5e6);
+                }
             }
         }
         else yield();
@@ -702,6 +827,8 @@ void netfunc(void* __dummy_arg__)
         svcCloseHandle(dmahand);
     }
     
+    // Commented out before I got here. -C
+    //
     //if(prochand) svcCloseHandle(prochand);
     //screenExit();
     
@@ -710,6 +837,11 @@ void netfunc(void* __dummy_arg__)
 
 static FILE* file = nullptr;
 
+// I think I got it. "fd" is declared here, but just kept null.
+// So of course it doesn't matter what type it is.
+// Note to future me and anyone else though,
+// Whatever's going on here is really stupid I bet. -C
+//
 ssize_t stdout_write(struct _reent* r, void* fd, const char* ptr, size_t len) //used to be "int fd" not "void* fd"
 {
     if(!file) return 0;
@@ -724,16 +856,6 @@ ssize_t stderr_write(struct _reent* r, void* fd, const char* ptr, size_t len)
     return fwrite(ptr, 1, len, file);
 }
 
-// The below two lines of code are* attempting to convert from.....THIS:  'ssize_t (*)(_reent*, int, const char*, size_t)'       {aka 'int (*)(_reent*, int, const char*, unsigned int)'}
-//                                                          to.....THIS:  'ssize_t (*)(_reent*, void*, const char*, size_t)'     {aka 'int (*)(_reent*, void*, const char*, unsigned int)'}
-//
-//                                                                        That's here
-//                                                                             |
-//                                                                             V
-//static const devoptab_t devop_stdout = { "stdout", 0, nullptr, nullptr, stdout_write, nullptr, nullptr, nullptr };
-//
-// Make the "fd" a void pointer? Maybe?
-//
 
 static const devoptab_t devop_stdout = { "stdout", 0, nullptr, nullptr, stdout_write, nullptr, nullptr, nullptr };
 static const devoptab_t devop_stderr = { "stderr", 0, nullptr, nullptr, stderr_write, nullptr, nullptr, nullptr };
@@ -748,7 +870,7 @@ int main1()
     
     // This is dumb, we don't even do anything with the file.
     file = fopen("/HzLog.log", "w");
-    if(reinterpret_cast<s32>(file) <= 0)
+    if((s32)file <= 0)
 		file = nullptr;
     else
     {
@@ -836,7 +958,19 @@ int main1()
 
     // As it is right now, this can't be called here.
     // Crashes the system.
+    // We should maybe be able to do this...
+    // The old code was doing this too...
+    //
     //gspInit(); // Initialize GSP GPU Service
+
+    // This function isn't guaranteed to work by any means,
+    // but I'm separating it and rewriting it
+    // near the top of the file. -C
+    initializeGraphicsInLegacyMain();
+
+    // Note: this function is part of gx.c in this repo.
+    // But it's dummied out, apparently. Huh.
+    //gxInit();
 
     if(isold)
     {
@@ -850,7 +984,7 @@ int main1()
     if(!screenbuf) // If memalign returns null or 0
     {
         makerave();
-        //svcSleepThread(2e9);
+        svcSleepThread(2e9);
         //hangmacro();
     }
     
@@ -878,7 +1012,10 @@ int main1()
     {
         errno = 0;
         //PatStay(0x00FFFF);
-        while(checkwifi()) yield();
+        while(checkwifi())
+        {
+        	yield();
+        }
     }
     
 
@@ -934,7 +1071,7 @@ int main1()
     
     if(haznet)
     {
-    	PatStay(0xCCFF00); // what color is this? 100% green + 75% blue?
+    	PatStay(0xCCFF00); // what color is this? 100% green + 75% blue? lol
     }
     else
     {
@@ -963,6 +1100,7 @@ int main1()
         
         // If any buttons are pressed, make the Notif LED pulse red?
         // Pure waste of CPU time for literally no reason
+        // Also it's annoying -C
         //if(kDown) PatPulse(0x0000FF);
 
         if(kHeld == (KEY_SELECT | KEY_START)) break;
@@ -1068,7 +1206,8 @@ int main1()
     
     //gxExit();
     
-    gspExit();
+    // With the current state of the code, we never init the GSP service...
+    //gspExit();
     
     acExit();
     
