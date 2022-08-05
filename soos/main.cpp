@@ -83,6 +83,8 @@ void initializeThingsWeNeed();
 void initializeGraphicsAtStart();
 void initializeGraphicsInLegacyMain();
 
+//I think this is over-commented -H
+
 int main2()
 {
 	initializeThingsWeNeed();
