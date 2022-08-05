@@ -72,7 +72,7 @@ AccessControlInfo:
   MemoryType                    : Base # Application/System/Base
   SystemMode                    : 64MB # 64MB(Default)/96MB/80MB/72MB/32MB
   IdealProcessor                : 1 # Thinking about other processors lol
-  AffinityMask                  : 15 # Shouldn't be 15. Try 1 or 3 etc.
+  AffinityMask                  : 1 # Shouldn't be 15. Try 1 or 3 etc.
   Priority                      : 16 # Was 20. Try 48 but I forget why. 16 is default(?)
   MaxCpu                        : 0x9E # Try 158 but I forget why. 0x9E is default. 0 = Let System Decide.
   HandleTableSize               : 0x200 # Default
@@ -262,17 +262,37 @@ AccessControlInfo:
   # - ptm:u # Not needed.
   # - pxi:dev
   #
+  # ChainSwordCS(2022-08-04 9:15 PM):
+  # Actually, these are just permissions.
+  # Having too few hurts us more than having too many.
+  # Current number is 25.
   ServiceAccessControl:
+   - APT:S # APT Service, System level. Needed for snooping on other applications.
    - ac:i # AC Services (Wifi-related); ac:i for more permissions (might need for DHCP, UPnP, idk...)
+   - am:net
+   - boss:U
+   - cam:u
    - cdc:HID # HID Codec Service. I added this, I don't know if it's needed.
+   - cecd:u
    - cfg:nor # Config NVRAM Service (Interface for SPI::NOR, accessing WiFi NVRAM/SPI Flash)
+   - cfg:u
+   - cfg:i
    - fs:USER # Fine to leave on. File system access stuff.
    - gsp::Gpu # GSP GPU Service. Most likely very needed.
+   - gsp::Lcd
+   - hid:USER
    - http:C # HTTP stuff. Perhaps not needed?
+   - i2c::MCU
    - mcu::HWC # Maybe used for the Notification LED?
+   - mic:u
    - ndm:u # I don't know.
+   - ns:s
+   - nwm::EXT
+   - nwm::UDS
    - nwm::SOC # NWM, socket stuff. May not be needed, IDK.
+   - pm:app
    - ptm:sysm # Actually used to CheckNew3DS, and ConfigureNew3DSCPU
+   - ptm:u
    - soc:U # Sockets. I could include soc:P for Privileged, but I don't know if it's at all necessary.
    - ssl:C # SSL stuff. Perhaps not needed?
    - y2r:u # Related to processing colors. A Camera service. IDK exactly.
@@ -280,7 +300,7 @@ AccessControlInfo:
 SystemControlInfo:
   SaveDataSize: 0KB # Change if the app uses savedata (Is "0K" acceptable syntax? Forget it...)
   RemasterVersion: 2 # don't change
-  StackSize: 0x8000 # The default is 0x40000, but we're a background process.
+  StackSize: 0x8000 # The default is 0x40000, but we're a background process so....
 
   # Modules that run services listed above should be included below
   # Maximum 48 dependencies
@@ -313,17 +333,43 @@ SystemControlInfo:
   # csnd: 0x0004013000002702
   # dsp: 0x0004013000001a02
   # am: 0x0004013000001502
+  # 
+  # ChainSwordCS (2022-08-04 9:27 PM):
+  # This section too. Screw it.
+  # We have plenty of room, we're not hitting the maximum of 48.
+  # Even if this did impact performance in any meaningful way,
+  # Performing but badly is better than not working at all?
+  # 
   Dependency: 
     ac: 0x0004013000002402
+    am: 0x0004013000001502
+    boss: 0x0004013000003402
     camera: 0x0004013000001602
+    cecd: 0x0004013000002602
     cfg: 0x0004013000001702
     codec: 0x0004013000001802
+    csnd: 0x0004013000002702
+    dlp: 0x0004013000002802
+    dsp: 0x0004013000001a02
+    friends: 0x0004013000003202
+    gpio: 0x0004013000001b02
     gsp: 0x0004013000001c02
     hid: 0x0004013000001d02
     http: 0x0004013000002902
     i2c: 0x0004013000001e02
+    ir: 0x0004013000003302
     mcu: 0x0004013000001f02
+    mic: 0x0004013000002002
     ndm: 0x0004013000002b02
+    news: 0x0004013000003502
+    nfc: 0x0004013000004002
+    nim: 0x0004013000002c02
     nwm: 0x0004013000002d02
+    pdn: 0x0004013000002102
+    ps: 0x0004013000003102
+    ptm: 0x0004013000002202
+    qtm: 0x0004013020004202
+    ro: 0x0004013000003702
     socket: 0x0004013000002e02
+    spi: 0x0004013000002302
     ssl: 0x0004013000002f02

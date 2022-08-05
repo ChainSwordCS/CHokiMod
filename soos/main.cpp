@@ -75,6 +75,56 @@ extern "C"
     }\
 }
 
+// Define all our functions, so we can call them from main and keep main towards the top
+// Because keeping main near the top makes intuitive sense.
+void initializeThingsWeNeed();
+void initializeGraphics();
+
+int main2()
+{
+	initializeThingsWeNeed();
+	// Call this function at the beginning of each frame.
+	// So the user is, like, allowed to turn off the system etc.
+	while(aptMainLoop())
+	{
+
+	}
+	// Oops, time to shut down
+	return 0;
+}
+
+// This is only run at the very beginning of main().
+// Returns nothing. If we can't boot, we have bigger problems
+// than needing an error code.
+// And I assume returning nothing is slightly faster.
+void initializeThingsWeNeed()
+{
+	mcuInit(); // Initialize MCU, so we can poke the Notification LED for debug output without a screen.
+	nsInit();
+	aptInit(); // Initialize APT Service. We generally need this.
+
+	initializeGraphics();
+
+	PatStay(0x0000FF); // Set Notif LED color to red (debugging status update!)
+
+	return;
+}
+
+// My graphics init code will definitely break.
+// This is my first rodeo, after all.
+// Sono wrote some graphics init code in gx.c,
+// which seems to go unused in this version of the repo.
+// Hell, I actually don't even know if we *need*
+// to initialize graphics outselves.
+// -C
+void initializeGraphics()
+{
+	//gspInit();
+	//gfxInitDefault();
+	return;
+}
+
+
 static int haznet = 0; // Is connected to wifi?
 int checkwifi()
 {
@@ -333,12 +383,18 @@ void netfunc(void* __dummy_arg__)
     
     int scr = 0;
     
-    if(isold);// screenbuf = (u32*)k->data;
-    else osSetSpeedupEnable(1);
+    if(isold)
+    {
+    	// screenbuf = (u32*)k->data;
+    }
+    else
+    {
+    	//osSetSpeedupEnable(1);
+    }
     
     k = soc->pack(); //Just In Case (tm)
     
-    PatStay(0xFF00);
+    PatStay(0x00FF00);
     
     format[0] = 0xF00FCACE; //invalidate
     
@@ -358,6 +414,7 @@ void netfunc(void* __dummy_arg__)
     PatPulse(0x7F007F);
     threadrunning = 1;
     
+    // why???
     do
     {
         k->packetid = 2; //MODE
@@ -674,11 +731,15 @@ ssize_t stderr_write(struct _reent* r, void* fd, const char* ptr, size_t len)
 static const devoptab_t devop_stdout = { "stdout", 0, nullptr, nullptr, stdout_write, nullptr, nullptr, nullptr };
 static const devoptab_t devop_stderr = { "stderr", 0, nullptr, nullptr, stderr_write, nullptr, nullptr, nullptr };
 
-int main()
+int main1()
 {
-    mcuInit(); // Initialize MCU, so we can poke the Notification LED for debug output without a screen.
+
+	// I'm writing this function. It shouldn't break (TM) -C
+	initializeThingsWeNeed();
     //nsInit(); // Why do we need ns?
     
+
+
     soc = nullptr;
     
     // This is dumb, we don't even do anything with the file.
@@ -699,7 +760,10 @@ int main()
     memset(cfgblk, 0, sizeof(cfgblk));
     
     //isold, or is_old, tells us if we are running on Original/"Old" 3DS (reduced clock speed and RAM...)
-    isold = APPMEMTYPE <= 5;
+    if(APPMEMTYPE <= 5) // weird way of doing this.
+    {
+    	isold = 1;
+    }
     
     
     if(isold)
@@ -716,9 +780,6 @@ int main()
         stride[0] = 400; // Width of the framebuffer we use(?)
         stride[1] = 320;
     }
-    
-    
-    PatStay(0x0000FF); // Set Notif LED color to red (debugging status update!
 
     acInit(); // Initialize AC service; 3DS's service for connecting to Wifi
     
@@ -740,14 +801,14 @@ int main()
     {
     	soc_buffer_size = 0x10000; // If Old-3DS
     }
-    else // do people write else-ifs like this?
+    else
     {
     	soc_buffer_size = 0x200000; // If New-3DS
     }
 
     // Initialize the SOC service.
     // Note: Programs stuck in userland don't have permission to access this.
-    //This may be a non-issue for us.
+    // This may be a non-issue for us.
     ret = socInit((u32*)memalign(0x1000, soc_buffer_size), soc_buffer_size);
     
     if(ret < 0)
@@ -767,8 +828,8 @@ int main()
     	*(u32*)0x1000F0 = 0xDEADDEAD;
     	//hangmacro();
     }
-    
-    gspInit(); // Initialize GSP GPU
+
+    //gspInit(); // Initialize GSP GPU Service
 
     if(isold)
     {
@@ -782,13 +843,16 @@ int main()
     if(!screenbuf) // If memalign returns null or 0
     {
         makerave();
-        svcSleepThread(2e9);
-        hangmacro();
+        //svcSleepThread(2e9);
+        //hangmacro();
     }
     
     //why
+    // Last night I was tired enough that I didn't even know where to begin with rewriting this.
     if((__excno = setjmp(__exc))) goto killswitch;
-      
+
+    PatStay(0x007F7F); // Debug. -ChainSwordCS
+
 #ifdef _3DS
     std::set_unexpected(CPPCrashHandler);
     std::set_terminate(CPPCrashHandler);
@@ -806,10 +870,12 @@ int main()
     if(haznet && errno == EINVAL)
     {
         errno = 0;
-        PatStay(0xFFFF);
+        //PatStay(0x00FFFF);
         while(checkwifi()) yield();
     }
     
+
+    //PatStay(0x007F7F); // Debug. -ChainSwordCS
 
     // at the beginning of boot, does this consistently return 0?
     // (by which i mean, haznet = 0, etc.)
@@ -857,7 +923,7 @@ int main()
     	//osSetSpeedupEnable(1);
     }
     
-    PatPulse(0xFF40FF);
+    //PatPulse(0xFF40FF);
     
     if(haznet)
     {
@@ -865,7 +931,7 @@ int main()
     }
     else
     {
-    	PatStay(0x00FFFF); // bright yellow, this means no wifi yet
+    	PatStay(0x00FFFF); // bright yellow, this means no wifi yet?
     }
 
     // This conditional statement was previously "while(1)"
@@ -875,10 +941,8 @@ int main()
     // (this IS ChainSwordCS, I'm notoriously slightly uninformed and/or otherwise dumb&stupid so)
     //
     // But if nothing else, we really should change this.
-    // You can keep the infinitely running 'while' loop
-    int h;
-    while(0) break;
-
+    // You can keep the infinitely running 'while' loop,
+    // But, like, split this into more functions so it's possible to navigate this file.
 
     while(1)
     {
@@ -890,7 +954,10 @@ int main()
         
         //printf("svcGetSystemTick: %016llX\n", svcGetSystemTick());
         
-        if(kDown) PatPulse(0xFF);
+        // If any buttons are pressed, make the Notif LED pulse red?
+        // Pure waste of CPU time for literally no reason
+        //if(kDown) PatPulse(0x0000FF);
+
         if(kHeld == (KEY_SELECT | KEY_START)) break;
         
         if(!soc)
@@ -1019,4 +1086,13 @@ int main()
     mcuExit(); // Probably don't change
     
     return 0;
+}
+
+// This is really stupid, but here's my shortcut for switching between
+// old and WIP-new main() functions that requires as little
+// effort as possible. -C
+int main()
+{
+	return main1(); // run old main() function
+	//return main2(); // run new main() function
 }

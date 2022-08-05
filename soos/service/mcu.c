@@ -1,7 +1,7 @@
 #include "mcu.h"
 
 
-static Handle mcuHandle = 0;
+static Handle mcuHandle = 0; // This can be global, sure.
 
 // Returns a ServiceHandle for the MCU
 Result mcuInit()
