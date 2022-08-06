@@ -117,6 +117,26 @@ void initializeGraphics()
 	return;
 }
 
+// For flags, pass 0 to fall back to default
+int GpuTriggerDisplayTransfer(u32* vram_address, u32* out_address, u16 width, u16 height, u32 input_flags)
+{
+
+	u32 color_out = 3; // RGB5_A1
+	u32 flags = 0;
+
+	if(input_flags != 0)
+		flags = input_flags;
+	else
+	{
+		flags = 0 + (0b1000000000000 * color_out);
+	}
+
+	u32 input_dimensions = (height * 0x100000000) + width;
+	u32 output_dimensions = input_dimensions;
+
+	return GX_DisplayTransfer(vram_address,input_dimensions,out_address,output_dimensions,flags);
+}
+
 static int haznet = 0; // Is connected to wifi?
 int checkwifi()
 {
@@ -532,6 +552,7 @@ void netfunc(void* __dummy_arg__)
         // And this ImportDisplayCaptureInfo function doesn't error out...
         if(cfgblk[0])
         {
+        	u8* destination_ptr;
         	GSPGPU_ImportDisplayCaptureInfo(&my_gpu_capture_info); // Should be fine?
 
             //test for changed framebuffers
@@ -581,7 +602,6 @@ void netfunc(void* __dummy_arg__)
                 
                 
                 //test for VRAM
-                if(1==0){
                 if\
                 (\
                     (u32)my_gpu_capture_info.screencapture[0].framebuf0_vaddr >= 0x1F000000\
@@ -645,7 +665,6 @@ void netfunc(void* __dummy_arg__)
                     	format[0] = 0xF00FCACE; //invalidate
                     }
                 }
-                }
                 
                 PatStay(0x00FF00); // Notif LED = Green
             }
@@ -676,7 +695,7 @@ void netfunc(void* __dummy_arg__)
                 
                 int imgsize = 0;
                 
-                u8* destination_ptr = &k->data[8];
+                destination_ptr = &k->data[8];
 
 
 
@@ -747,6 +766,7 @@ void netfunc(void* __dummy_arg__)
                 }
                 
                 Handle prochand = 0;
+
                 if(procid)
                 {
                 	if(svcOpenProcess(&prochand, procid) < 0)
@@ -776,6 +796,11 @@ void netfunc(void* __dummy_arg__)
                     svcCloseHandle(prochand);
                     prochand = 0;
                 }
+
+                // GpuTriggerDisplayTransfer code (broken, unfinished)
+                //int ret3 = GpuTriggerDisplayTransfer((u32*)screenbuf, (u32*)destination_ptr, scrw, 240, 0);
+                //if(ret3 < 0)
+                //	PatStay(0x0000FF);
                 
                 if(k->size)
                 {
