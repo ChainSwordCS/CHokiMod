@@ -161,7 +161,7 @@ class SocketBuffer
 public:
     typedef struct
     {
-        u32 packetid : 8;
+        u32 packet_type_byte : 8;
         u32 size : 24; // The size of a given packet *does* change.
         u8 data[0];
     } PacketStruct;
@@ -280,8 +280,8 @@ public:
         
         //printf("Packet error %i: %s\n", wip_packet->packetid, wip_packet->data + 1);
         
-        wip_packet->data[0] = wip_packet->packetid;
-        wip_packet->packetid = 1;
+        wip_packet->data[0] = wip_packet->packet_type_byte;
+        wip_packet->packet_type_byte = 1;
         wip_packet->size = len + 2;
         
         return wribuf();
@@ -417,7 +417,7 @@ void netfunc(void* __dummy_arg__)
     // why???
     do
     {
-        k->packetid = 2; //MODE
+        k->packet_type_byte = 2; //MODE
         k->size = 4 * 4;
         
         u32* kdata = (u32*)k->data;
@@ -464,16 +464,20 @@ void netfunc(void* __dummy_arg__)
 				}
 				else
 				{
-					printf("#%i 0x%X | %i\n", k->packetid, k->size, cy);
+					printf("#%i 0x%X | %i\n", k->packet_type_byte, k->size, cy);
 
 					//reread: // unused label IIRC. -C
-
+					int cfg_copy_data_size = 1;
 					// Is there any performance benefit to making this
 					// a switch-case instead of if-else statements?
 					// Genuine question. I could go either way to be honest. -C
-					switch(k->packetid)
+					switch(k->packet_type_byte)
 					{
 						case 0x00: //CONNECT
+							// For compatibility, just initialize ourselves anyway...
+							// I don't expect to actually ever receive this IIRC
+							cfgblk[0] = 1; // Manually enable ourselves.
+							break;
 						case 0x01: //ERROR
 							// I don't know if ChokiStream actually
 							// sends any of these. This might be redundant.
@@ -483,13 +487,35 @@ void netfunc(void* __dummy_arg__)
 							break;
 
 						case 0x7E: //CFGBLK_IN
-							memcpy(cfgblk + k->data[0], &k->data[4], min((u32)(0x100 - k->data[0]), (u32)(k->size - 4)));
+							//memcpy(cfgblk + k->data[0], &k->data[4], min((u32)(0x100 - k->data[0]), (u32)(k->size - 4)));
+							//
+							// Refactored this code. Should be less borked.
+							//
+							// The first byte *of the packet* is the packet-type
+							// Bytes 6-8 are the size of the data, in bytes. (24-bit integer)
+							// And everything after is perceived as data.
+							//
+							// The first byte of *data* indicates at what index we copy to.
+							// Skip three bytes for no reason... (TODO: Please redo this later)
+							// Copy <size> bytes
+							//
+							cfg_copy_data_size = (u32)(k->size) - 8; // This should probably work
+
+							// Error-checking for if we possibly underflow due to invalid data.
+							// Note that it's *possible* to receive 256 bytes and write them to config block
+							// But that much was never used in practice.
+							// TODO: When I reimplement this, simplify and remove that extra functionality.
+							if(cfg_copy_data_size > 200)
+								cfg_copy_data_size = 1;
+
+							memcpy(cfgblk + (k->data[0]), &k->data[4], cfg_copy_data_size);
+
 							break;
 
 						default:
-							printf("Invalid packet ID: %i\n", k->packetid);
-							delete soc;
-							soc = nullptr;
+							printf("Invalid packet ID: %i\n", k->packet_type_byte);
+							//delete soc;
+							//soc = nullptr;
 							break;
 					}
 
@@ -503,7 +529,7 @@ void netfunc(void* __dummy_arg__)
         	break;
         }
         
-        // If you received any data from the config block (from the PC client, like ChokiStream)
+        // If index 0 of config-block is non-zero! (Set by initialization sorta packet)
         // And this ImportDisplayCaptureInfo function doesn't error out...
         if(cfgblk[0] && GSPGPU_ImportDisplayCaptureInfo(&capin) >= 0)
         {
@@ -525,7 +551,7 @@ void netfunc(void* __dummy_arg__)
                 format[0] = capin.screencapture[0].format;
                 format[1] = capin.screencapture[1].format;
                 
-                k->packetid = 2; //MODE
+                k->packet_type_byte = 2; //MODE
                 k->size = 4 * 4;
                 
                 u32* kdata = (u32*)k->data;
@@ -536,7 +562,7 @@ void netfunc(void* __dummy_arg__)
                 kdata[3] = capin.screencapture[1].framebuf_widthbytesize;
                 soc->wribuf();
                 
-                k->packetid = 0xFF;
+                k->packet_type_byte = 0xFF;
                 k->size = sizeof(capin);
                 *(GSPGPU_CaptureInfo*)k->data = capin;
                 soc->wribuf();
@@ -660,7 +686,7 @@ void netfunc(void* __dummy_arg__)
                     img.origin_y = (scr * 400) + (stride[scr] * offs[scr]);
                     tga_write_to_FILE(k->data, &img, &imgsize);
                     
-                    k->packetid = 3; //DATA (Targa)
+                    k->packet_type_byte = 3; //DATA (Targa)
                     k->size = imgsize;
                 }
                 else
@@ -672,7 +698,7 @@ void netfunc(void* __dummy_arg__)
                     {
                     	k->size = imgsize + 8;
                     }
-                    k->packetid = 4; //DATA (JPEG)
+                    k->packet_type_byte = 4; //DATA (JPEG)
                 }
 
                 // Commented out before I got here. -C
