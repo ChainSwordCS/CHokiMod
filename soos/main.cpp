@@ -76,71 +76,40 @@ extern "C"
 }
 
 void initializeThingsWeNeed();
-void initializeGraphicsAtStart();
-void initializeGraphicsInLegacyMain();
+void initializeGraphics();
 
 static u32 gsp_gpu_handle;
 
+const int port = 6464;
+
 //I think this is over-commented -H
 
-int main2()
-{
-	initializeThingsWeNeed();
-
-	// Beginning of frame
-	while(aptMainLoop())
-	{
-		// If we *really* need this, then just access it once
-		// and keep it in RAM for us to use repeatedly.
-		// Note also that we may entirely *not* need this.
-
-	}
-	return 0;
-}
-
-// This is only run at the very beginning of main().
-// Returns nothing. If we can't boot, we have bigger problems
-// than needing an error code.
-// And I assume returning nothing is slightly faster.
 void initializeThingsWeNeed()
 {
-	mcuInit(); // Initialize MCU, so we can poke the Notification LED for debug output without a screen.
-	nsInit(); // Initialize NS Service. I suppose we probably need this.
-	aptInit(); // Initialize APT Service. We generally need this.
-	acInit(); // Initialize AC Service. For Wifi stuff.
+	mcuInit(); // Notif LED
+	nsInit();
+	aptInit();
+	acInit(); // Wifi
 
-	initializeGraphicsAtStart();
+	PatStay(0x0000FF); // Notif LED = red
 
-	PatStay(0x0000FF); // Set Notif LED color to red (debugging status update!)
+	initializeGraphics();
 
 	return;
 }
 
-// My graphics init code will definitely break.
-// This is my first rodeo, after all.
-// Sono wrote some graphics init code in gx.c,
-// which seems to go unused in this version of the repo.
-// Hell, I actually don't even know if we *need*
-// to initialize graphics outselves.
-// -C
-void initializeGraphicsAtStart()
-{
-	//gspInit();
-	//gfxInitDefault();
-	return;
-}
-void initializeGraphicsInLegacyMain()
+// Note that we don't check for the possible error that the
+// gsp process isn't running. It always is, from boot. -C
+void initializeGraphics()
 {
 	PatStay(0x00FF00);
-	Result ret1 = 0;
-	// Note that gspInit has changed since 2017, and will just crash for no reason.
-	// We get the handle (assuming the service is running which it near always is)
-	ret1 = srvGetServiceHandle(&gsp_gpu_handle, "gsp::Gpu");
+	Result ret1 = srvGetServiceHandle(&gsp_gpu_handle, "gsp::Gpu");
 	if(ret1)
 	{
 		PatStay(0x0000FF);
 	}
 
+	// I don't know if we need GPU rights.
 	if(GSPGPU_AcquireRight(0))
 	{
 		PatStay(0x0000FF);
@@ -166,7 +135,8 @@ int checkwifi()
     	return 0;
     }
 
-    if(ACU_GetStatus(&wifi) >= 0 && wifi == 3) // formerly ACU_GetWifiStatus
+    ACU_GetStatus(&wifi);
+    if(wifi == 3) // formerly ACU_GetWifiStatus
     {
     	haznet = 1;
     }
@@ -174,106 +144,110 @@ int checkwifi()
 }
 
 
-int pollsock(int sock, int wat, int timeout = 0)
+int pollSocket(int passed_socket_id, int passed_events, int timeout = 0)
 {
-    struct pollfd pd;
-    pd.fd = sock;
-    pd.events = wat;
+    struct pollfd pfds;
+    pfds.fd = passed_socket_id;
+    pfds.events = passed_events;
     
-    if(poll(&pd, 1, timeout) == 1)
-        return pd.revents & wat;
-    return 0;
+    if(poll(&pfds, 1, timeout) == 1)
+        return pfds.revents & passed_events;
+    else
+    	return 0;
 }
 
-class bufsoc
+class SocketBuffer
 {
 public:
-    
     typedef struct
     {
         u32 packetid : 8;
-        u32 size : 24;
+        u32 size : 24; // The size of a given packet *does* change.
         u8 data[0];
-    } packet;
+    } PacketStruct;
     
-    int sock;
-    u8* buf;
-    int bufsize;
-    int recvsize;
+    int socket_id;
+    u8* buffer_bytearray_aka_pointer;
+    int buffer_size; // The total buffer size doesn't change after boot.
+    //int recvsize;
     
-    bufsoc(int sock, int bufsize)
+    SocketBuffer(int passed_sock, int passed_bufsize)
     {
-        this->bufsize = bufsize;
-        buf = new u8[bufsize];
-        
-        recvsize = 0;
-        this->sock = sock;
+        buffer_size = passed_bufsize;
+        buffer_bytearray_aka_pointer = new u8[passed_bufsize];
+        //recvsize = 0;
+        socket_id = passed_sock;
     }
     
-    ~bufsoc() // Destructor
+    ~SocketBuffer() // Destructor
     {
-        if(!this) return; // If this instance of a "bufsoc" object is null, then don't try to delete it :)
-        close(sock);
-        delete[] buf;
+    	// If this SocketBuffer is already null,
+    	// don't attempt to delete it again.
+    	// (Could this be safely omitted> -C)
+        if(!this)
+        	return;
+        close(socket_id);
+        delete[] buffer_bytearray_aka_pointer;
     }
     
-    int avail()
+    int isAvailable()
     {
-        return pollsock(sock, POLLIN) == POLLIN;
+    	return pollSocket(socket_id, POLLIN) == POLLIN;
     }
     
     int readbuf(int flags = 0)
     {
-        u32 hdr = 0;
-        int ret = recv(sock, &hdr, 4, flags);
+        u32 header = 0;
+        u32 received_size = 0;
+        // Get header byte
+        int ret = recv(socket_id, &header, 4, flags);
         if(ret < 0) return -errno;
         if(ret < 4) return -1;
-        *(u32*)buf = hdr;
+        // Get size byte
+        ret = recv(socket_id, &received_size, 4, flags);
         
-        packet* p = pack();
+        // Copy the 4 header bytes to the start of the buffer. And the size
+        PacketStruct* packet_in_buffer = getPointerToBufferAsPacketPointer();
+        *(u32*)buffer_bytearray_aka_pointer = header;
+        packet_in_buffer->size = received_size;
+
+        // Previously had a bug here (:
+        //
+        // Size is not obtained from anything the incoming packet just said to us.
+        // Size was last set by 'passed_bufsize' in the SocketBuffer constructor.
+        // (Or last set by an instance of PacketStruct or SocketBuffer idk)
+        //
+        // So in practice: when we want to read a packet, the size is
+        // wrong and we usually end up reading past the data just sent to us.
+        // This could result in an error, or just wasted CPU and RAM time.
+
+        int num_reads_remaining = packet_in_buffer->size;
         
-        int mustwri = p->size;
-        int offs = 4;
-        while(mustwri)
+        int offs = 8;
+        while(num_reads_remaining)
         {
-            ret = recv(sock, buf + offs , mustwri, flags);
+            ret = recv(socket_id, buffer_bytearray_aka_pointer + offs , num_reads_remaining, flags);
             if(ret <= 0) return -errno;
-            mustwri -= ret;
+            num_reads_remaining -= ret;
             offs += ret;
         }
         
-        recvsize = offs;
-        return offs;
-    }
-    
-    int wribuf_old(int flags = 0)
-    {
-        int mustwri = pack()->size + 4;
-        int offs = 0;
-        int ret = 0;
-        while(mustwri)
-        {
-            ret = send(sock, buf + offs , mustwri, flags);
-            if(ret < 0) return -errno;
-            mustwri -= ret;
-            offs += ret;
-        }
-        
+        //recvsize = offs;
         return offs;
     }
     
     int wribuf(int flags = 0)
     {
-        int mustwri = pack()->size + 4;
+        int mustwri = getPointerToBufferAsPacketPointer()->size + 4;
         int offs = 0;
         int ret = 0;
         
         while(mustwri)
         {
             if(mustwri >> 12)
-                ret = send(sock, buf + offs , 0x1000, flags);
+                ret = send(socket_id, buffer_bytearray_aka_pointer + offs , 0x1000, flags);
             else
-                ret = send(sock, buf + offs , mustwri, flags);
+                ret = send(socket_id, buffer_bytearray_aka_pointer + offs , mustwri, flags);
             if(ret < 0) return -errno;
             mustwri -= ret;
             offs += ret;
@@ -282,20 +256,20 @@ public:
         return offs;
     }
     
-    packet* pack()
+    PacketStruct* getPointerToBufferAsPacketPointer()
     {
-        return (packet*)buf;
+        return (PacketStruct*)buffer_bytearray_aka_pointer;
     }
     
     int errformat(char* c, ...)
     {
-        packet* p = pack();
+        PacketStruct* wip_packet = getPointerToBufferAsPacketPointer();
         
         int len = 0;
         
         va_list args;
         va_start(args, c);
-        len = vsprintf((char*)p->data + 1, c, args);
+        len = vsprintf((char*)wip_packet->data + 1, c, args);
         va_end(args);
         
         if(len < 0)
@@ -304,11 +278,11 @@ public:
             return -1;
         }
         
-        //printf("Packet error %i: %s\n", p->packetid, p->data + 1);
+        //printf("Packet error %i: %s\n", wip_packet->packetid, wip_packet->data + 1);
         
-        p->data[0] = p->packetid;
-        p->packetid = 1;
-        p->size = len + 2;
+        wip_packet->data[0] = wip_packet->packetid;
+        wip_packet->packetid = 1;
+        wip_packet->size = len + 2;
         
         return wribuf();
     }
@@ -359,8 +333,6 @@ void CPPCrashHandler()
 
 extern "C" u32 __get_bytes_per_pixel(GSPGPU_FramebufferFormat format);
 
-const int port = 6464;
-
 static u32 kDown = 0;
 static u32 kHeld = 0;
 static u32 kUp = 0;
@@ -385,9 +357,9 @@ static int sock = 0;
 static struct sockaddr_in sai;
 static socklen_t sizeof_sai = sizeof(sai);
 
-static bufsoc* soc = nullptr;
+static SocketBuffer* soc = nullptr;
 
-static bufsoc::packet* k = nullptr;
+static SocketBuffer::PacketStruct* k = nullptr;
 
 static Thread netthread = 0;
 static vu32 threadrunning = 0;
@@ -419,7 +391,7 @@ void netfunc(void* __dummy_arg__)
     	//osSetSpeedupEnable(1);
     }
     
-    k = soc->pack(); //Just In Case (tm)
+    k = soc->getPointerToBufferAsPacketPointer(); //Just In Case (tm)
     
     PatStay(0x00FF00); // Notif LED = Green
     
@@ -463,7 +435,7 @@ void netfunc(void* __dummy_arg__)
     // or if it's intended behavior. -C
     while(threadrunning)
     {
-        if(soc->avail())
+        if(soc->isAvailable())
         {
         	// why
 			while(1)
@@ -845,10 +817,8 @@ ssize_t stderr_write(struct _reent* r, void* fd, const char* ptr, size_t len)
 static const devoptab_t devop_stdout = { "stdout", 0, nullptr, nullptr, stdout_write, nullptr, nullptr, nullptr };
 static const devoptab_t devop_stderr = { "stderr", 0, nullptr, nullptr, stderr_write, nullptr, nullptr, nullptr };
 
-int main1()
+int main()
 {
-
-	// I'm writing this function. It shouldn't break (TM) -C
 	initializeThingsWeNeed();
 
     soc = nullptr;
@@ -953,7 +923,7 @@ int main1()
     // This function isn't guaranteed to work by any means,
     // but I'm separating it and rewriting it
     // near the top of the file. -C
-    initializeGraphicsInLegacyMain();
+    //initializeGraphicsInLegacyMain();
 
 
     // Note: this function is part of gx.c in this repo.
@@ -1101,7 +1071,7 @@ int main1()
             {
                 if(checkwifi()) goto netreset;
             }
-            else if(pollsock(sock, POLLIN) == POLLIN)
+            else if(pollSocket(sock, POLLIN) == POLLIN)
             {
                 int cli = accept(sock, (struct sockaddr*)&sai, &sizeof_sai);
                 if(cli < 0)
@@ -1113,8 +1083,8 @@ int main1()
                 else
                 {
                     PatPulse(0x00FF00);
-                    soc = new bufsoc(cli, isold ? 0xC000 : 0x70000);
-                    k = soc->pack();
+                    soc = new SocketBuffer(cli, isold ? 0xC000 : 0x70000);
+                    k = soc->getPointerToBufferAsPacketPointer();
                     
                     if(isold)
                     {
@@ -1148,7 +1118,7 @@ int main1()
                     }
                 }
             }
-            else if(pollsock(sock, POLLERR) == POLLERR)
+            else if(pollSocket(sock, POLLERR) == POLLERR)
             {
                 printf("POLLERR (%i) %s", errno, strerror(errno));
                 goto netreset;
@@ -1180,7 +1150,7 @@ int main1()
     {
         threadrunning = 0;
         
-        volatile bufsoc** vsoc = (volatile bufsoc**)&soc;
+        volatile SocketBuffer** vsoc = (volatile SocketBuffer**)&soc;
         // Note from ChainSwordCS: I didn't write that comment. lol.
         // But I'd make a note of it and also ask why
         while(*vsoc) yield(); //pls don't optimize kthx
@@ -1222,13 +1192,4 @@ int main1()
     mcuExit(); // Probably don't change
     
     return 0;
-}
-
-// This is really stupid, but here's my shortcut for switching between
-// old and WIP-new main() functions that requires as little
-// effort as possible. -C
-int main()
-{
-	return main1(); // run old main() function
-	//return main2(); // run new main() function
 }
