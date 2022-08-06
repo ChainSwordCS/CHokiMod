@@ -109,14 +109,13 @@ void initializeGraphics()
 		PatStay(0x0000FF);
 	}
 
-	// I don't know if we need GPU rights.
-	if(GSPGPU_AcquireRight(0))
-	{
-		PatStay(0x0000FF);
-	}
+	// We shouldn't need GPU rights. -C
+	//if(GSPGPU_AcquireRight(0))
+	//{
+	//	PatStay(0x0000FF);
+	//}
 	return;
 }
-
 
 static int haznet = 0; // Is connected to wifi?
 int checkwifi()
@@ -161,8 +160,9 @@ class SocketBuffer
 public:
     typedef struct
     {
-        u32 packet_type_byte : 8;
-        u32 size : 24; // The size of a given packet *does* change.
+        u8 packet_type_byte;
+        u8 size; // The size of a given packet *does* change.
+        u16 unused_bytes_for_compatibility;
         u8 data[0];
     } PacketStruct;
     
@@ -223,10 +223,10 @@ public:
 
         int num_reads_remaining = packet_in_buffer->size;
         
-        int offs = 8;
+        int offs = 0;
         while(num_reads_remaining)
         {
-            ret = recv(socket_id, buffer_bytearray_aka_pointer + offs , num_reads_remaining, flags);
+            ret = recv(socket_id, packet_in_buffer->data , num_reads_remaining, flags);
             if(ret <= 0) return -errno;
             num_reads_remaining -= ret;
             offs += ret;
@@ -238,7 +238,7 @@ public:
     
     int wribuf(int flags = 0)
     {
-        int mustwri = getPointerToBufferAsPacketPointer()->size + 4;
+        int mustwri = getPointerToBufferAsPacketPointer()->size + 4; // TODO: Is this borked now?
         int offs = 0;
         int ret = 0;
         
@@ -337,7 +337,7 @@ static u32 kDown = 0;
 static u32 kHeld = 0;
 static u32 kUp = 0;
 
-static GSPGPU_CaptureInfo capin;
+static GSPGPU_CaptureInfo my_gpu_capture_info;
 
 static int isold = 1;
 
@@ -400,12 +400,11 @@ void netfunc(void* __dummy_arg__)
     u32 procid = 0;
     Handle dmahand = 0;
     
-	//u8 dmaconf[0x18];
-	DmaConfig dmaconf = {}; // zeroes itself out (:
-	dmaconf.channelId = -1; // auto-assign to a free channel (Arm11: 3-7, Arm9: 0-1)
-	
-    //memset(dmaconf, 0, sizeof(dmaconf));
-    //dmaconf[0] = -1; //don't care
+    // Set up DMA Config (Needed for memcpy stuff)
+	DmaConfig dma_config;
+	dmaConfigInitDefault(&dma_config);
+	dma_config.channelId = -1; // auto-assign to a free channel (Arm11: 3-7, Arm9: 0-1)
+	//TODO: Do we need to grab a DMA handle? Did I forget that? Because it looks to just be 0
 
 	// This was commented out before I got here. -C
     //dmaconf[2] = 4;
@@ -531,14 +530,16 @@ void netfunc(void* __dummy_arg__)
         
         // If index 0 of config-block is non-zero! (Set by initialization sorta packet)
         // And this ImportDisplayCaptureInfo function doesn't error out...
-        if(cfgblk[0] && GSPGPU_ImportDisplayCaptureInfo(&capin) >= 0)
+        if(cfgblk[0])
         {
+        	GSPGPU_ImportDisplayCaptureInfo(&my_gpu_capture_info); // Should be fine?
+
             //test for changed framebuffers
             if\
             (\
-                capin.screencapture[0].format != format[0]\
+                my_gpu_capture_info.screencapture[0].format != format[0]\
                 ||\
-                capin.screencapture[1].format != format[1]\
+                my_gpu_capture_info.screencapture[1].format != format[1]\
             )
             {
                 PatStay(0xFFFF00); // Notif LED = Teal (Green + Blue)
@@ -548,8 +549,8 @@ void netfunc(void* __dummy_arg__)
                 //fbuf[0] = (u8*)capin.screencapture[0].framebuf0_vaddr;
                 //fbuf[1] = (u8*)capin.screencapture[1].framebuf0_vaddr;
 
-                format[0] = capin.screencapture[0].format;
-                format[1] = capin.screencapture[1].format;
+                format[0] = my_gpu_capture_info.screencapture[0].format;
+                format[1] = my_gpu_capture_info.screencapture[1].format;
                 
                 k->packet_type_byte = 2; //MODE
                 k->size = 4 * 4;
@@ -557,18 +558,18 @@ void netfunc(void* __dummy_arg__)
                 u32* kdata = (u32*)k->data;
                 
                 kdata[0] = format[0];
-                kdata[1] = capin.screencapture[0].framebuf_widthbytesize;
+                kdata[1] = my_gpu_capture_info.screencapture[0].framebuf_widthbytesize;
                 kdata[2] = format[1];
-                kdata[3] = capin.screencapture[1].framebuf_widthbytesize;
+                kdata[3] = my_gpu_capture_info.screencapture[1].framebuf_widthbytesize;
                 soc->wribuf();
                 
                 k->packet_type_byte = 0xFF;
-                k->size = sizeof(capin);
-                *(GSPGPU_CaptureInfo*)k->data = capin;
+                k->size = sizeof(my_gpu_capture_info);
+                *(GSPGPU_CaptureInfo*)k->data = my_gpu_capture_info;
                 soc->wribuf();
                 
-                // Yeah. If the framebuffers have changed (places?)
-                // Then stop Direct Memory Access there.
+
+                // what
                 if(dmahand)
                 {
                     svcStopDma(dmahand);
@@ -580,11 +581,12 @@ void netfunc(void* __dummy_arg__)
                 
                 
                 //test for VRAM
+                if(1==0){
                 if\
                 (\
-                    (u32)capin.screencapture[0].framebuf0_vaddr >= 0x1F000000\
+                    (u32)my_gpu_capture_info.screencapture[0].framebuf0_vaddr >= 0x1F000000\
                     &&\
-                    (u32)capin.screencapture[0].framebuf0_vaddr <  0x1F600000\
+                    (u32)my_gpu_capture_info.screencapture[0].framebuf0_vaddr <  0x1F600000\
                 )
                 {
                     //nothing to do?
@@ -643,6 +645,7 @@ void netfunc(void* __dummy_arg__)
                     	format[0] = 0xF00FCACE; //invalidate
                     }
                 }
+                }
                 
                 PatStay(0x00FF00); // Notif LED = Green
             }
@@ -668,11 +671,15 @@ void netfunc(void* __dummy_arg__)
                     // Looks like I broke this, and I just fixed it again hopefully. -C
                     //
                     //if(!isold) svcFlushProcessDataCache(0xFFFF8001, (u8*)screenbuf, capin.screencapture[scr].framebuf_widthbytesize * 400);
-					if(!isold) svcFlushProcessDataCache(0xFFFF8001, (u32)&screenbuf, capin.screencapture[scr].framebuf_widthbytesize * 400);
+					if(!isold) svcFlushProcessDataCache(0xFFFF8001, (u32)&screenbuf, my_gpu_capture_info.screencapture[scr].framebuf_widthbytesize * 400);
                 }
                 
                 int imgsize = 0;
                 
+                u8* destination_ptr = &k->data[8];
+
+
+
                 // This is nice and all, but absolutely not.
                 // This has to be reorganized.
                 // I still like Targa as an option but y'know. An option.
@@ -692,11 +699,18 @@ void netfunc(void* __dummy_arg__)
                 else
                 {
                     *(u32*)&k->data[0] = (scr * 400) + (stride[scr] * offs[scr]);
-                    u8* dstptr = &k->data[8];
+
                     // Please make this not all one line. -C
-                    if(!tjCompress2(turbo_jpeg_instance_handle, (u8*)screenbuf, scrw, bsiz * scrw, stride[scr], format[scr] ? TJPF_RGB : TJPF_RGBX, &dstptr, (u32*)&imgsize, TJSAMP_420, cfgblk[3], TJFLAG_NOREALLOC | TJFLAG_FASTDCT))
+                    int ret3;
+
+                    // TJFLAG_NOREALLOC |
+                    //     tjCompress2(void *,        (u8*) const unsigned char *,  int,         int,         int,                                int,unsigned char * *, unsigned long int *,   int,       int, int)
+                    ret3 = tjCompress2(turbo_jpeg_instance_handle, (u8*)screenbuf, scrw, bsiz * scrw, stride[scr], format[scr] ? TJPF_RGB : TJPF_RGBX, &destination_ptr, (u32*)&imgsize, TJSAMP_420, cfgblk[3], TJFLAG_FASTDCT);
+
+
+                    if(!ret3)
                     {
-                    	k->size = imgsize + 8;
+                    	k->size = imgsize + 4;
                     }
                     k->packet_type_byte = 4; //DATA (JPEG)
                 }
@@ -717,10 +731,10 @@ void netfunc(void* __dummy_arg__)
                 
                 scr = !scr;
                 
-                siz = (capin.screencapture[scr].framebuf_widthbytesize * stride[scr]);
+                siz = (my_gpu_capture_info.screencapture[scr].framebuf_widthbytesize * stride[scr]);
                 
-                bsiz = capin.screencapture[scr].framebuf_widthbytesize / 240;
-                scrw = capin.screencapture[scr].framebuf_widthbytesize / bsiz;
+                bsiz = my_gpu_capture_info.screencapture[scr].framebuf_widthbytesize / 240;
+                scrw = my_gpu_capture_info.screencapture[scr].framebuf_widthbytesize / bsiz;
                 bits = 4 << bsiz;
                 
                 if((format[scr] & 7) == 2)
@@ -748,7 +762,7 @@ void netfunc(void* __dummy_arg__)
                     svcStartInterProcessDma\
                     (\
                         &dmahand, 0xFFFF8001, (u32)&screenbuf, prochand ? prochand : 0xFFFF8001,\
-                        (u32)(capin.screencapture[scr].framebuf0_vaddr + (siz * offs[scr])), siz, &dmaconf\
+                        (u32)(my_gpu_capture_info.screencapture[scr].framebuf0_vaddr + (siz * offs[scr])), siz, &dma_config\
                     )\
                     < 0 \
                 )
@@ -865,7 +879,7 @@ int main()
     }
     
     memset(&pat, 0, sizeof(pat));
-    memset(&capin, 0, sizeof(capin));
+    memset(&my_gpu_capture_info, 0, sizeof(my_gpu_capture_info));
     memset(cfgblk, 0, sizeof(cfgblk));
     
     //isold, or is_old, tells us if we are running on Original/"Old" 3DS (reduced clock speed and RAM...)
@@ -879,14 +893,14 @@ int main()
     {
         limit[0] = 8; // Multiply by this to get the full horizontal res of a screen.
         limit[1] = 8; // I assume we're capturing it in chunks. On Old-3DS this makes it look awful.
-        stride[0] = 50; // Width of the framebuffer we use(?)
+        stride[0] = 50; // Width of the framebuffer we use
         stride[1] = 40; // On Old-3DS, this is pitiful... But I get it
     }
     else
     {
         limit[0] = 1;
         limit[1] = 1;
-        stride[0] = 400; // Width of the framebuffer we use(?)
+        stride[0] = 400; // Width of the framebuffer we use
         stride[1] = 320;
     }
 
@@ -1007,7 +1021,7 @@ int main()
 
     // at the beginning of boot, does this consistently return 0?
     // (by which i mean, haznet = 0, etc.)
-    if(checkwifi()) // execution seems to fail around here
+    if(checkwifi())
     {
         cy = socket(PF_INET, SOCK_STREAM, IPPROTO_IP); // formerly, "PF-INET" was "AF-INET"
         if(cy <= 0)
@@ -1158,12 +1172,12 @@ int main()
             goto reloop;
         }
         
-        if((kHeld & (KEY_ZL | KEY_ZR)) == (KEY_ZL | KEY_ZR))
-        {
-            u32* ptr = (u32*)0x1F000000;
-            int o = 0x00600000 >> 2;
-            while(o--) *(ptr++) = rand();
-        }
+        //if((kHeld & (KEY_ZL | KEY_ZR)) == (KEY_ZL | KEY_ZR))
+        //{
+        //    u32* ptr = (u32*)0x1F000000;
+        //    int o = 0x00600000 >> 2;
+        //    while(o--) *(ptr++) = rand();
+        //}
         
         yield();
     }
