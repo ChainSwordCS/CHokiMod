@@ -87,8 +87,8 @@ const int port = 6464;
 void initializeThingsWeNeed()
 {
 	mcuInit(); // Notif LED
-	nsInit();
-	aptInit();
+	//nsInit();
+	//aptInit();
 	acInit(); // Wifi
 
 	PatStay(0x0000FF); // Notif LED = red
@@ -128,13 +128,13 @@ int GpuTriggerDisplayTransfer(u32* vram_address, u32* out_address, u16 width, u1
 		flags = input_flags;
 	else
 	{
-		flags = 0 + (0b1000000000000 * color_out);
+		flags = 0 + (color_out << 12);
 	}
 
-	u32 input_dimensions = (height * 0x100000000) + width;
+	u32 input_dimensions = (((u32)height) << 16) + width;
 	u32 output_dimensions = input_dimensions;
 
-	return GX_DisplayTransfer(vram_address,input_dimensions,out_address,output_dimensions,flags);
+	return GX_DisplayTransfer(vram_address,input_dimensions,out_address,output_dimensions,0);
 }
 
 static int haznet = 0; // Is connected to wifi?
@@ -377,7 +377,7 @@ static int sock = 0;
 static struct sockaddr_in sai;
 static socklen_t sizeof_sai = sizeof(sai);
 
-static SocketBuffer* soc = nullptr;
+static SocketBuffer* socket_pointer = nullptr;
 
 static SocketBuffer::PacketStruct* k = nullptr;
 
@@ -411,7 +411,7 @@ void netfunc(void* __dummy_arg__)
     	//osSetSpeedupEnable(1);
     }
     
-    k = soc->getPointerToBufferAsPacketPointer(); //Just In Case (tm)
+    k = socket_pointer->getPointerToBufferAsPacketPointer(); //Just In Case (tm)
     
     PatStay(0x00FF00); // Notif LED = Green
     
@@ -445,7 +445,7 @@ void netfunc(void* __dummy_arg__)
         kdata[1] = 240 * 3;
         kdata[2] = 1;
         kdata[3] = 240 * 3;
-        soc->wribuf();
+        socket_pointer->wribuf();
     }
     while(0);
     
@@ -454,15 +454,15 @@ void netfunc(void* __dummy_arg__)
     // or if it's intended behavior. -C
     while(threadrunning)
     {
-        if(soc->isAvailable())
+        if(socket_pointer->isAvailable())
         {
         	// why
 			while(1)
 			{
 				if((kHeld & (KEY_SELECT | KEY_START)) == (KEY_SELECT | KEY_START))
 				{
-					delete soc;
-					soc = nullptr;
+					delete socket_pointer;
+					socket_pointer = nullptr;
 					break;
 					// By the way, does this break out of
 					// both while loops or just one? -C
@@ -470,15 +470,15 @@ void netfunc(void* __dummy_arg__)
 
 				puts("reading");
 				// Just using variable cy as another "res". why
-				cy = soc->readbuf();
+				cy = socket_pointer->readbuf();
 				if(cy <= 0)
 				{
 					// I legitimately don't know where debug output is defined.
 					// It might as well not exist to be honest.
 					// But I'm also Dumb Lol, so I won't remove these (yet) -C
 					printf("Failed to recvbuf: (%i) %s\n", errno, strerror(errno));
-					delete soc;
-					soc = nullptr;
+					delete socket_pointer;
+					socket_pointer = nullptr;
 					break;
 				}
 				else
@@ -501,8 +501,8 @@ void netfunc(void* __dummy_arg__)
 							// I don't know if ChokiStream actually
 							// sends any of these. This might be redundant.
 							puts("forced dc");
-							delete soc;
-							soc = nullptr;
+							delete socket_pointer;
+							socket_pointer = nullptr;
 							break;
 
 						case 0x7E: //CFGBLK_IN
@@ -543,7 +543,7 @@ void netfunc(void* __dummy_arg__)
 			}
         }
         
-        if(!soc)
+        if(!socket_pointer)
         {
         	break;
         }
@@ -582,12 +582,12 @@ void netfunc(void* __dummy_arg__)
                 kdata[1] = my_gpu_capture_info.screencapture[0].framebuf_widthbytesize;
                 kdata[2] = format[1];
                 kdata[3] = my_gpu_capture_info.screencapture[1].framebuf_widthbytesize;
-                soc->wribuf();
+                socket_pointer->wribuf();
                 
                 k->packet_type_byte = 0xFF;
                 k->size = sizeof(my_gpu_capture_info);
                 *(GSPGPU_CaptureInfo*)k->data = my_gpu_capture_info;
-                soc->wribuf();
+                socket_pointer->wribuf();
                 
 
                 // what
@@ -602,7 +602,7 @@ void netfunc(void* __dummy_arg__)
                 
                 
                 //test for VRAM
-                if(1==0){ //TODO: Placeholder; debug, etc.
+                //if(1==0){ //TODO: Placeholder; debug, etc.
                 if\
                 (\
                     (u32)my_gpu_capture_info.screencapture[0].framebuf0_vaddr >= 0x1F000000\
@@ -666,7 +666,7 @@ void netfunc(void* __dummy_arg__)
                     	format[0] = 0xF00FCACE; //invalidate
                     }
                 }
-                }
+                //}
                 
                 PatStay(0x00FF00); // Notif LED = Green
             }
@@ -692,7 +692,7 @@ void netfunc(void* __dummy_arg__)
                     // Looks like I broke this, and I just fixed it again hopefully. -C
                     //
                     //if(!isold) svcFlushProcessDataCache(0xFFFF8001, (u8*)screenbuf, capin.screencapture[scr].framebuf_widthbytesize * 400);
-					if(!isold) svcFlushProcessDataCache(0xFFFF8001, (u32)&screenbuf, my_gpu_capture_info.screencapture[scr].framebuf_widthbytesize * 400);
+					//if(!isold) svcFlushProcessDataCache(0xFFFF8001, (u32)&screenbuf, my_gpu_capture_info.screencapture[scr].framebuf_widthbytesize * 400);
                 }
                 
                 int imgsize = 0;
@@ -706,27 +706,28 @@ void netfunc(void* __dummy_arg__)
                 // I still like Targa as an option but y'know. An option.
                 // And right now ChokiStream doesn't support "TGAHz" yet either. But it will.
                 // And I'll bugfix the Targa implementation in this code too. -C
-
-                if((format[scr] & 7) >> 1 || !cfgblk[3])
+                if(!cfgblk[3])
                 {
-                    init_tga_image(&img, (u8*)screenbuf, scrw, stride[scr], bits);
-                    img.image_type = TGA_IMAGE_TYPE_BGR_RLE;
-                    img.origin_y = (scr * 400) + (stride[scr] * offs[scr]);
-                    tga_write_to_FILE(k->data, &img, &imgsize);
-                    
-                    k->packet_type_byte = 3; //DATA (Targa)
-                    k->size = imgsize;
-                }
-                else
-                {
+                //if((format[scr] & 7) >> 1 || !cfgblk[3])
+                //{
+                //    init_tga_image(&img, (u8*)screenbuf, scrw, stride[scr], bits);
+                //    img.image_type = TGA_IMAGE_TYPE_BGR_RLE;
+                //    img.origin_y = (scr * 400) + (stride[scr] * offs[scr]);
+                //    tga_write_to_FILE(k->data, &img, &imgsize);
+                //
+                //    k->packet_type_byte = 3; //DATA (Targa)
+                //    k->size = imgsize;
+                //}
+                //else
+                //{
                     *(u32*)&k->data[0] = (scr * 400) + (stride[scr] * offs[scr]);
 
                     // Please make this not all one line. -C
                     int ret3;
 
-                    // TJFLAG_NOREALLOC |
+                    //  | TJFLAG_FASTDCT
                     //     tjCompress2(void *,        (u8*) const unsigned char *,  int,         int,         int,                                int,unsigned char * *, unsigned long int *,   int,       int, int)
-                    ret3 = tjCompress2(turbo_jpeg_instance_handle, (u8*)screenbuf, scrw, bsiz * scrw, stride[scr], format[scr] ? TJPF_RGB : TJPF_RGBX, &destination_ptr, (u32*)&imgsize, TJSAMP_420, cfgblk[3], TJFLAG_FASTDCT);
+                    ret3 = tjCompress2(turbo_jpeg_instance_handle, (u8*)screenbuf, scrw, bsiz * scrw, stride[scr], format[scr] ? TJPF_RGB : TJPF_RGBX, &destination_ptr, (u32*)&imgsize, TJSAMP_420, cfgblk[3], TJFLAG_NOREALLOC);
 
 
                     if(!ret3)
@@ -802,13 +803,16 @@ void netfunc(void* __dummy_arg__)
                 }
 
 
-                int ret3 = GpuTriggerDisplayTransfer((u32*)screenbuf, (u32*)destination_ptr, scrw, 240, 0);
-                if(ret3 < 0)
+                int ret4 = GpuTriggerDisplayTransfer((u32*)screenbuf, (u32*)destination_ptr, 240, 400, 0);
+                if(ret4 < 0)
                 	PatStay(0x0000FF);
                 
+                gspWaitForEvent(GSPGPU_EVENT_PPF, false);
+
+
                 if(k->size)
                 {
-                	soc->wribuf();
+                	socket_pointer->wribuf();
                 }
 
                 // Commented out before I got here. -C
@@ -841,10 +845,10 @@ void netfunc(void* __dummy_arg__)
     pat.ani = 0x0406;
     PatApply();
     
-    if(soc)
+    if(socket_pointer)
     {
-        delete soc;
-        soc = nullptr;
+        delete socket_pointer;
+        socket_pointer = nullptr;
     }
     
     if(dmahand)
@@ -890,33 +894,33 @@ int main()
 {
 	initializeThingsWeNeed();
 
-    soc = nullptr;
+
+    socket_pointer = nullptr;
     
     // This is dumb, we don't even do anything with the file.
-    file = fopen("/HzLog.log", "w");
-    if((s32)file <= 0)  //Maybe switch condition to (file == NULL)?? -H
-		file = nullptr;
-    else
-    {
+    //file = fopen("/HzLog.log", "w");
+    //if((s32)file <= 0)  //Maybe switch condition to (file == NULL)?? -H
+	//	file = nullptr;
+    //else
+    //{
         //devoptab_list is from sys/iosupport.h. Idk what it does. -H
-        devoptab_list[STD_OUT] = &devop_stdout;
-		devoptab_list[STD_ERR] = &devop_stderr;
+        //devoptab_list[STD_OUT] = &devop_stdout;
+		//devoptab_list[STD_ERR] = &devop_stderr;
 
         //Turn off buffering for stdout and stderr.
-		setvbuf(stdout, nullptr, _IONBF, 0);
-		setvbuf(stderr, nullptr, _IONBF, 0);
-    }
+		//setvbuf(stdout, nullptr, _IONBF, 0);
+		//setvbuf(stderr, nullptr, _IONBF, 0);
+    //}
     
     memset(&pat, 0, sizeof(pat));
     memset(&my_gpu_capture_info, 0, sizeof(my_gpu_capture_info));
     memset(cfgblk, 0, sizeof(cfgblk));
     
     //isold, or is_old, tells us if we are running on Original/"Old" 3DS (reduced clock speed and RAM...)
-    if(APPMEMTYPE <= 5) // weird way of doing this.
+    if(APPMEMTYPE <= 5)
     {
     	isold = 1;
     }
-    
     
     if(isold)
     {
@@ -932,21 +936,7 @@ int main()
         stride[0] = 400; // Width of the framebuffer we use
         stride[1] = 320;
     }
-
-    //acInit(); // Initialize AC service; 3DS's service for connecting to Wifi
     
-    // whyyyyyyyy? You don't even do this more than once.
-    // This code currently works. So I'm gonna modify it to be readable.
-//  do
-//  {
-//      u32 siz = isold ? 0x10000 : 0x200000; // If Old-3DS,
-//      ret = socInit((u32*)memalign(0x1000, siz), siz);
-//  }
-//  while(0);
-
-    // Web socket stuff...
-    // Size of a buffer
-    // Is page-aligned (0x1000)
     u32 soc_buffer_size;
 
     if(isold)
@@ -959,9 +949,6 @@ int main()
     }
 
     // Initialize the SOC service.
-    // Note: Programs stuck in userland don't have permission to
-    // change the buffer address after creation(?)
-    // This is probably a non-issue for us.
     ret = socInit((u32*)memalign(0x1000, soc_buffer_size), soc_buffer_size);
     
     if(ret < 0)
@@ -969,7 +956,7 @@ int main()
     	// The returned value of the socInit function
     	// is written at 0x001000F0 in RAM (for debug).
     	*(u32*)0x1000F0 = ret;
-    	//hangmacro();
+    	hangmacro();
     }
 
 
@@ -979,25 +966,9 @@ int main()
     {
     	// Write a debug error code in RAM (at 0x001000F0)
     	*(u32*)0x1000F0 = 0xDEADDEAD;
-    	//hangmacro();
+    	hangmacro();
     }
 
-    // As it is right now, this can't be called here.
-    // Crashes the system.
-    // We should maybe be able to do this...
-    // The old code was doing this too...
-    //
-    //gspInit(); // Initialize GSP GPU Service
-
-    // This function isn't guaranteed to work by any means,
-    // but I'm separating it and rewriting it
-    // near the top of the file. -C
-    //initializeGraphicsInLegacyMain();
-
-
-    // Note: this function is part of gx.c in this repo.
-    // But it's dummied out, apparently. Huh.
-    //gxInit();
 
     if(isold)
     {
@@ -1012,14 +983,12 @@ int main()
     {
         makerave();
         svcSleepThread(2e9);
-        //hangmacro();
+        hangmacro();
     }
     
     //why
     // Last night I was tired enough that I didn't even know where to begin with rewriting this.
     if((__excno = setjmp(__exc))) goto killswitch;
-
-    //PatStay(0x007F7F); // Debug. -ChainSwordCS
 
 #ifdef _3DS
     std::set_unexpected(CPPCrashHandler);
@@ -1045,8 +1014,6 @@ int main()
         }
     }
     
-
-    //PatStay(0x007F7F); // Debug. -ChainSwordCS
 
     // at the beginning of boot, does this consistently return 0?
     // (by which i mean, haznet = 0, etc.)
@@ -1134,7 +1101,7 @@ int main()
 
         if(kHeld == (KEY_SELECT | KEY_START)) break;
         
-        if(!soc)
+        if(!socket_pointer)
         {
             if(!haznet)
             {
@@ -1152,8 +1119,8 @@ int main()
                 else
                 {
                     PatPulse(0x00FF00);
-                    soc = new SocketBuffer(cli, isold ? 0xC000 : 0x70000);
-                    k = soc->getPointerToBufferAsPacketPointer();
+                    socket_pointer = new SocketBuffer(cli, isold ? 0xC000 : 0x70000);
+                    k = socket_pointer->getPointerToBufferAsPacketPointer();
                     
                     if(isold)
                     {
@@ -1181,8 +1148,8 @@ int main()
                     }
                     else
                     {
-                        delete soc;
-                        soc = nullptr;
+                        delete socket_pointer;
+                        socket_pointer = nullptr;
                         hangmacro();
                     }
                 }
@@ -1219,13 +1186,13 @@ int main()
     {
         threadrunning = 0;
         
-        volatile SocketBuffer** vsoc = (volatile SocketBuffer**)&soc;
+        volatile SocketBuffer** vsoc = (volatile SocketBuffer**)&socket_pointer;
         // Note from ChainSwordCS: I didn't write that comment. lol.
         // But I'd make a note of it and also ask why
         while(*vsoc) yield(); //pls don't optimize kthx
     }
     
-    if(soc) delete soc;
+    if(socket_pointer) delete socket_pointer;
     else close(sock);
     
     puts("Shutting down sockets...");
@@ -1256,7 +1223,7 @@ int main()
     // For when we're about to stop execution.
     PatStay(0);
     
-    nsExit(); // Don't change
+    //nsExit();
     
     mcuExit(); // Probably don't change
     
