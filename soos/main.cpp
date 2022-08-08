@@ -193,7 +193,7 @@ void allocateRamAndShareWithGpu()
 	// Probably needs to be in the APPLICATION Memory Region
 	// Because the GPU doesn't have RW access to a lot of the
 	// SYSTEM region and has zero access to the BASE region.
-	MemOp flags = (MemOp)(MEMOP_REGION_APP|MEMOP_ALLOC_LINEAR|MEMOP_ALLOC);
+	MemOp flags = (MemOp)(MEMOP_REGION_APP|MEMOP_ALLOC_LINEAR); // Note: I don't know if 'MEMOP_ALLOC' is also required or not. I wonder if one may accidentally override the other.
 	//svcControlMemory(&mem_shared_address,mem_request_address,0,memblock_size,flags,p1);
 
 	//TODO: When reimplementing graceful shutdown, close the handle to effectively free the memory.
