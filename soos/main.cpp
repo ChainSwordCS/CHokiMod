@@ -1,5 +1,5 @@
 #include <3ds.h>
-//#include <3ds/services/hid.h> // Maybe not necessary. This may not help at all.
+//#include <3ds/services/hid.h> // Not necessary. Might be good for documenting, but that's all.
 /*
     HorizonM - utility background process for the Horizon operating system
     Copyright (C) 2017 MarcusD (https://github.com/MarcuzD)
@@ -41,6 +41,7 @@ extern "C"
 //#include "service/screen.h"
 #include "service/mcu.h"
 #include "misc/pattern.h"
+//#include "service/gx.h"
 
 #include "tga/targa.h"
 #include "turbojpeg.h"
@@ -69,7 +70,7 @@ extern "C"
         hidScanInput();\
         if(hidKeysHeld() == (KEY_SELECT | KEY_START))\
         {\
-            goto killswitch;\
+        	goto killswitch;\
         }\
         yield();\
     }\
@@ -77,8 +78,15 @@ extern "C"
 
 void initializeThingsWeNeed();
 void initializeGraphics();
+int gpuTriggerDisplayTransfer(u32*,u32*,u16,u16,u32); // Unfinished, likely broken.
+void allocateRamAndShareWithGpu(); // Unfinished, likely broken.
 
 static u32 gsp_gpu_handle;
+static Handle mem_shared_handle;
+static u32 mem_shared_address;
+// = 0 if New-3DS (128MB more RAM, 2 more CPU cores, higher CPU clock speed, CPU L2-Cache)
+// = 1 if Old-3DS (IIRC... -C)
+static u32 is_old_3ds;
 
 const int port = 6464;
 
@@ -86,14 +94,19 @@ const int port = 6464;
 
 void initializeThingsWeNeed()
 {
-	mcuInit(); // Notif LED
+	// These top two, we maybe shouldn't need. But if they are enabled,
+	// they sometimes cause crashes. -C
 	//nsInit();
 	//aptInit();
+
+	mcuInit(); // Notif LED, mainly
 	acInit(); // Wifi
 
-	PatStay(0x0000FF); // Notif LED = red
+
+	PatStay(0x00FF00); // Notif LED = green
 
 	initializeGraphics();
+	//allocateRamAndShareWithGpu(); // No.
 
 	return;
 }
@@ -102,23 +115,18 @@ void initializeThingsWeNeed()
 // gsp process isn't running. It always is, from boot. -C
 void initializeGraphics()
 {
-	PatStay(0x00FF00);
 	Result ret1 = srvGetServiceHandle(&gsp_gpu_handle, "gsp::Gpu");
-	if(ret1)
+	if(ret1) // Function returns 0 if no error occured.
 	{
-		PatStay(0x0000FF);
+		PatStay(0x0000FF); // Notif LED = red
 	}
-
-	// We shouldn't need GPU rights. -C
-	//if(GSPGPU_AcquireRight(0))
-	//{
-	//	PatStay(0x0000FF);
-	//}
+	// Note to others: We probably shouldn't need GPU rights at all for what we're doing. -C
 	return;
 }
 
+// Returns 0 if no error (iirc)
 // For flags, pass 0 to fall back to default
-int GpuTriggerDisplayTransfer(u32* vram_address, u32* out_address, u16 width, u16 height, u32 input_flags)
+int gpuTriggerDisplayTransfer(u32* vram_address, u32* out_address, u16 width, u16 height, u32 input_flags)
 {
 
 	u32 color_out = 3; // RGB5_A1
@@ -134,7 +142,96 @@ int GpuTriggerDisplayTransfer(u32* vram_address, u32* out_address, u16 width, u1
 	u32 input_dimensions = (((u32)height) << 16) + width;
 	u32 output_dimensions = input_dimensions;
 
-	return GX_DisplayTransfer(vram_address,input_dimensions,out_address,output_dimensions,0);
+	// Setting flags to all 0 is worth considering...
+	// I really doubt THAT'S the one thing that makes
+	// this whole function broken though. -C (2022-08-10)
+	return GX_DisplayTransfer(vram_address,input_dimensions,out_address,output_dimensions,flags);
+}
+
+// This function is relatively unsafe, with little error handling.
+// Since we just run it once at the beginning, that won't be an issue.
+// If we fail here of all places, we either crash or shutdown the process.
+// There are no consequences for crashing though (here, anyway). -C
+void allocateRamAndShareWithGpu()
+{
+	// Also note this function may be full of logic errors and typos. Sorry. -C
+
+	// Maybe don't do this?
+	mem_shared_address = (u32)mappableAlloc(0x1000);
+	u32 mem_request_address = mem_shared_address;
+
+	u32 memblock_size; // Size of memory block that we request (in bytes)
+
+	// Size is slightly hard to determine...
+	// If copied directly from GPU, each pixel
+	// is 2 bytes (with my settings.)
+	//
+	// Currently, my code asks for just one frame / capture each time.
+	// So the size of this buffer will account for that.
+	//
+	// Also, 32 bytes extra just in case. (TODO: Remove later once verified working)
+	//
+	if(is_old_3ds)
+	{
+		memblock_size = (50 * 240) * 4 + 64;
+	}
+	else
+	{
+		memblock_size = (400 * 240) * 4 + 64;
+	}
+
+	// the socket buffer will be located right after in memory
+	// Old-3DS offset = 50*240*2+32
+	// New-3DS offset = 400*240*2+32
+
+	// Round up to nearest multiple of 0x1000 (never round down)
+	memblock_size = (memblock_size+0x999) & 0b11111111111111111111111111111000; // uses bitwise-AND operator
+
+	MemPerm p1 = MEMPERM_READWRITE; // This process's permissions in the memory block. (my / our permissions)
+	MemPerm p2 = MEMPERM_READWRITE; // Other processes' permissions in the memory block.
+
+	// Probably needs to be in the APPLICATION Memory Region
+	// Because the GPU doesn't have RW access to a lot of the
+	// SYSTEM region and has zero access to the BASE region.
+	MemOp flags = (MemOp)(MEMOP_REGION_APP|MEMOP_ALLOC_LINEAR|MEMOP_ALLOC);
+	//svcControlMemory(&mem_shared_address,mem_request_address,0,memblock_size,flags,p1);
+
+	//TODO: When reimplementing graceful shutdown, close the handle to effectively free the memory.
+	svcCreateMemoryBlock(&mem_shared_handle,mem_shared_address,memblock_size,p1,p2);
+	svcControlMemory(&mem_shared_address,mem_request_address,0,memblock_size,flags,p1);
+
+	// I think I got confused, I think this call isn't necessary.
+	//svcMapMemoryBlock(mem_shared_handle,mem_shared_address,p1,p2);
+
+	// Dummied out for now.
+	// I think this code is moving the GPU Command Buffer itself to
+	// the start of this shared memory block. I don't actually
+	// know if or why we need to do that. -ChainSwordCS
+	//
+	// This code effectively ported from Sono's code.
+	//
+	//u8 gsp_thread_id;
+	//Handle gsp_cmd_event_handle;
+	//svcCreateEvent(&gsp_cmd_event_handle, RESET_ONESHOT);
+	//GSPGPU_RegisterInterruptRelayQueue(gsp_cmd_event_handle,0x1,&gpu_shared_mem_handle,&gsp_thread_id);
+
+	// Obsoleted this code by rewriting mem allocation
+	    //
+	    //if(is_old_3ds)
+	    //{
+	    //    screenbuf = (u32*)memalign(8, 50 * 240 * 4); // On Old-3DS
+	    //}
+	    //else
+	    //{
+	    //    screenbuf = (u32*)memalign(8, 400 * 240 * 4); // On New-3DS
+	    //}
+
+
+
+	if(!mem_shared_address) // If we ended up failing, maybe hang instead idk
+		hangmacro();
+
+	return;
 }
 
 static int haznet = 0; // Is connected to wifi?
@@ -187,16 +284,20 @@ public:
     } PacketStruct;
     
     int socket_id;
-    u8* buffer_bytearray_aka_pointer;
+    u8* buffer_bytearray_aka_pointer; // Maybe remove because it may cause regressions. -C (2022-08-10)
     int buffer_size; // The total buffer size doesn't change after boot.
     //int recvsize;
     
-    SocketBuffer(int passed_sock, int passed_bufsize)
+    // Old Version:
+    // SocketBuffer(int passed_sock, int passed_bufsize)
+    // Version from Test-Branch-1 (2022-08-07):
+    //SocketBuffer(u32 passed_sock, u32 passed_buffer_address, u32 passed_bufsize = 0)
+    SocketBuffer(int passed_sock, int passed_bufsize, u32 passed_buffer_address = 0)
     {
         buffer_size = passed_bufsize;
-        buffer_bytearray_aka_pointer = new u8[passed_bufsize];
-        //recvsize = 0;
         socket_id = passed_sock;
+        // Maybe remove because of regressions. -C (2022-08-10)
+        buffer_bytearray_aka_pointer = (u8*)passed_buffer_address; // Convert the u32 address into a usable pointer
     }
     
     ~SocketBuffer() // Destructor
@@ -359,8 +460,6 @@ static u32 kUp = 0;
 
 static GSPGPU_CaptureInfo my_gpu_capture_info;
 
-static int isold = 1;
-
 static Result ret = 0;
 //static int cx = 0;
 static int cy = 0;
@@ -377,7 +476,7 @@ static int sock = 0;
 static struct sockaddr_in sai;
 static socklen_t sizeof_sai = sizeof(sai);
 
-static SocketBuffer* socket_pointer = nullptr;
+static SocketBuffer* socketbuffer_object_pointer = nullptr;
 
 static SocketBuffer::PacketStruct* k = nullptr;
 
@@ -385,7 +484,8 @@ static Thread netthread = 0;
 static vu32 threadrunning = 0;
 
 static void* screenbuf = nullptr;
-static u32 screenbuf_address;
+//static void* screenbuf = (void*)mem_shared_address; // This line wouldn't have worked correctly anyway.
+static u32 screenbuf_address; // Unused
 
 static tga_image img;
 static tjhandle turbo_jpeg_instance_handle = nullptr;
@@ -400,7 +500,7 @@ void netfunc(void* __dummy_arg__)
     
     int scr = 0;
     
-    if(isold)
+    if(is_old_3ds)
     {
     	// screenbuf = (u32*)k->data;
     }
@@ -411,7 +511,7 @@ void netfunc(void* __dummy_arg__)
     	//osSetSpeedupEnable(1);
     }
     
-    k = socket_pointer->getPointerToBufferAsPacketPointer(); //Just In Case (tm)
+    k = socketbuffer_object_pointer->getPointerToBufferAsPacketPointer(); //Just In Case (tm)
     
     PatStay(0x00FF00); // Notif LED = Green
     
@@ -445,24 +545,37 @@ void netfunc(void* __dummy_arg__)
         kdata[1] = 240 * 3;
         kdata[2] = 1;
         kdata[3] = 240 * 3;
-        socket_pointer->wribuf();
+        socketbuffer_object_pointer->wribuf();
     }
     while(0);
     
     // This might be malfunctional and might be an infinite loop.
     // Even if it were, I don't know if that's actually *bad*
     // or if it's intended behavior. -C
+    //
+    // We have a thread opened.
+    // It'll loop through this code indefinitely,
+    // unless it hits a 'break' command,
+    // or if the main thread says threadrunning = 0
+    //
+    // Actually, I may have misread this again. Not 100% sure. -C (2022-08-07)
+    //
+    // TODO: Consider changing this to or adding
+    // AptMainLoop() (or whatever it was called).
+    // However, that very well may break things.
+    // It might have caused things to break when I
+    // added it to the main() function. -C (2022-08-10)
     while(threadrunning)
     {
-        if(socket_pointer->isAvailable())
+        if(socketbuffer_object_pointer->isAvailable())
         {
         	// why
 			while(1)
 			{
 				if((kHeld & (KEY_SELECT | KEY_START)) == (KEY_SELECT | KEY_START))
 				{
-					delete socket_pointer;
-					socket_pointer = nullptr;
+					delete socketbuffer_object_pointer;
+					socketbuffer_object_pointer = nullptr;
 					break;
 					// By the way, does this break out of
 					// both while loops or just one? -C
@@ -470,15 +583,15 @@ void netfunc(void* __dummy_arg__)
 
 				puts("reading");
 				// Just using variable cy as another "res". why
-				cy = socket_pointer->readbuf();
+				cy = socketbuffer_object_pointer->readbuf();
 				if(cy <= 0)
 				{
 					// I legitimately don't know where debug output is defined.
 					// It might as well not exist to be honest.
 					// But I'm also Dumb Lol, so I won't remove these (yet) -C
 					printf("Failed to recvbuf: (%i) %s\n", errno, strerror(errno));
-					delete socket_pointer;
-					socket_pointer = nullptr;
+					delete socketbuffer_object_pointer;
+					socketbuffer_object_pointer = nullptr;
 					break;
 				}
 				else
@@ -501,8 +614,8 @@ void netfunc(void* __dummy_arg__)
 							// I don't know if ChokiStream actually
 							// sends any of these. This might be redundant.
 							puts("forced dc");
-							delete socket_pointer;
-							socket_pointer = nullptr;
+							delete socketbuffer_object_pointer;
+							socketbuffer_object_pointer = nullptr;
 							break;
 
 						case 0x7E: //CFGBLK_IN
@@ -543,7 +656,7 @@ void netfunc(void* __dummy_arg__)
 			}
         }
         
-        if(!socket_pointer)
+        if(!socketbuffer_object_pointer)
         {
         	break;
         }
@@ -582,12 +695,12 @@ void netfunc(void* __dummy_arg__)
                 kdata[1] = my_gpu_capture_info.screencapture[0].framebuf_widthbytesize;
                 kdata[2] = format[1];
                 kdata[3] = my_gpu_capture_info.screencapture[1].framebuf_widthbytesize;
-                socket_pointer->wribuf();
+                socketbuffer_object_pointer->wribuf();
                 
                 k->packet_type_byte = 0xFF;
                 k->size = sizeof(my_gpu_capture_info);
                 *(GSPGPU_CaptureInfo*)k->data = my_gpu_capture_info;
-                socket_pointer->wribuf();
+                socketbuffer_object_pointer->wribuf();
                 
 
                 // what
@@ -689,8 +802,8 @@ void netfunc(void* __dummy_arg__)
 
                     // Looks like I broke this, and I just fixed it again hopefully. -C
                     //
-                    //if(!isold) svcFlushProcessDataCache(0xFFFF8001, (u8*)screenbuf, capin.screencapture[scr].framebuf_widthbytesize * 400);
-					if(!isold) svcFlushProcessDataCache(0xFFFF8001, (u32)&screenbuf, my_gpu_capture_info.screencapture[scr].framebuf_widthbytesize * 400);
+                    //if(!is_old_3ds) svcFlushProcessDataCache(0xFFFF8001, (u8*)screenbuf, capin.screencapture[scr].framebuf_widthbytesize * 400);
+					if(!is_old_3ds) svcFlushProcessDataCache(0xFFFF8001, (u32)&screenbuf, my_gpu_capture_info.screencapture[scr].framebuf_widthbytesize * 400);
                 }
                 
                 int imgsize = 0;
@@ -776,7 +889,6 @@ void netfunc(void* __dummy_arg__)
                 }
                 
 
-                // this is written so badly i wanna cry -C
                 if\
                 (\
                     svcStartInterProcessDma\
@@ -797,8 +909,12 @@ void netfunc(void* __dummy_arg__)
                     prochand = 0;
                 }
 
+
                 // GpuTriggerDisplayTransfer code (broken, unfinished)
-                //int ret4 = GpuTriggerDisplayTransfer((u32*)screenbuf, (u32*)destination_ptr, 240, 400, 0);
+                //TODO: Set height and width correctly again when this works.
+                // (If this ever works, lol. -C, 2022-08-10)
+                //
+                //int ret4 = gpuTriggerDisplayTransfer((u32*)screenbuf, (u32*)destination_ptr, 100, 100, 0);
                 //if(ret4 < 0)
                 //	PatStay(0x0000FF);
                 //gspWaitForEvent(GSPGPU_EVENT_PPF, false);
@@ -806,7 +922,7 @@ void netfunc(void* __dummy_arg__)
 
                 if(k->size)
                 {
-                	socket_pointer->wribuf();
+                	socketbuffer_object_pointer->wribuf();
                 }
 
                 // Commented out before I got here. -C
@@ -821,7 +937,7 @@ void netfunc(void* __dummy_arg__)
                 */
                 
                 // Free up this thread to do other things? (On Old-3DS)
-                if(isold)
+                if(is_old_3ds)
                 {
                 	svcSleepThread(5e6);
                 }
@@ -839,10 +955,10 @@ void netfunc(void* __dummy_arg__)
     pat.ani = 0x0406;
     PatApply();
     
-    if(socket_pointer)
+    if(socketbuffer_object_pointer)
     {
-        delete socket_pointer;
-        socket_pointer = nullptr;
+        delete socketbuffer_object_pointer;
+        socketbuffer_object_pointer = nullptr;
     }
     
     if(dmahand)
@@ -886,10 +1002,15 @@ static const devoptab_t devop_stderr = { "stderr", 0, nullptr, nullptr, stderr_w
 
 int main()
 {
+	//is_old_3ds, or is_old, tells us if we are running on Original/"Old" 3DS (reduced clock speed and RAM...)
+	if(APPMEMTYPE <= 5) // Perhaps a weird way of checking this, but it does work.
+	{
+	    is_old_3ds = 1;
+	}
+
 	initializeThingsWeNeed();
 
-
-    socket_pointer = nullptr;
+    socketbuffer_object_pointer = nullptr;
     
     file = fopen("/HzLog.log", "w");
     if((s32)file <= 0)  //Maybe switch condition to (file == NULL)?? -H
@@ -909,14 +1030,7 @@ int main()
     memset(&my_gpu_capture_info, 0, sizeof(my_gpu_capture_info));
     memset(cfgblk, 0, sizeof(cfgblk));
     
-    //isold, or is_old, tells us if we are running on Original/"Old" 3DS (reduced clock speed and RAM...)
-    if(APPMEMTYPE <= 5) // Perhaps a weird way of checking this, but it does work.
-    {
-    	isold = 1;
-    }
-    
-
-    if(isold)
+    if(is_old_3ds)
     {
         limit[0] = 8; // Multiply by this to get the full horizontal res of a screen.
         limit[1] = 8; // I assume we're capturing it in chunks. On Old-3DS this makes it look awful.
@@ -935,7 +1049,7 @@ int main()
     // Web socket stuff. Size of a buffer; is page-aligned (0x1000)
     u32 soc_buffer_size;
 
-    if(isold)
+    if(is_old_3ds)
     {
     	soc_buffer_size = 0x10000; // If Old-3DS
     }
@@ -952,7 +1066,7 @@ int main()
     if(ret < 0)
     {
     	// The returned value of the socInit function
-    	// is written at 0x001000F0 in RAM (for debug).
+    	// is written at 0x001000F0 in RAM (for debug) (...?)
     	*(u32*)0x1000F0 = ret;
     	hangmacro();
     }
@@ -962,13 +1076,16 @@ int main()
 
     if(!turbo_jpeg_instance_handle) // if tjInitCompress() returned null, an error occurred.
     {
-    	// Write a debug error code in RAM (at 0x001000F0)
+    	// Write a debug error code in RAM (at 0x001000F0) (...?)
     	*(u32*)0x1000F0 = 0xDEADDEAD;
     	hangmacro();
     }
 
 
-    if(isold)
+    // Hoping to obsolete the next two 'if' statements
+    // When re-re-rewriting memory allocation... lol. -C (2022-08-10)
+    //
+    if(is_old_3ds)
     {
         screenbuf = (u32*)memalign(8, 50 * 240 * 4); // On Old-3DS
     }
@@ -976,7 +1093,7 @@ int main()
     {
         screenbuf = (u32*)memalign(8, 400 * 240 * 4); // On New-3DS
     }
-    
+
     if(!screenbuf) // If memalign returns null or 0
     {
         makerave();
@@ -1054,7 +1171,7 @@ int main()
 	// that may be causing this to crash... Not sure though.
 	// Also not sure why any of these errors couldn't be handled gracefully
 	// but thanks nintendo
-    if(!isold)
+    if(!is_old_3ds)
     {
     	//osSetSpeedupEnable(1);
     }
@@ -1099,7 +1216,7 @@ int main()
 
         if(kHeld == (KEY_SELECT | KEY_START)) break;
         
-        if(!socket_pointer)
+        if(!socketbuffer_object_pointer)
         {
             if(!haznet)
             {
@@ -1117,10 +1234,27 @@ int main()
                 else
                 {
                     PatPulse(0x00FF00);
-                    socket_pointer = new SocketBuffer(cli, isold ? 0xC000 : 0x70000);
-                    k = socket_pointer->getPointerToBufferAsPacketPointer();
+
+                    //TODO: Uhh, make sure this area of code isn't completely broken... -C (2022-08-10)
+                    //
+                    //TODO: Change these to other variables or constants so the formulas automatically sync up.
+                    int memoffset = 0;
+                    if(is_old_3ds)
+                    	memoffset=50*240*2+32;
+                    else
+                    	memoffset=400*240*2+32;
+                    // Note: I don't know if me rewriting SocketBuffer ends up breaking this.
+                    // Because I changed the number of arguments and possibly their order.
+                    // I forget, sorry. -C (2022-08-10)
+                    //
+                    // Old:
+                    // socketbuffer_object_pointer = new SocketBuffer(cli, is_old_3ds ? 0xC000 : 0x70000);
+                    // Test-Branch-1 (2022-08-07):
+                    // socketbuffer_object_pointer = new SocketBuffer(cli, mem_shared_address+memoffset, memoffset); // third argument passed used to be "is_old_3ds ? 0xC000 : 0x70000
+                    socketbuffer_object_pointer = new SocketBuffer(cli, is_old_3ds ? 0xC000 : 0x70000);
+                    k = socketbuffer_object_pointer->getPointerToBufferAsPacketPointer();
                     
-                    if(isold)
+                    if(is_old_3ds)
                     {
                         netthread = threadCreate(netfunc, nullptr, 0x2000, 0x21, 1, true);
                     }
@@ -1146,8 +1280,8 @@ int main()
                     }
                     else
                     {
-                        delete socket_pointer;
-                        socket_pointer = nullptr;
+                        delete socketbuffer_object_pointer;
+                        socketbuffer_object_pointer = nullptr;
                         hangmacro();
                     }
                 }
@@ -1184,13 +1318,13 @@ int main()
     {
         threadrunning = 0;
         
-        volatile SocketBuffer** vsoc = (volatile SocketBuffer**)&socket_pointer;
+        volatile SocketBuffer** vsoc = (volatile SocketBuffer**)&socketbuffer_object_pointer;
         // Note from ChainSwordCS: I didn't write that comment. lol.
         // But I'd make a note of it and also ask why
         while(*vsoc) yield(); //pls don't optimize kthx
     }
     
-    if(socket_pointer) delete socket_pointer;
+    if(socketbuffer_object_pointer) delete socketbuffer_object_pointer;
     else close(sock);
     
     puts("Shutting down sockets...");
