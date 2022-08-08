@@ -79,7 +79,10 @@ extern "C"
 void initializeThingsWeNeed();
 void initializeGraphics();
 int gpuTriggerDisplayTransfer(u32*,u32*,u16,u16,u32); // Unfinished, likely broken.
-void allocateRamAndShareWithGpu(); // Unfinished, likely broken.
+u32 memFindAddressWithin(u32,u32,u32); // Unfinished. May be useful as reference.
+void allocateRamAndShareWithGpu(); // Unfinished, likely broken. May be useful as reference.
+u32 bluffMemoryAllocation(u32); // Unfinished, likely broken. May be useful as reference.
+u32 stealAndWasteMemoryLol(); // Unfinished, likely broken. Potentially useful as reference.
 
 static u32 gsp_gpu_handle;
 static Handle mem_shared_handle;
@@ -100,10 +103,8 @@ void initializeThingsWeNeed()
 	//aptInit();
 
 	mcuInit(); // Notif LED, mainly
-	acInit(); // Wifi
-
-
 	PatStay(0x00FF00); // Notif LED = green
+	acInit(); // Wifi
 
 	initializeGraphics();
 	//allocateRamAndShareWithGpu(); // No.
@@ -148,6 +149,31 @@ int gpuTriggerDisplayTransfer(u32* vram_address, u32* out_address, u16 width, u1
 	return GX_DisplayTransfer(vram_address,input_dimensions,out_address,output_dimensions,flags);
 }
 
+// Copied from libctru "mappable.c"
+u32 memFindAddressWithin(u32 start, u32 end, u32 size)
+{
+	MemInfo info;
+	PageInfo pgInfo;
+
+	u32 addr = start;
+	while (addr >= start && (addr + size) < end && (addr + size) >= addr)
+	{
+		if (R_FAILED(svcQueryMemory(&info, &pgInfo, addr)))
+			return 0;
+
+		if (info.state == MEMSTATE_FREE)
+		{
+			u32 sz = info.size - (addr - info.base_addr); // a free block might cover all the memory, etc.
+			if (sz >= size)
+				return addr;
+		}
+
+		addr = info.base_addr + info.size;
+	}
+
+		return 0;
+}
+
 // This function is relatively unsafe, with little error handling.
 // Since we just run it once at the beginning, that won't be an issue.
 // If we fail here of all places, we either crash or shutdown the process.
@@ -156,9 +182,9 @@ void allocateRamAndShareWithGpu()
 {
 	// Also note this function may be full of logic errors and typos. Sorry. -C
 
-	// Maybe don't do this?
-	mem_shared_address = (u32)mappableAlloc(0x1000);
-	u32 mem_request_address = mem_shared_address;
+	// Maybe don't do this? (Commented-out 2022-08-08)
+	//mem_shared_address = (u32)mappableAlloc(0x1000);
+	//u32 mem_request_address = mem_shared_address;
 
 	u32 memblock_size; // Size of memory block that we request (in bytes)
 
@@ -185,7 +211,33 @@ void allocateRamAndShareWithGpu()
 	// New-3DS offset = 400*240*2+32
 
 	// Round up to nearest multiple of 0x1000 (never round down)
-	memblock_size = (memblock_size+0x999) & 0b11111111111111111111111111111000; // uses bitwise-AND operator
+	memblock_size = (memblock_size+0x999) & 0x11111000; // uses bitwise-AND operator
+
+	//u32 size_of_mem_bluffing = memblock_size - 0x1000;
+	//u32 received_potential_mem_address;
+	//u32 allocated_mem_within_gpu_range = 0;
+	//do
+	//{
+	//	size_of_mem_bluffing = size_of_mem_bluffing + 0x1000;
+	//	received_potential_mem_address = (u32)mappableAlloc(size_of_mem_bluffing);
+	//	allocated_mem_within_gpu_range = 0;
+	//}
+	//while(allocated_mem_within_gpu_range < memblock_size);
+
+	//TODO: If we wanted to ever do compat with old firmware,
+	// use OS_OLD_FCRAM_VADDR instead on those firms. -C
+	u32 mem_search_start = OS_FCRAM_VADDR;
+	u32 mem_search_end = OS_FCRAM_VADDR + 0x06800000;
+	mem_shared_address = memFindAddressWithin(mem_search_start,mem_search_end,memblock_size+0x999);
+
+	// Align the memory address (multiple of 0x1000)
+	mem_shared_address = (mem_shared_address + 0x999) & 0x11111000;
+
+	// If we didn't find enough free memory, fall-back to normal procedure.
+	if(mem_shared_address == 0)
+		mem_shared_address = (u32)mappableAlloc(memblock_size);
+
+	u32 mem_request_address = mem_shared_address;
 
 	MemPerm p1 = MEMPERM_READWRITE; // This process's permissions in the memory block. (my / our permissions)
 	MemPerm p2 = MEMPERM_READWRITE; // Other processes' permissions in the memory block.
@@ -193,12 +245,42 @@ void allocateRamAndShareWithGpu()
 	// Probably needs to be in the APPLICATION Memory Region
 	// Because the GPU doesn't have RW access to a lot of the
 	// SYSTEM region and has zero access to the BASE region.
+	//
+	// Note: MEMOP_REGION_APP might be ignored. ):
+	// Which would mean, if we're not an Application,
+	// then the GPU effectively can't actually access
+	// this memory for different reasons. ):
+	//
+	// Note: This is probably VERY BROKEN in its current state. -C (2022-08-10)
 	MemOp flags = (MemOp)(MEMOP_REGION_APP|MEMOP_ALLOC_LINEAR); // Note: I don't know if 'MEMOP_ALLOC' is also required or not. I wonder if one may accidentally override the other.
+
+
+	// Note: I was experimenting if the order of these two commands was making a difference.
+	// Remind me next time to be less stupid and get debug log write-to-file
+	// working first. -C (2022-08-10)
+
 	//svcControlMemory(&mem_shared_address,mem_request_address,0,memblock_size,flags,p1);
 
-	//TODO: When reimplementing graceful shutdown, close the handle to effectively free the memory.
-	svcCreateMemoryBlock(&mem_shared_handle,mem_shared_address,memblock_size,p1,p2);
-	svcControlMemory(&mem_shared_address,mem_request_address,0,memblock_size,flags,p1);
+	//svcCreateMemoryBlock(&mem_shared_handle,mem_shared_address,memblock_size,p1,p2);
+	//svcControlMemory(&mem_shared_address,mem_request_address,0,memblock_size,flags,p1);
+
+	// Note to self. Try svcControlMemory op=COMMIT?
+
+	// Note: This flag is called "COMMIT" on 3dbrew.org,
+	// but something different in libctru. I assume the ones with
+	// matching indices are functionally identical,
+	// but I actually haven't checked the libctru source code
+	// and I honestly should. -C (2022-08-10)
+
+
+	u32 result;
+	result = svcControlMemory(&mem_shared_address,mem_request_address,0,memblock_size,flags,p1);
+	if(result)
+		hangmacro();
+	//result = svcCreateMemoryBlock(&mem_shared_handle,mem_shared_address,memblock_size,p1,p2);
+	//if(result)
+	//	hangmacro();
+
 
 	// I think I got confused, I think this call isn't necessary.
 	//svcMapMemoryBlock(mem_shared_handle,mem_shared_address,p1,p2);
@@ -207,6 +289,10 @@ void allocateRamAndShareWithGpu()
 	// I think this code is moving the GPU Command Buffer itself to
 	// the start of this shared memory block. I don't actually
 	// know if or why we need to do that. -ChainSwordCS
+	//
+	// For what it's worth, maybe that code was unused for a reason.
+	// (IIRC it was in gx.c, not main.cpp.)  -C (2022-08-10)
+	//
 	//
 	// This code effectively ported from Sono's code.
 	//
@@ -233,6 +319,46 @@ void allocateRamAndShareWithGpu()
 
 	return;
 }
+
+// How ironic, I knew this code was unnecessary and broken,
+// so I kept it unused even in the first commit the code was added. -C (2022-08-10)
+u32 bluffMemoryAllocation(u32 input_mem_size)
+{
+	u32 received_potential_mem_address;
+	u32 allocated_mem_within_gpu_range = 0;
+	u32 size_of_mem_bluffing = input_mem_size;
+
+	received_potential_mem_address = (u32)mappableAlloc(size_of_mem_bluffing);
+	allocated_mem_within_gpu_range = 0;
+
+	while(allocated_mem_within_gpu_range < size_of_mem_bluffing)
+	{
+		size_of_mem_bluffing = size_of_mem_bluffing + 0x1000;
+		received_potential_mem_address = (u32)mappableAlloc(size_of_mem_bluffing);
+		allocated_mem_within_gpu_range = 0;
+	}
+
+	return received_potential_mem_address;
+}
+
+// returns a handle to the memory block just allocated
+// *Currently unused, but should work. -C
+u32 stealAndWasteMemoryLol()
+{
+	// How much memory do we want to eat up each time?
+	// Don't make this too small, or else we might
+	// theoretically overflow the Handle stack.(?)
+	u32 mem_increment_size = 0x10000;
+	u32 this_mem_address = (u32)mappableAlloc(mem_increment_size);
+
+	u32 r; //-esult
+	r = svcControlMemory(&this_mem_address,this_mem_address,0,mem_increment_size,MEMOP_ALLOC,MEMPERM_READWRITE);
+	if(r)
+		return 0; // This error should be handled by the calling function, please.
+	else
+		return this_mem_address;
+}
+
 
 static int haznet = 0; // Is connected to wifi?
 int checkwifi()
@@ -1066,7 +1192,7 @@ int main()
     if(ret < 0)
     {
     	// The returned value of the socInit function
-    	// is written at 0x001000F0 in RAM (for debug) (...?)
+    	// is written at 0x001000F0 in RAM (for debug). (...?)
     	*(u32*)0x1000F0 = ret;
     	hangmacro();
     }
