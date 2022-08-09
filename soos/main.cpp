@@ -66,7 +66,6 @@ extern "C"
     PatApply();\
     while(1)\
     {\
-        hidScanInput();\
         if(hidKeysHeld() == (KEY_SELECT | KEY_START))\
         {\
             killswitchFunc();\
@@ -96,6 +95,10 @@ static u32 gsp_gpu_handle;
 static int isold = 1;
 u32 buttons_pressed = 0;
 static vu32 thread_continue_running = 0;
+TickCounter main_loop_tick_counter; // Counts in milliseconds.
+double last_tick_count;
+double tick_read;
+const double waittime = 500; // 0.5 seconds
 
 const int port = 6464;
 
@@ -254,12 +257,10 @@ void initializeThingsWeNeed()
 {
 	mcuInit(); // Notif LED
 	PatStay(0x007F7F);
+	//hidInit();
 	//nsInit();
-	aptInit();
+	//aptInit();
 	acInit(); // Wifi
-
-	//PatStay(0x0000FF); // Notif LED = red
-
 	initializeGraphics();
 
 	return;
@@ -397,7 +398,7 @@ int netResetFunc(int* ptr_to_sock)
 	u32 wifi;
 	r = ACU_GetStatus(&wifi);
 
-	if(wifi && (errno == EINVAL || r < 0) )
+	if(wifi == 3 && (errno == EINVAL || r < 0) )
 	{
 	    errno = 0;
 	    PatStay(0x00FFFF);
@@ -409,7 +410,7 @@ int netResetFunc(int* ptr_to_sock)
 	}
 
 	ACU_GetStatus(&wifi);
-	if(wifi != 0)
+	if(wifi == 3)
 	{
 		return mainTryConnectToSocket(ptr_to_sock);
 	}
@@ -1076,13 +1077,13 @@ int main()
 	if(isold)
 	{
 		newthread_stacksize = 0x2000;
-		newthread_priority = 0x3F; // The original value was 0x21. That's perhaps too high.
+		newthread_priority = 0x24; // The original value was 0x21. That's perhaps too high.
 		newthread_coreid = 1;
 	}
 	else
 	{
 		newthread_stacksize = 0x4000;
-		newthread_priority = 0x1A; // The original value was 0x08. That's perhaps too high.
+		newthread_priority = 0x0A; // The original value was 0x08. That's perhaps too high.
 		newthread_coreid = 3;
 	}
 
@@ -1138,32 +1139,46 @@ int main()
     }
     
     //TODO: Does this need to be rewritten?
-    if((__excno = setjmp(__exc))) killswitchFunc();
+    //if((__excno = setjmp(__exc))) killswitchFunc();
 
 #ifdef _3DS
     std::set_unexpected(CPPCrashHandler);
     std::set_terminate(CPPCrashHandler);
 #endif
     
-    u32 acu_wifi_status; // = 3 if connected, 0 if not.
+    PatStay(0x00FF7F);
+
+    u32 acu_wifi_status; // = 3 if connected, 1 if not.
     ACU_GetStatus(&acu_wifi_status);
-
-	ret = mainTryConnectToSocket(&sock);
-	if(ret != 0)
-	{
-		if(ret == -1)
-			hangmacro();
-	}
+    if(acu_wifi_status == 3)
+    {
+		ret = mainTryConnectToSocket(&sock);
+		if(ret != 0)
+		{
+			if(ret == -1)
+				hangmacro();
+		}
+    }
     
-    TickCounter main_loop_tick_counter; // Counts in milliseconds.
     osTickCounterStart(&main_loop_tick_counter);
-    double last_tick_count = 0;
-    double tick_read;
-    const double waittime = 500; // 0.5 seconds
-
+    osTickCounterUpdate(&main_loop_tick_counter);
+    last_tick_count = osTickCounterRead(&main_loop_tick_counter);
     // Application main loop (:
+    PatStay(0x00FF00);
+
+    // This might actually not be what I want to do.
+    // Based on testing, it seems to take exclusive
+    // control as the current Application running.
+    // It won't let another application boot.
+    // It also breaks functionality of us trying
+    // to start up another thread.
+    // But I don't know any of that for certain; too many variables.
+    //
 	while(aptMainLoop() == true)
 	{
+		// Note: Don't call hidScanInput(). For some reason it throws an ARM11 data abort exception, and it's consistent.
+		//hidScanInput();
+		buttons_pressed = hidKeysHeld();
 		// My intent is to execute some of the code
 		// less frequently (every 0.5 sec)
 		osTickCounterUpdate(&main_loop_tick_counter);
@@ -1171,10 +1186,7 @@ int main()
 		if(tick_read - last_tick_count > waittime)
 		{
 			last_tick_count = tick_read;
-			// hidScanInput shouldn't crash but might. ):
-			hidScanInput();
-			buttons_pressed = hidKeysHeld();
-			if((buttons_pressed & (KEY_SELECT | KEY_START)) == (KEY_SELECT | KEY_START))
+			if(buttons_pressed == (KEY_SELECT | KEY_START))
 			{
 				PatStay(0xFFFFFF);
 				hangmacro();
@@ -1182,11 +1194,11 @@ int main()
 
 			ACU_GetStatus(&acu_wifi_status);
 
-			if(acu_wifi_status == 0)
+			if(acu_wifi_status == 1)
 			{
 				PatStay(0x00FFFF);
 			}
-			else
+			if(acu_wifi_status == 3)
 			{
 				PatStay(0xCCFF00);
 				// If SocketBuffer object doesn't exist anymore...
@@ -1240,7 +1252,7 @@ int main()
 			// End of the "only execute every 500ms" loop
 		}
 
-		if((buttons_pressed & (KEY_ZL | KEY_ZR)) == (KEY_ZL | KEY_ZR))
+		if(buttons_pressed == (KEY_ZL | KEY_ZR))
 			corruptVramLol();
 
 		// End of a "frame", it loops here.
@@ -1280,12 +1292,13 @@ void killswitchFunc()
     }
 
     //nsExit();
+    hidExit();
     PatStay(0);
     mcuExit();
 
     APT_PrepareToCloseApplication(false);
     
-    aptExit();
+    //aptExit();
     svcSleepThread(2e9);
     //return;
 }
