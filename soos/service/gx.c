@@ -16,6 +16,7 @@ void gxInit()
     //gspInitEventHandler(gspEvent, (vu8*) gfxSharedMemory, gfxThreadID);
 	gspInit();
     gspWaitForVBlank();
+    return;
 }
 
 void gxExit()

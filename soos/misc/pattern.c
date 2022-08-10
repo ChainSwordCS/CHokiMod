@@ -4,18 +4,21 @@
 #include <string.h>
 
 
-RGBLedPattern pat;
+RGBLedPattern pat; // Note to self. I should refactor this so it's not a global variable, etc.
 
+// Applies the current color-pattern to the Notif LED
 void PatApply()
 {
     mcuWriteRegister(0x2D, &pat, sizeof(pat));
 }
 
+// Triggers the current color-pattern to the Notif LED
 void PatTrigger()
 {
     mcuWriteRegister(0x2D, &pat, 4);
 }
 
+// Take the current color-pattern, and make it stop pulsing. For Notif LED
 void PatStay(u32 col)
 {
     memset(&pat.r[0], (col >>  0) & 0xFF, 32);
@@ -27,6 +30,7 @@ void PatStay(u32 col)
     PatApply();
 }
 
+// Make the Notif LED pulse on and off repeatedly?
 void PatPulse(u32 col)
 {
     memset(&pat.r[ 0], 0xFF, 4);
@@ -47,6 +51,7 @@ void PatPulse(u32 col)
     PatApply();
 }
 
+// Set current color-pattern for Notif LED to an array of colors.
 void setrave()
 {
     //marcus@Werkstaetiun:/media/marcus/WESTERNDIGI/dev_threedee/MCU_examples/RGB_rave$ lua assets/colorgen.lua
@@ -148,6 +153,7 @@ void setrave()
     pat.b[31] = 8;
 }
 
+// Set the current pattern to Rave(tm), and apply it to the Notif LED
 void makerave()
 {
     setrave();
