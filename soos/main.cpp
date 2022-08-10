@@ -567,6 +567,8 @@ static SocketBuffer::PacketStruct* k = nullptr;
 static Thread netthread = 0;
 static vu32 threadrunning = 0;
 
+// screenbuf = Beginning of the data in the packet we are making...
+// I don't remember if this should be a void*, a u8*, a u32*...
 static void* screenbuf = nullptr;
 //static u32 screenbuf_address;
 
@@ -859,6 +861,7 @@ void netfunc(void* __dummy_arg__)
             
             int loopcnt = 2;
             
+            //lmao, I think this loop runs once. -H (2022-08-03)
             while(--loopcnt)
             {
                 if(format[scr] == 0xF00FCACE)
@@ -1296,6 +1299,7 @@ int main()
             }
             else if(pollSocket(sock, POLLIN) == POLLIN)
             {
+            	//I think cli stands for client -H (2022-08-03)
                 int cli = accept(sock, (struct sockaddr*)&sai, &sizeof_sai);
                 if(cli < 0)
                 {
@@ -1335,6 +1339,7 @@ int main()
                         svcSleepThread(2e9);
                     }
                     
+                    //Could above and below if statements be combined? lol -H (2022-08-03)
                     
                     if(netthread)
                     {
