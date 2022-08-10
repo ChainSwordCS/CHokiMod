@@ -1,4 +1,3 @@
-/*.elf
 /.settings/
 /.cproject
 /.project
@@ -7,3 +6,8 @@
 /ex/
 /Hz.tar.lzma
 /misclib/
+/chokimod-build/
+chokimod-build-out/CHokiMod-nightly-stripped.elf
+chokimod-build-out/CHokiMod-nightly.elf
+HzLoad/CHzLoad-build-out/HzLoad-stripped.elf
+HzLoad/CHzLoad-build-out/HzLoad.elf

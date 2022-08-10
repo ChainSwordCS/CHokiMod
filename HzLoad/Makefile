@@ -1,3 +1,6 @@
+DATESTRING	:=	$(shell date +%Y)-$(shell date +%m)-$(shell date +%d)
+BUILDOUT    :=  CHzLoad-build-out
+
 #---------------------------------------------------------------------------------
 .SUFFIXES:
 #---------------------------------------------------------------------------------
@@ -32,8 +35,8 @@ SOURCES		    :=	soos
 DATA		    :=	data
 INCLUDES	    :=	inc
 APP_TITLE       :=  HzLoad
-APP_DESCRIPTION :=  HorizonModule Loader
-APP_AUTHOR      :=  MarcusD
+APP_DESCRIPTION :=  HzMod / CHokiMod Loader
+APP_AUTHOR      :=  ChainSwordCS, Sono
 APP_PRODUCT_CODE:=  CTR-N-AHLA
 APP_UNIQUE_ID   :=  0xCFAAF
 ICON            :=  assets/logo.png
@@ -64,7 +67,7 @@ CFLAGS	:=	-g -Wall -O2 -mword-relocations \
 			-fomit-frame-pointer -ffast-math \
 			$(ARCH)
 
-CFLAGS	+=	$(INCLUDE) -DARM11 -D_3DS
+CFLAGS	+=	$(INCLUDE) -D__3DS__
 
 ifneq ($(strip $(HIMEM)),)
 CFLAGS += -D_HIMEM
@@ -75,7 +78,7 @@ CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++11
 ASFLAGS	:=	-g $(ARCH)
 LDFLAGS	=	-specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
 
-LIBS	:= -lctru -lm
+LIBS	:=  -lctru -lm -lcitro2d -lcitro3d
 
 #---------------------------------------------------------------------------------
 # list of directories containing libraries, this must be the top level containing
@@ -91,7 +94,7 @@ LIBDIRS	:= $(CTRULIB)
 ifneq ($(BUILD),$(notdir $(CURDIR)))
 #---------------------------------------------------------------------------------
 
-export OUTPUT	:=	$(CURDIR)/$(TARGET)
+export OUTPUT	:=	$(CURDIR)/$(BUILDOUT)/$(TARGET)
 export TOPDIR	:=	$(CURDIR)
 
 export VPATH	:=	$(foreach dir,$(SOURCES),$(CURDIR)/$(dir)) \

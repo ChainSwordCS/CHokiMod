@@ -1,5 +1,5 @@
 #include <3ds.h>
-
+#include <3ds/services/hid.h> // Maybe not necessary. This may not help at all.
 /*
     HorizonM - utility background process for the Horizon operating system
     Copyright (C) 2017 MarcusD (https://github.com/MarcuzD)
@@ -43,13 +43,14 @@ extern "C"
 #include "misc/pattern.h"
 
 #include "tga/targa.h"
-#include <turbojpeg.h>
+#include "turbojpeg.h"
 }
 
 #include <exception>
 
 #include "utils.hpp"
 
+// comment
 
 
 #define yield() svcSleepThread(1e8)
@@ -75,7 +76,60 @@ extern "C"
     }\
 }
 
+// All global variable declarations are now here instead.
+
+
+// for uh checkwifi()
 static int haznet = 0;
+
+
+// for uh CPPCrashHandler
+static jmp_buf __exc;
+static int  __excno;
+
+
+//Everything else lol
+extern "C" u32 __get_bytes_per_pixel(GSPGPU_FramebufferFormat format);
+
+const int port = 6464;
+
+static u32 kDown = 0;
+static u32 kHeld = 0;
+static u32 kUp = 0;
+
+static GSPGPU_CaptureInfo capin;
+
+//is_old stores if the 3DS is a new or old model?
+static int is_old = 1; //formerly "isold"
+
+static Result ret = 0;
+//static int cx = 0;
+static int cy = 0;
+
+static u32 offs[2] = {0, 0};
+static u32 limit[2] = {1, 1};
+static u32 stride[2] = {80, 80};
+static u32 format[2] = {0xF00FCACE, 0xF00FCACE};
+
+static u8 cfgblk[0x100];
+
+static int sock = 0;
+
+static struct sockaddr_in sai;
+static socklen_t sizeof_sai = sizeof(sai);
+
+static Thread netthread = 0;
+static vu32 threadrunning = 0;
+
+static u8* screenbuf; // Beginning of the data in the packet we are going to draw this frame.
+
+static tga_image img;
+static tjhandle jencode = nullptr;
+
+static FILE* file = nullptr;
+
+// End of global variable declarations
+
 int checkwifi()
 {
     haznet = 0;
@@ -123,9 +177,9 @@ public:
         this->sock = sock;
     }
     
-    ~bufsoc()
+    ~bufsoc() // Destructor
     {
-        if(!this) return;
+        if(!this) return; // If this instance of a "bufsoc" object is null, then don't try to delete it :)
         close(sock);
         delete[] buf;
     }
@@ -227,8 +281,8 @@ public:
     }
 };
 
-static jmp_buf __exc;
-static int  __excno;
+static bufsoc* soc = nullptr;
+static bufsoc::packet* k = nullptr;
 
 void CPPCrashHandler()
 {
@@ -270,45 +324,6 @@ void CPPCrashHandler()
 }
 
 
-extern "C" u32 __get_bytes_per_pixel(GSPGPU_FramebufferFormats format);
-
-const int port = 6464;
-
-static u32 kDown = 0;
-static u32 kHeld = 0;
-static u32 kUp = 0;
-
-static GSPGPU_CaptureInfo capin;
-
-static int isold = 1;
-
-static Result ret = 0;
-static int cx = 0;
-static int cy = 0;
-
-static u32 offs[2] = {0, 0};
-static u32 limit[2] = {1, 1};
-static u32 stride[2] = {80, 80};
-static u32 format[2] = {0xF00FCACE, 0xF00FCACE};
-
-static u8 cfgblk[0x100];
-
-static int sock = 0;
-
-static struct sockaddr_in sai;
-static socklen_t sizeof_sai = sizeof(sai);
-
-static bufsoc* soc = nullptr;
-
-static bufsoc::packet* k = nullptr;
-
-static Thread netthread = 0;
-static vu32 threadrunning = 0;
-
-static u32* screenbuf = nullptr;
-
-static tga_image img;
-static tjhandle jencode = nullptr;
 
 
 void netfunc(void* __dummy_arg__)
@@ -320,7 +335,7 @@ void netfunc(void* __dummy_arg__)
     
     int scr = 0;
     
-    if(isold);// screenbuf = (u32*)k->data;
+    if(is_old);// screenbuf = (u8*)k->data;
     else osSetSpeedupEnable(1);
     
     k = soc->pack(); //Just In Case (tm)
@@ -331,9 +346,13 @@ void netfunc(void* __dummy_arg__)
     
     u32 procid = 0;
     Handle dmahand = 0;
-    u8 dmaconf[0x18];
-    memset(dmaconf, 0, sizeof(dmaconf));
-    dmaconf[0] = -1; //don't care
+    
+	//u8 dmaconf[0x18];
+	DmaConfig dmaconf = {}; // zeroes itself out (:
+	dmaconf.channelId = -1; // auto-assign to a free channel (Arm11: 3-7, Arm9: 0-1)
+	
+    //memset(dmaconf, 0, sizeof(dmaconf));
+    //dmaconf[0] = -1; //don't care
     //dmaconf[2] = 4;
     
     //screenInit();
@@ -381,7 +400,7 @@ void netfunc(void* __dummy_arg__)
             {
                 printf("#%i 0x%X | %i\n", k->packetid, k->size, cy);
                 
-                reread:
+                //reread:
                 switch(k->packetid)
                 {
                     case 0x00: //CONNECT
@@ -499,7 +518,7 @@ void netfunc(void* __dummy_arg__)
             }
             
             int loopcnt = 2;
-            
+            //lmao, I think this loop runs once. -H
             while(--loopcnt)
             {
                 if(format[scr] == 0xF00FCACE)
@@ -515,8 +534,13 @@ void netfunc(void* __dummy_arg__)
                     svcStopDma(dmahand);
                     svcCloseHandle(dmahand);
                     dmahand = 0;
-                    if(!isold) svcFlushProcessDataCache(0xFFFF8001, (u8*)screenbuf, capin.screencapture[scr].framebuf_widthbytesize * 400);
-                }
+                    //if(!is_old) svcFlushProcessDataCache(0xFFFF8001, (u8*)screenbuf, capin.screencapture[scr].framebuf_widthbytesize * 400);
+					if(!is_old){
+						svcFlushProcessDataCache(0xFFFF8001,\
+						(u32)(screenbuf),\
+						capin.screencapture[scr].framebuf_widthbytesize * 400);
+					}
+				}
                 
                 int imgsize = 0;
                 
@@ -540,9 +564,9 @@ void netfunc(void* __dummy_arg__)
                 }
                 //k->size += 4;
                 
-                //svcStartInterProcessDma(&dmahand, 0xFFFF8001, screenbuf, prochand ? prochand : 0xFFFF8001, fbuf[0] + fboffs, siz, dmaconf);
+                //svcStartInterProcessDma(&dmahand, 0xFFFF8001, (u32)screenbuf, prochand ? prochand : 0xFFFF8001, fbuf[0] + fboffs, siz, dmaconf);
                 //svcFlushProcessDataCache(prochand ? prochand : 0xFFFF8001, capin.screencapture[0].framebuf0_vaddr, capin.screencapture[0].framebuf_widthbytesize * 400);
-                //svcStartInterProcessDma(&dmahand, 0xFFFF8001, screenbuf, prochand ? prochand : 0xFFFF8001, (u8*)capin.screencapture[0].framebuf0_vaddr + fboffs, siz, dmaconf);
+                //svcStartInterProcessDma(&dmahand, 0xFFFF8001, (u32)screenbuf, prochand ? prochand : 0xFFFF8001, (u8*)capin.screencapture[0].framebuf0_vaddr + fboffs, siz, dmaconf);
                 //screenDMA(&dmahand, screenbuf, 0x600000 + fboffs, siz, dmaconf);
                 //screenDMA(&dmahand, screenbuf, dbgo, siz, dmaconf);
                 
@@ -562,15 +586,15 @@ void netfunc(void* __dummy_arg__)
                 Handle prochand = 0;
                 if(procid) if(svcOpenProcess(&prochand, procid) < 0) procid = 0;
                 
-                if\
-                (\
-                    svcStartInterProcessDma\
-                    (\
-                        &dmahand, 0xFFFF8001, screenbuf, prochand ? prochand : 0xFFFF8001,\
-                        (u8*)capin.screencapture[scr].framebuf0_vaddr + (siz * offs[scr]), siz, dmaconf\
-                    )\
-                    < 0 \
-                )
+				// compares the function Result (s32) to 0, to see if it succeeds
+                if( 0 > svcStartInterProcessDma( \
+                    &dmahand, \
+					0xFFFF8001, \
+					(u32)screenbuf, \
+					prochand ? prochand : 0xFFFF8001, \
+                    (u32)(capin.screencapture[scr].framebuf0_vaddr + (siz * offs[scr])), \
+					siz, \
+					&dmaconf) )
                 {
                     procid = 0;
                     format[scr] = 0xF00FCACE; //invalidate
@@ -593,7 +617,7 @@ void netfunc(void* __dummy_arg__)
                 if(dbgo >= 0x600000) dbgo = 0;
                 */
                 
-                if(isold) svcSleepThread(5e6);
+                if(is_old) svcSleepThread(5e6);
             }
         }
         else yield();
@@ -626,34 +650,49 @@ void netfunc(void* __dummy_arg__)
     threadrunning = 0;
 }
 
-static FILE* f = nullptr;
 
-ssize_t stdout_write(struct _reent* r, int fd, const char* ptr, size_t len)
+ssize_t stdout_write(struct _reent* r, void* fd, const char* ptr, size_t len) //used to be "int fd" not "void* fd"
 {
-    if(!f) return 0;
-    fputs("[STDOUT] ", f);
-    return fwrite(ptr, 1, len, f);
+    if(!file) return 0;
+    fputs("[STDOUT] ", file);
+    return fwrite(ptr, 1, len, file);
 }
 
-ssize_t stderr_write(struct _reent* r, int fd, const char* ptr, size_t len)
+ssize_t stderr_write(struct _reent* r, void* fd, const char* ptr, size_t len)
 {
-    if(!f) return 0;
-    fputs("[STDERR] ", f);
-    return fwrite(ptr, 1, len, f);
+    if(!file) return 0;
+    fputs("[STDERR] ", file);
+    return fwrite(ptr, 1, len, file);
 }
 
+// The below two lines of code are* attempting to convert from.....THIS:  'ssize_t (*)(_reent*, int, const char*, size_t)'       {aka 'int (*)(_reent*, int, const char*, unsigned int)'}
+//                                                          to.....THIS:  'ssize_t (*)(_reent*, void*, const char*, size_t)'     {aka 'int (*)(_reent*, void*, const char*, unsigned int)'}
+//
+//                                                                        That's here
+//                                                                             |
+//                                                                             V
+//static const devoptab_t devop_stdout = { "stdout", 0, nullptr, nullptr, stdout_write, nullptr, nullptr, nullptr };
+//
+// Make the "fd" a void pointer? Maybe?
+//
+//Also, maybe move these for organization... Not sure.
 static const devoptab_t devop_stdout = { "stdout", 0, nullptr, nullptr, stdout_write, nullptr, nullptr, nullptr };
 static const devoptab_t devop_stderr = { "stderr", 0, nullptr, nullptr, stderr_write, nullptr, nullptr, nullptr };
 
 int main()
 {
+	gfxInitDefault();
+	consoleInit(GFX_BOTTOM, 0);
+	printf("\n~Hello World~ CHokiMod is now booting...");
     mcuInit();
     nsInit();
+
     
     soc = nullptr;
     
-    f = fopen("/HzLog.log", "w");
-    if(f <= 0) f = nullptr;
+    file = fopen("/HzLog.log", "w");
+    if(reinterpret_cast<s32>(file) <= 0)
+		file = nullptr;
     else
     {
         devoptab_list[STD_OUT] = &devop_stdout;
@@ -667,10 +706,10 @@ int main()
     memset(&capin, 0, sizeof(capin));
     memset(cfgblk, 0, sizeof(cfgblk));
     
-    isold = APPMEMTYPE <= 5;
+    is_old = APPMEMTYPE <= 5;
     
     
-    if(isold)
+    if(is_old)
     {
         limit[0] = 8;
         limit[1] = 8;
@@ -692,7 +731,7 @@ int main()
     
     do
     {
-        u32 siz = isold ? 0x10000 : 0x200000;
+        u32 siz = is_old ? 0x10000 : 0x200000;
         ret = socInit((u32*)memalign(0x1000, siz), siz);
     }
     while(0);
@@ -705,13 +744,13 @@ int main()
     
     //gxInit();
     
-    if(isold)
-        screenbuf = (u32*)memalign(8, 50 * 240 * 4);
+    if(is_old)
+        screenbuf = (u8*)memalign(8, 50 * 240 * 4);
     else
-        screenbuf = (u32*)memalign(8, 400 * 240 * 4);
+        screenbuf = (u8*)memalign(8, 400 * 240 * 4);
     
-    if(!screenbuf)
-    {
+    if(!screenbuf) // Should this be allowed to be negative? I might be misunderstanding though.
+    {				// Yes. This tests if screenbuf is NULL aka memalign() failed. -H
         makerave();
         svcSleepThread(2e9);
         hangmacro();
@@ -774,7 +813,7 @@ int main()
     
     reloop:
     
-    if(!isold) osSetSpeedupEnable(1);
+    if(!is_old) osSetSpeedupEnable(1);
     
     PatPulse(0xFF40FF);
     if(haznet) PatStay(0xCCFF00);
@@ -800,6 +839,7 @@ int main()
             }
             else if(pollsock(sock, POLLIN) == POLLIN)
             {
+				//I think cli stands for client
                 int cli = accept(sock, (struct sockaddr*)&sai, &sizeof_sai);
                 if(cli < 0)
                 {
@@ -810,10 +850,10 @@ int main()
                 else
                 {
                     PatPulse(0xFF00);
-                    soc = new bufsoc(cli, isold ? 0xC000 : 0x70000);
+                    soc = new bufsoc(cli, is_old ? 0xC000 : 0x70000);
                     k = soc->pack();
                     
-                    if(isold)
+                    if(is_old)
                     {
                         netthread = threadCreate(netfunc, nullptr, 0x2000, 0x21, 1, true);
                     }
@@ -832,6 +872,7 @@ int main()
                         svcSleepThread(2e9);
                     }
                     
+					//Could above and below if statements be combined? lol -H
                     
                     if(netthread)
                     {
@@ -859,12 +900,12 @@ int main()
             goto reloop;
         }
         
-        if((kHeld & (KEY_ZL | KEY_ZR)) == (KEY_ZL | KEY_ZR))
-        {
-            u32* ptr = (u32*)0x1F000000;
-            int o = 0x00600000 >> 2;
-            while(o--) *(ptr++) = rand();
-        }
+        //if((kHeld & (KEY_ZL | KEY_ZR)) == (KEY_ZL | KEY_ZR))
+        //{
+        //    u32* ptr = (u32*)0x1F000000;
+		//	int o = 0x00600000 >> 2;
+        //    while(o--) *(ptr++) = rand();
+        //}
         
         yield();
     }
@@ -895,10 +936,10 @@ int main()
     
     acExit();
     
-    if(f)
+    if(file)
     {
-        fflush(f);
-        fclose(f);
+        fflush(file);
+        fclose(file);
     }
     
     PatStay(0);
