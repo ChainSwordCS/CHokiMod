@@ -76,24 +76,64 @@ extern "C"
     }\
 }
 
+void corruptVramLol();
 void initializeThingsWeNeed();
 void initializeGraphics();
+
+// WIP reimplementation functions
+
+// from test-branch-2 (2022-08-09)
+void initializeSocketBufferMem(u32**,u32*); // Unfinished, likely broken.
+void initializeOurScreenBufferMem(u32**,u32*); // Unfinished, likely broken.
+int mainGetNewSocketEtc(int,struct sockaddr_in*,socklen_t*,SocketBuffer**,SocketBuffer::PacketStruct**); // Unfinished, likely broken.
+int netResetFunc(int*); // Unfinished, likely broken.
+int mainTryConnectToSocket(int*); // Unfinished, likely broken.
+
+
+// from test-branch-1 (2022-08-08)
 int gpuTriggerDisplayTransfer(u32*,u32*,u16,u16,u32); // Unfinished, likely broken.
-u32 memFindAddressWithin(u32,u32,u32); // Unfinished. May be useful as reference.
-void allocateRamAndShareWithGpu(); // Unfinished, likely broken. May be useful as reference.
-u32 bluffMemoryAllocation(u32); // Unfinished, likely broken. May be useful as reference.
-u32 stealAndWasteMemoryLol(); // Unfinished, likely broken. Potentially useful as reference.
+u32 memFindAddressWithin(u32,u32,u32); // Unfinished.
+void allocateRamAndShareWithGpu(); // Unfinished, likely broken.
+u32 bluffMemoryAllocation(u32); // Unfinished, likely broken.
+u32 stealAndWasteMemoryLol(); // Unfinished, likely broken.
+
+int checkwifi();
+int pollSocket(int,int,int);
+void CPPCrashHandler();
+void netfunc(void*);
+int main(); // So you can call main() from main() (:
 
 static u32 gsp_gpu_handle;
 static Handle mem_shared_handle;
 static u32 mem_shared_address;
+static u32 buttons_pressed = 0;
+
 // = 0 if New-3DS (128MB more RAM, 2 more CPU cores, higher CPU clock speed, CPU L2-Cache)
 // = 1 if Old-3DS (IIRC... -C)
-static u32 is_old_3ds;
+// Default to 1 (if only for backwards-compatibility with old code)
+static u32 is_old_3ds = 1;
 
 const int port = 6464;
 
 //I think this is over-commented -H
+
+// You are not wrong my friend! It's now even worse than before, so that's good.
+// No but, right now I have a million comments so I remember what does and
+// doesn't work, and exactly *how* things break, etc... It would definitely be
+// good for me to move a lot of this into external documentation instead.
+// But for right now, I can't be bothered. And a good portion of these comments
+// will become obsolete on their own. -C (2022-08-10)
+
+void corruptVramLol()
+{
+	u32* ptr = (u32*)0x1F000000;
+	int o = 0x00600000 >> 2;
+    while(o--)
+    {
+    	*(ptr++) = rand();
+    }
+    return;
+}
 
 void initializeThingsWeNeed()
 {
@@ -102,27 +142,196 @@ void initializeThingsWeNeed()
 	//nsInit();
 	//aptInit();
 
-	mcuInit(); // Notif LED, mainly
-	PatStay(0x00FF00); // Notif LED = green
-	acInit(); // Wifi
+	mcuInit(); // Notif LED
+	// Notif LED = Orange (Boot just started, no fail yet...)
+	PatStay(0x0037FF);
 
+	acInit(); // Wifi
 	initializeGraphics();
 	//allocateRamAndShareWithGpu(); // No.
 
 	return;
 }
 
-// Note that we don't check for the possible error that the
-// gsp process isn't running. It always is, from boot. -C
 void initializeGraphics()
 {
-	Result ret1 = srvGetServiceHandle(&gsp_gpu_handle, "gsp::Gpu");
-	if(ret1) // Function returns 0 if no error occured.
+	// gspInit() crashes IIRC.
+	Result r = srvGetServiceHandle(&gsp_gpu_handle, "gsp::Gpu");
+	if(r) // Function returns 0 if no error occured.
 	{
 		PatStay(0x0000FF); // Notif LED = red
 	}
 	// Note to others: We probably shouldn't need GPU rights at all for what we're doing. -C
 	return;
+}
+
+// Pass this function pointers to your variables.
+void initializeSocketBufferMem(u32** address_pointer_pointer, u32* size_pointer)
+{
+    // FYI, this must be page-aligned (0x1000)
+    if(is_old_3ds)
+    	*size_pointer = 0x10000; // If Old-3DS
+    else
+    	*size_pointer = 0x200000; // If New-3DS
+
+    // Would it benefit optimization to replace 'memalign' with native syscalls?
+    // We'd have more fine control over what we compile into, but
+    // may help us a net-zero amount. -C
+    *address_pointer_pointer = (u32*)memalign(0x1000, *size_pointer);
+
+    // Initialize the SOC service.
+    int ret = socInit(*address_pointer_pointer, *size_pointer);
+
+    if(ret < 0)
+    {
+    	*(u32*)0x1000F0 = ret;
+    	//hangmacro();
+    }
+
+	return;
+}
+
+void initializeOurScreenBufferMem(u32** address_pointer_pointer, u32* size_pointer)
+{
+	if(is_old_3ds)
+    {
+		*size_pointer = 50 * 240 * 4; // On Old-3DS (we have 128MB less FCRAM)
+    }
+    else
+    {
+    	*size_pointer = 400 * 240 * 4;
+    }
+
+	*address_pointer_pointer = (u32*)memalign(8,*size_pointer);
+
+    if(!(*address_pointer_pointer)) // If memalign returns null or 0
+    {
+        makerave();
+        svcSleepThread(2e9);
+        //hangmacro();
+    }
+    return;
+}
+
+// Returns 0 on success.
+// If this returns -1, please call netResetFunc()
+// If this returns -2, please call hangmacro()
+int mainGetNewSocketEtc(int input_sock, struct sockaddr_in* ptr_to_sai, socklen_t* ptr_to_sai_size, SocketBuffer** ptr_2_ptr_soc, SocketBuffer::PacketStruct** ptr_2_ptr_k)
+{
+	int r;
+	r = pollSocket(input_sock, POLLIN, 0);
+	if(r == POLLIN)
+	{
+		// FD stands for File Descriptor
+		s32 newsocket_fd = accept(input_sock, (struct sockaddr*)ptr_to_sai, ptr_to_sai_size);
+		if(newsocket_fd < 0)
+		{
+			printf("Failed to accept client: (%i) %s\n", errno, strerror(errno));
+		    if(errno == EINVAL)
+		    {
+		    	return -1;
+		    }
+		    PatPulse(0x0000FF);
+		    return -2;
+		}
+		else
+		{
+			PatPulse(0x00FF00);
+			// Size of new socket buffer, smaller if on Old-3DS.
+			u32 bufsize;
+			if(isold)
+			{
+				bufsize = 0xC000;
+			}
+			else
+			{
+				bufsize = 0x70000;
+			}
+
+			*ptr_2_ptr_soc = new SocketBuffer(newsocket_fd,bufsize);
+			*ptr_2_ptr_k = (*ptr_2_ptr_soc)->getPointerToBufferAsPacketPointer();
+			return 0;
+		}
+	}
+	else if(pollSocket(input_sock, POLLERR, 0) == POLLERR)
+	{
+		printf("POLLERR (%i) %s", errno, strerror(errno));
+		return -1;
+	}
+	else if(r == -1)
+		return -1;
+	else
+		return -2;
+	return -2; // We should never fall all the way through to here. Logic or syntax error.
+}
+
+// Returns 0 on success.
+// If returns -1, please call hangmacro()
+int netResetFunc(int* ptr_to_sock)
+{
+	if(*ptr_to_sock)
+	{
+	    close(*ptr_to_sock);
+	    *ptr_to_sock = 0;
+	}
+
+	int r;
+	u32 wifi;
+	r = ACU_GetStatus(&wifi);
+
+	if(wifi && (errno == EINVAL || r < 0) )
+	{
+	    errno = 0;
+	    PatStay(0x00FFFF);
+	    while(r < 0)
+	    {
+	    	r = ACU_GetStatus(&wifi);
+	    	yield();
+	    }
+	}
+
+	ACU_GetStatus(&wifi);
+	if(wifi != 0)
+	{
+		return mainTryConnectToSocket(ptr_to_sock);
+	}
+	return 0;
+}
+
+// Returns 0 on success.
+// If returns -1, please call hangmacro()
+int mainTryConnectToSocket(int* ptr_to_sock)
+{
+	s32 filedescriptor_for_socket;
+	// formerly, "PF-INET" was "AF-INET"
+	filedescriptor_for_socket = socket(PF_INET, SOCK_STREAM, IPPROTO_IP);
+	if(filedescriptor_for_socket <= 0)
+	{
+		printf("socket error: (%i) %s\n", errno, strerror(errno));
+		return -1;
+	}
+
+	*ptr_to_sock = filedescriptor_for_socket;
+
+	struct sockaddr_in sao;
+	sao.sin_family = PF_INET;
+	sao.sin_addr.s_addr = gethostid();
+	sao.sin_port = htons(port);
+
+	if(bind(*ptr_to_sock, (struct sockaddr*)&sao, sizeof(sao)) < 0)
+	{
+		printf("bind error: (%i) %s\n", errno, strerror(errno));
+		return -1;
+	}
+
+	//fcntl(sock, F_SETFL, fcntl(sock, F_GETFL, 0) | O_NONBLOCK);
+
+	if(listen(*ptr_to_sock, 1) < 0)
+	{
+		printf("listen error: (%i) %s\n", errno, strerror(errno));
+		return -1;
+    }
+	return 0;
 }
 
 // Returns 0 if no error (iirc)
@@ -413,12 +622,12 @@ public:
         u16 unused_bytes_for_compatibility;
         u8 data[0];
     } PacketStruct;
-    
+
     int socket_id;
     u8* buffer_bytearray_aka_pointer; // Hasn't changed; just the name. -C (2022-08-10)
     int buffer_size; // The total buffer size doesn't change after boot.
     //int recvsize; // Effectively useless, even in old code.
-    
+
     // Old Version:
     // SocketBuffer(int passed_sock, int passed_bufsize)
     // Version from Test-Branch-1 (2022-08-07):
@@ -434,7 +643,7 @@ public:
         // Maybe revert or remove because of regressions. -C (2022-08-10)
         buffer_bytearray_aka_pointer = (u8*)passed_buffer_address; // Convert the u32 address into a usable pointer
     }
-    
+
     ~SocketBuffer() // Destructor
     {
     	// If this SocketBuffer is already null,
@@ -445,12 +654,12 @@ public:
         close(socket_id);
         delete[] buffer_bytearray_aka_pointer;
     }
-    
+
     int isAvailable()
     {
     	return pollSocket(socket_id, POLLIN) == POLLIN;
     }
-    
+
     int readbuf(int flags = 0)
     {
         u32 header = 0;
@@ -471,7 +680,7 @@ public:
         // Sorry future-me and everyone else who reads this, lol. -C (2022-08-10)
         // Get size byte
         ret = recv(socket_id, &received_size, 4, flags);
-        
+
         // Copy the 4 header bytes to the start of the buffer. And the size
         PacketStruct* packet_in_buffer = getPointerToBufferAsPacketPointer();
         *(u32*)buffer_bytearray_aka_pointer = header;
@@ -490,7 +699,7 @@ public:
 
 
         int num_reads_remaining = packet_in_buffer->size;
-        
+
         int offs = 0; // In old code, this was 4. I forget if this will be broken or not. -C (2022-08-10)
         while(num_reads_remaining)
         {
@@ -502,13 +711,13 @@ public:
             num_reads_remaining -= ret;
             offs += ret;
         }
-        
+
         // 'recvsize' variable was written to but never read from, AFAIK. -C (2022-08-10)
         //recvsize = offs;
 
         return offs;
     }
-    
+
     int wribuf(int flags = 0)
     {
     	// TODO: Is this borked now?
@@ -519,7 +728,7 @@ public:
         int mustwri = getPointerToBufferAsPacketPointer()->size + 4;
         int offs = 0;
         int ret = 0;
-        
+
         while(mustwri)
         {
             if(mustwri >> 12)
@@ -530,38 +739,38 @@ public:
             mustwri -= ret;
             offs += ret;
         }
-        
+
         return offs;
     }
-    
+
     PacketStruct* getPointerToBufferAsPacketPointer()
     {
         return (PacketStruct*)buffer_bytearray_aka_pointer;
     }
-    
+
     int errformat(char* c, ...)
     {
         PacketStruct* wip_packet = getPointerToBufferAsPacketPointer();
-        
+
         int len = 0;
-        
+
         va_list args;
         va_start(args, c);
         len = vsprintf((char*)wip_packet->data + 1, c, args);
         va_end(args);
-        
+
         if(len < 0)
         {
             puts("out of memory"); //???
             return -1;
         }
-        
+
         //printf("Packet error %i: %s\n", wip_packet->packetid, wip_packet->data + 1);
-        
+
         wip_packet->data[0] = wip_packet->packet_type_byte;
         wip_packet->packet_type_byte = 1;
         wip_packet->size = len + 2;
-        
+
         return wribuf();
     }
 };
@@ -645,7 +854,7 @@ static SocketBuffer::PacketStruct* k = nullptr;
 static Thread netthread = 0;
 static vu32 threadrunning = 0;
 
-static void* screenbuf = nullptr;
+static void* screenbuf = nullptr; // void*? u32*? u8*? I have no idea man.
 //static void* screenbuf = (void*)mem_shared_address; // This line wouldn't have worked correctly anyway.
 static u32 screenbuf_address; // Unused
 
@@ -689,6 +898,7 @@ void netfunc(void* __dummy_arg__)
 	dmaConfigInitDefault(&dma_config);
 	dma_config.channelId = -1; // auto-assign to a free channel (Arm11: 3-7, Arm9: 0-1)
 	//TODO: Do we need to grab a DMA handle? Did I forget that? Because it looks to just be 0
+	// It could be defined more than one place elsewhere... I don't know... -C
 
 	// This was commented out before I got here. -C
     //dmaconf[2] = 4;
@@ -723,6 +933,9 @@ void netfunc(void* __dummy_arg__)
     // or if the main thread says threadrunning = 0
     //
     // Actually, I may have misread this again. Not 100% sure. -C (2022-08-07)
+    //
+    // Infinite loop unless halted by an outside force.
+    // I think. Dunno if intentional, dunno if it works. -C (2022-08-09)
     //
     // TODO: Consider changing this to or adding
     // AptMainLoop() (or whatever it was called).
@@ -1160,16 +1373,13 @@ void netfunc(void* __dummy_arg__)
     //if(prochand) svcCloseHandle(prochand);
     //screenExit();
     
+    // Is this redundant? Perhaps not.
+    // I didn't know code execution even got here. -C (2022-08-10)
     threadrunning = 0;
 }
 
 static FILE* file = nullptr;
 
-// I think I got it. "fd" is declared here, but just kept null.
-// So of course it doesn't matter what type it is.
-// Note to future me and anyone else though,
-// Whatever's going on here is really stupid I bet. -C
-//
 ssize_t stdout_write(struct _reent* r, void* fd, const char* ptr, size_t len) //used to be "int fd" not "void* fd"
 {
     if(!file) return 0;
@@ -1184,6 +1394,7 @@ ssize_t stderr_write(struct _reent* r, void* fd, const char* ptr, size_t len)
     return fwrite(ptr, 1, len, file);
 }
 
+// Note: Changing "stdout_write" to "&stdout_write" does not, in fact, fix it. -C (2022-08-10)
                                      //{name, structSize, *open r, *close r, *write r, *read r, *seek r, *fstat_r}
 static const devoptab_t devop_stdout = { "stdout", 0, nullptr, nullptr, stdout_write, nullptr, nullptr, nullptr };
 static const devoptab_t devop_stderr = { "stderr", 0, nullptr, nullptr, stderr_write, nullptr, nullptr, nullptr };
@@ -1198,9 +1409,11 @@ int main()
 
 	initializeThingsWeNeed();
 
+	// Isn't this already initialized to null?
     socketbuffer_object_pointer = nullptr;
     
-    file = fopen("/HzLog.log", "w");
+    // Changed to "a", for "Append". So we add new text to the file.
+    file = fopen("/HzLog.log", "a");
     if((s32)file <= 0)  //Maybe switch condition to (file == NULL)?? -H
 		file = nullptr;
     else
@@ -1232,7 +1445,7 @@ int main()
         stride[0] = 400; // Width of the framebuffer we use
         stride[1] = 320;
     }
-    
+
 
     // Web socket stuff. Size of a buffer; is page-aligned (0x1000)
     u32 soc_buffer_size;
@@ -1250,7 +1463,7 @@ int main()
     // Potential issue: userland-privileged programs can't change the buffer address (pointer) after creation.
     // This may or may not ever be an issue, but I'm documenting it for completeness. -C (2022-08-10)
     ret = socInit((u32*)memalign(0x1000, soc_buffer_size), soc_buffer_size);
-    
+
     if(ret < 0)
     {
     	// The returned value of the socInit function
@@ -1299,6 +1512,7 @@ int main()
     std::set_terminate(CPPCrashHandler);
 #endif
 
+    // This label is used...
     netreset:
     
     if(sock)
@@ -1317,7 +1531,7 @@ int main()
         	yield();
         }
     }
-    
+
 
     // at the beginning of boot, does this consistently return 0?
     // (by which i mean, haznet = 0, etc.)
@@ -1329,22 +1543,22 @@ int main()
             printf("socket error: (%i) %s\n", errno, strerror(errno));
             hangmacro();
         }
-        
+
         sock = cy;
-        
+
         struct sockaddr_in sao;
         sao.sin_family = PF_INET;
         sao.sin_addr.s_addr = gethostid();
         sao.sin_port = htons(port);
-        
+
         if(bind(sock, (struct sockaddr*)&sao, sizeof(sao)) < 0)
         {
             printf("bind error: (%i) %s\n", errno, strerror(errno));
             hangmacro();
         }
-        
+
         //fcntl(sock, F_SETFL, fcntl(sock, F_GETFL, 0) | O_NONBLOCK);
-        
+
         if(listen(sock, 1) < 0)
         {
             printf("listen error: (%i) %s\n", errno, strerror(errno));
@@ -1352,9 +1566,9 @@ int main()
         }
     }
 
-    
+
     reloop:
-    
+
 	// If not on Old-3DS, then increase the clock speed.
 	// Actually, since I specified the higher clock speed in the CIA.RSF,
 	// that may be causing this to crash... Not sure though.
@@ -1366,7 +1580,7 @@ int main()
     }
     
     //PatPulse(0xFF40FF);
-    
+
     if(haznet)
     {
     	PatStay(0xCCFF00);
@@ -1393,19 +1607,21 @@ int main()
     {
     	// This hidScanInput() function call might crash.
         //hidScanInput();
+
         kDown = hidKeysDown();
-        kHeld = hidKeysHeld();
+        //kHeld = hidKeysHeld();
+        buttons_pressed = hidKeysHeld();
         kUp = hidKeysUp();
-        
+
         //printf("svcGetSystemTick: %016llX\n", svcGetSystemTick());
-        
+
         // If any buttons are pressed, make the Notif LED pulse red?
         // Pure waste of CPU time for literally no reason
         // Also it's annoying -C
         //if(kDown) PatPulse(0x0000FF);
 
-        if(kHeld == (KEY_SELECT | KEY_START)) break;
-        
+        if(buttons_pressed == (KEY_SELECT | KEY_START)) break;
+
         if(!socketbuffer_object_pointer)
         {
             if(!haznet)
@@ -1445,7 +1661,7 @@ int main()
                     // socketbuffer_object_pointer = new SocketBuffer(cli, mem_shared_address+memoffset, memoffset); // third argument passed used to be "is_old_3ds ? 0xC000 : 0x70000
                     socketbuffer_object_pointer = new SocketBuffer(cli, is_old_3ds ? 0xC000 : 0x70000);
                     k = socketbuffer_object_pointer->getPointerToBufferAsPacketPointer();
-                    
+
                     if(is_old_3ds)
                     {
                         netthread = threadCreate(netfunc, nullptr, 0x2000, 0x21, 1, true);
@@ -1454,21 +1670,23 @@ int main()
                     {
                         netthread = threadCreate(netfunc, nullptr, 0x4000, 8, 3, true);
                     }
-                    
+
                     if(!netthread)
                     {
                         memset(&pat, 0, sizeof(pat));
                         memset(&pat.r[0], 0xFF, 16);
                         pat.ani = 0x102;
                         PatApply();
-                        
+
                         svcSleepThread(2e9);
                     }
-                    
+
                     //Could above and below if statements be combined? lol -H
-                    
+
                     if(netthread)
                     {
+                    	// After thread_continue_running = 1,
+                    	// we can continue execution
                         while(!threadrunning) yield();
                     }
                     else
@@ -1485,28 +1703,29 @@ int main()
                 goto netreset;
             }
         }
-        
+
         if(netthread && !threadrunning)
         {
             //TODO: Is this code broken? I haven't changed it yet, but it may be. -C
             netthread = nullptr;
             goto reloop;
         }
-        
-        //if((kHeld & (KEY_ZL | KEY_ZR)) == (KEY_ZL | KEY_ZR))
-        //{
-        //    u32* ptr = (u32*)0x1F000000;
-        //    int o = 0x00600000 >> 2;
-        //    while(o--) *(ptr++) = rand();
-        //}
-        
+
+        if((buttons_pressed & (KEY_ZL | KEY_ZR)) == (KEY_ZL | KEY_ZR))
+        {
+        	corruptVramLol();
+            //u32* ptr = (u32*)0x1F000000;
+            //int o = 0x00600000 >> 2;
+            //while(o--) *(ptr++) = rand();
+        }
+
         yield();
     }
     
     killswitch:
-    
+
     PatStay(0xFF0000); // If we ever actually reach killswitch, make the Notif LED blue
-    
+
     if(netthread)
     {
         threadrunning = 0;
@@ -1519,38 +1738,29 @@ int main()
     
     if(socketbuffer_object_pointer) delete socketbuffer_object_pointer;
     else close(sock);
-    
+
     puts("Shutting down sockets...");
     SOCU_ShutdownSockets();
-    
+
     socExit();
-    
+
     //gxExit();
-    
+
     // With the current state of the code, we never init the GSP service...
     //gspExit();
-    
+
     acExit();
-    
+
     if(file)
     {
         fflush(file);
         fclose(file);
     }
-    
-    // Why was I thinking of commenting this out again?
-    // Maybe just misc debug testing...
-    //
-    // Commenting this line out *will* break things.
-    // Nintendo didn't put much care or error-checking with the Notif LED.
-    // (For example, its state at boot is undefined IIRC)
-    // This sets the Notif LED to be off, basically.
-    // For when we're about to stop execution.
+
+    //hidExit();
     PatStay(0);
-    
-    //nsExit();
-    
     mcuExit(); // Probably don't change
-    
+    APT_PrepareToCloseApplication(false);
+    //aptExit();
     return 0;
 }

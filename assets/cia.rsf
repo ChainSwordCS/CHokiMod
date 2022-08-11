@@ -73,7 +73,7 @@ AccessControlInfo:
   SystemMode                    : 64MB # 64MB(Default)/96MB/80MB/72MB/32MB
   IdealProcessor                : 1 # Thinking about other processors lol
   AffinityMask                  : 1 # Shouldn't be 15. Try 1 or 3 etc.
-  Priority                      : 16 # Was 20. Try 48 but I forget why. 16 is default(?)
+  Priority                      : 20 # Was 20. Try 48 but I forget why. 16 is default(?)
   MaxCpu                        : 0x9E # Try 158 but I forget why. 0x9E is default. 0 = Let System Decide.
   HandleTableSize               : 0x200 # Default
   DisableDebug                  : false
