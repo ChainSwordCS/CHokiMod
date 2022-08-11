@@ -1,18 +1,21 @@
 #include "mcu.h"
 
 
-static Handle mcuHandle = 0;
+static Handle mcuHandle = 0; // This can be global, sure.
 
+// Returns a ServiceHandle for the MCU
 Result mcuInit()
 {
     return srvGetServiceHandle(&mcuHandle, "mcu::HWC");
 }
 
+// Close the ServiceHandle for the MCU
 Result mcuExit()
 {
     return svcCloseHandle(mcuHandle);
 }
 
+// Reads from a specified MCU register. Arguments are: register, pointer to your data, and size of your data.
 Result mcuReadRegister(u8 reg, void* data, u32 size)
 {
     u32* ipc = getThreadCommandBuffer();
@@ -26,6 +29,7 @@ Result mcuReadRegister(u8 reg, void* data, u32 size)
     return ipc[1];
 }
 
+// Writes to a specified MCU register. Arguments are: register, pointer to your data, and size of your data.
 Result mcuWriteRegister(u8 reg, void* data, u32 size)
 {
     u32* ipc = getThreadCommandBuffer();

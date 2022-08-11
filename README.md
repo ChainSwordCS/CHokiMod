@@ -14,14 +14,19 @@ Please note, the HorizonScreen application in this repository is old and obsolet
 
 ## Credits
 - ### CHokiMod Credits
-  - ChainSwordCS - something idk, documentation and reverse-engineering of HzMod
-  - Eiim - Documentation and reverse-engineering of HzMod
-  - herronjo - Documentation and reverse-engineering of HzMod
-
+  - ChainSwordCS - C++ and C programming, code comments
+  - savvychipmunk57 - C++ and C programming, code comments, assistance with C++/C logic and syntax.
+  - bol0gna - c++ and C programming, code comments, assistance with C++/C logic and syntax.
+  
+- ### ChokiStream Credits (Indirect help with this project)
+  - Eiim - Documentation and reverse-engineering of HzMod, development of ChokiStream
+  - herronjo - Documentation and reverse-engineering of HzMod, development of ChokiStream
+  - ChainSwordCS - Documentation and reverse-engineering of HzMod, development of ChokiStream
+  
 - ### Original Code
   - Sono - for creating the HzMod project and the code from which CHokiMod was forked.
-
-  - #### Additional credits for HorizonM / HzMod
+  
+  - #### Additional credits for original HorizonM / HzMod
     - Minnow - figuring out how Base processes can be used
     - ihaveamac - pointing me towards the right direction for fixing memory allocation on new3DS and getting HorizonScreen to compile on macOS
     - Stary - help with WinSockets in HorizonScreen
@@ -29,6 +34,20 @@ Please note, the HorizonScreen application in this repository is old and obsolet
     - 916253 - betatesting
     - NekoWasHere @ Reddit - betatesting
     - JayLine_ @ Reddit - betatesting
+
+## Build Instructions
+
+If you really need a nightly build, the CIA in the /chokimod-build-out/ folder is updated with some (but not all) commits. We make no guarantee it will function as intended. It's experimental.
+
+I generally wouldn't recommend setting up a build environment unless you are contributing code to the project, etc.
+
+### Build Requirements
+* [DevKitPro](https://devkitpro.org/wiki/Getting_Started)
+* DevKitPro 3DS extra libraries (should be done automatically by the Makefile)
+  * lib-jpeg-turbo
+  * lib-zip
+* [makerom](https://github.com/3DSGuy/Project_CTR/releases?q=makerom&expanded=true), in DevKitPro's / MSYS2's PATH.
+
 
 # License
 
