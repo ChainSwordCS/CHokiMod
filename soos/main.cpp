@@ -854,9 +854,10 @@ static SocketBuffer::PacketStruct* k = nullptr;
 static Thread netthread = 0;
 static vu32 threadrunning = 0;
 
-static void* screenbuf = nullptr; // void*? u32*? u8*? I have no idea man.
-//static void* screenbuf = (void*)mem_shared_address; // This line wouldn't have worked correctly anyway.
-static u32 screenbuf_address; // Unused
+// screenbuf = Beginning of the data in the packet we are making...
+// I don't remember if this should be a void*, a u8*, a u32*...
+static void* screenbuf = nullptr;
+//static u32 screenbuf_address;
 
 static tga_image img;
 static tjhandle turbo_jpeg_instance_handle = nullptr;
@@ -1235,7 +1236,6 @@ void netfunc(void* __dummy_arg__)
                     //Exact old code:
                     // if(!tjCompress2(jencode, (u8*)screenbuf, scrw, bsiz * scrw, stride[scr], format[scr] ? TJPF_RGB : TJPF_RGBX, &dstptr, (u32*)&imgsize, TJSAMP_420, cfgblk[3], TJFLAG_NOREALLOC | TJFLAG_FASTDCT))
                     //
-
                     //     tjCompress2(void *,        (u8*) const unsigned char *,  int,         int,         int,                                int,unsigned char * *, unsigned long int *,   int,       int, int)
                     ret3 = tjCompress2(turbo_jpeg_instance_handle, (u8*)screenbuf, scrw, bsiz * scrw, stride[scr], format[scr] ? TJPF_RGB : TJPF_RGBX, &destination_ptr, (u32*)&imgsize, TJSAMP_420, cfgblk[3], TJFLAG_NOREALLOC | TJFLAG_FASTDCT);
 
