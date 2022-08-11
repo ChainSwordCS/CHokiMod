@@ -403,6 +403,11 @@ class SocketBuffer
 public:
     typedef struct
     {
+    	// Note: Previous version of code below (but maybe was broken anyway)
+    	//u32 packet_type_byte : 8;
+    	//u32 size : 24
+    	// Also note: u8 data[0]; is unchanged(?)
+
         u8 packet_type_byte;
         u8 size; // The size of a given packet *does* change.
         u16 unused_bytes_for_compatibility;
@@ -410,9 +415,9 @@ public:
     } PacketStruct;
     
     int socket_id;
-    u8* buffer_bytearray_aka_pointer; // Maybe remove because it may cause regressions. -C (2022-08-10)
+    u8* buffer_bytearray_aka_pointer; // Hasn't changed; just the name. -C (2022-08-10)
     int buffer_size; // The total buffer size doesn't change after boot.
-    //int recvsize;
+    //int recvsize; // Effectively useless, even in old code.
     
     // Old Version:
     // SocketBuffer(int passed_sock, int passed_bufsize)
@@ -422,7 +427,11 @@ public:
     {
         buffer_size = passed_bufsize;
         socket_id = passed_sock;
-        // Maybe remove because of regressions. -C (2022-08-10)
+        // Old code:
+        //buffer_bytearray_aka_pointer = new u8[passed_bufsize];
+        //recvsize = 0;
+
+        // Maybe revert or remove because of regressions. -C (2022-08-10)
         buffer_bytearray_aka_pointer = (u8*)passed_buffer_address; // Convert the u32 address into a usable pointer
     }
     
@@ -430,7 +439,7 @@ public:
     {
     	// If this SocketBuffer is already null,
     	// don't attempt to delete it again.
-    	// (Could this be safely omitted> -C)
+    	// (Could this be safely omitted? -C)
         if(!this)
         	return;
         close(socket_id);
@@ -445,17 +454,28 @@ public:
     int readbuf(int flags = 0)
     {
         u32 header = 0;
+        // IIRC, setting this to 0 is functionally no different from how this code
+        // used to work. But maybe keep this in mind... -C (2022-10-08)
         u32 received_size = 0;
+
         // Get header byte
         int ret = recv(socket_id, &header, 4, flags);
         if(ret < 0) return -errno;
         if(ret < 4) return -1;
+
+        // Old code, but just moved down about 10 lines, *facepalm* -C (2022-08-10)
+        //*(u32*)buffer_bytearray_aka_pointer = header;
+
+        // Maybe remove this line due to brokenness. -C (2022-08-10)
+        // I totally forget how this works and how I had changed it.
+        // Sorry future-me and everyone else who reads this, lol. -C (2022-08-10)
         // Get size byte
         ret = recv(socket_id, &received_size, 4, flags);
         
         // Copy the 4 header bytes to the start of the buffer. And the size
         PacketStruct* packet_in_buffer = getPointerToBufferAsPacketPointer();
         *(u32*)buffer_bytearray_aka_pointer = header;
+        // Maybe remove this line due to brokenness. -C (2022-08-10)
         packet_in_buffer->size = received_size;
 
         // Previously had a bug here (:
@@ -468,24 +488,35 @@ public:
         // wrong and we usually end up reading past the data just sent to us.
         // This could result in an error, or just wasted CPU and RAM time.
 
+
         int num_reads_remaining = packet_in_buffer->size;
         
-        int offs = 0;
+        int offs = 0; // In old code, this was 4. I forget if this will be broken or not. -C (2022-08-10)
         while(num_reads_remaining)
         {
+        	// old code version:
+        	//ret = recv(socket_id, buffer_bytearray_aka_pointer + offs, num_reads_remaining, flags);
             ret = recv(socket_id, packet_in_buffer->data , num_reads_remaining, flags);
+
             if(ret <= 0) return -errno;
             num_reads_remaining -= ret;
             offs += ret;
         }
         
+        // 'recvsize' variable was written to but never read from, AFAIK. -C (2022-08-10)
         //recvsize = offs;
+
         return offs;
     }
     
     int wribuf(int flags = 0)
     {
-        int mustwri = getPointerToBufferAsPacketPointer()->size + 4; // TODO: Is this borked now?
+    	// TODO: Is this borked now?
+    	//
+    	// Hopefully it's mostly un-borked now, otherwise I'm still
+    	// working on fixing massive regressions everywhere.
+    	// But this function was largely untouched by me. -C (2022-08-10)
+        int mustwri = getPointerToBufferAsPacketPointer()->size + 4;
         int offs = 0;
         int ret = 0;
         
@@ -535,6 +566,11 @@ public:
     }
 };
 
+// These variables were at one point declared up here(?) Don't remember why. -C
+//static bufsoc* soc = nullptr;
+//static bufsoc::packet* k = nullptr;
+
+// And IIRC these two were always here, or otherwise at least present. IDK. -C
 static jmp_buf __exc;
 static int  __excno;
 
@@ -628,6 +664,7 @@ void netfunc(void* __dummy_arg__)
     
     if(is_old_3ds)
     {
+    	// Commented-out before I got here. -C
     	// screenbuf = (u32*)k->data;
     }
     else
@@ -637,6 +674,7 @@ void netfunc(void* __dummy_arg__)
     	//osSetSpeedupEnable(1);
     }
     
+    // Written before I got here. I forget what or why. -C
     k = socketbuffer_object_pointer->getPointerToBufferAsPacketPointer(); //Just In Case (tm)
     
     PatStay(0x00FF00); // Notif LED = Green
@@ -712,9 +750,6 @@ void netfunc(void* __dummy_arg__)
 				cy = socketbuffer_object_pointer->readbuf();
 				if(cy <= 0)
 				{
-					// I legitimately don't know where debug output is defined.
-					// It might as well not exist to be honest.
-					// But I'm also Dumb Lol, so I won't remove these (yet) -C
 					printf("Failed to recvbuf: (%i) %s\n", errno, strerror(errno));
 					delete socketbuffer_object_pointer;
 					socketbuffer_object_pointer = nullptr;
@@ -726,9 +761,7 @@ void netfunc(void* __dummy_arg__)
 
 					//reread: // unused label IIRC. -C
 					int cfg_copy_data_size = 1;
-					// Is there any performance benefit to making this
-					// a switch-case instead of if-else statements?
-					// Genuine question. I could go either way to be honest. -C
+
 					switch(k->packet_type_byte)
 					{
 						case 0x00: //CONNECT
@@ -745,8 +778,9 @@ void netfunc(void* __dummy_arg__)
 							break;
 
 						case 0x7E: //CFGBLK_IN
+							// Old Code!
 							//memcpy(cfgblk + k->data[0], &k->data[4], min((u32)(0x100 - k->data[0]), (u32)(k->size - 4)));
-							//
+
 							// Refactored this code. Should be less borked.
 							//
 							// The first byte *of the packet* is the packet-type
@@ -772,14 +806,20 @@ void netfunc(void* __dummy_arg__)
 
 						default:
 							printf("Invalid packet ID: %i\n", k->packet_type_byte);
-							//delete soc;
-							//soc = nullptr;
+							// TODO: Uncomment these two lines assuming they're not in the way.
+							// They're from the old code.
+							//delete socketbuffer_object_pointer;
+							//socketbuffer_object_pointer = nullptr;
 							break;
 					}
 
 					break;
 				}
 			}
+		// Having added this bracket SHOULDN'T break anything...
+		// Because previously, "if(socketbuffer_object_pointer->isAvailable())"
+		// Didn't have brackets and just implicitly led to the "while(1)" statement.
+		// But keep in mind, there's a small chance this is breaking something... -C (2022-08-10)
         }
         
         if(!socketbuffer_object_pointer)
@@ -787,6 +827,10 @@ void netfunc(void* __dummy_arg__)
         	break;
         }
         
+        // Old Code:
+        //if(cfgblk[0] && GSPGPU_ImportDisplayCaptureInfo(&capin) >= 0)
+        // New code might be broken, IDK. -C
+        //
         // If index 0 of config-block is non-zero! (Set by initialization sorta packet)
         // And this ImportDisplayCaptureInfo function doesn't error out...
         if(cfgblk[0])
@@ -812,6 +856,7 @@ void netfunc(void* __dummy_arg__)
                 format[0] = my_gpu_capture_info.screencapture[0].format;
                 format[1] = my_gpu_capture_info.screencapture[1].format;
                 
+                // Note this one line of code used to be like 4 lines up. Small chance it's broken.
                 k->packet_type_byte = 2; //MODE
                 k->size = 4 * 4;
                 
@@ -909,7 +954,7 @@ void netfunc(void* __dummy_arg__)
             }
             
             int loopcnt = 2;
-            
+            //lmao, I think this loop runs once. -H
             while(--loopcnt)
             {
                 if(format[scr] == 0xF00FCACE)
@@ -929,11 +974,20 @@ void netfunc(void* __dummy_arg__)
                     // Looks like I broke this, and I just fixed it again hopefully. -C
                     //
                     //if(!is_old_3ds) svcFlushProcessDataCache(0xFFFF8001, (u8*)screenbuf, capin.screencapture[scr].framebuf_widthbytesize * 400);
-					if(!is_old_3ds) svcFlushProcessDataCache(0xFFFF8001, (u32)&screenbuf, my_gpu_capture_info.screencapture[scr].framebuf_widthbytesize * 400);
+					//if(!is_old_3ds) svcFlushProcessDataCache(0xFFFF8001, (u32)&screenbuf, my_gpu_capture_info.screencapture[scr].framebuf_widthbytesize * 400);
+                    //
+                    // Adjusted code style here, just now. -C (2022-08-10)
+                    if(!is_old_3ds)
+                    {
+                    	svcFlushProcessDataCache(0xFFFF8001,\
+                    	(u32)&screenbuf,\
+						my_gpu_capture_info.screencapture[scr].framebuf_widthbytesize * 400);
+                    }
                 }
                 
                 int imgsize = 0;
                 
+                // TODO: Maybe remove this line for regression reasons? -C
                 destination_ptr = &k->data[8];
 
 
@@ -959,26 +1013,32 @@ void netfunc(void* __dummy_arg__)
                 {
                     *(u32*)&k->data[0] = (scr * 400) + (stride[scr] * offs[scr]);
 
+                    // (Renamed) line of old code:
+                    //u8* destination_ptr = &k->data[8];
+
                     // Please make this not all one line. -C
                     int ret3;
+
+                    //Exact old code:
+                    // if(!tjCompress2(jencode, (u8*)screenbuf, scrw, bsiz * scrw, stride[scr], format[scr] ? TJPF_RGB : TJPF_RGBX, &dstptr, (u32*)&imgsize, TJSAMP_420, cfgblk[3], TJFLAG_NOREALLOC | TJFLAG_FASTDCT))
+                    //
 
                     //     tjCompress2(void *,        (u8*) const unsigned char *,  int,         int,         int,                                int,unsigned char * *, unsigned long int *,   int,       int, int)
                     ret3 = tjCompress2(turbo_jpeg_instance_handle, (u8*)screenbuf, scrw, bsiz * scrw, stride[scr], format[scr] ? TJPF_RGB : TJPF_RGBX, &destination_ptr, (u32*)&imgsize, TJSAMP_420, cfgblk[3], TJFLAG_NOREALLOC | TJFLAG_FASTDCT);
 
-
                     if(!ret3)
                     {
-                    	k->size = imgsize + 4;
+                    	k->size = imgsize + 4; // Formerly +8, not +4.
                     }
                     k->packet_type_byte = 4; //DATA (JPEG)
                 }
 
-                // Commented out before I got here. -C
-
-                //k->size += 4;
-                //svcStartInterProcessDma(&dmahand, 0xFFFF8001, screenbuf, prochand ? prochand : 0xFFFF8001, fbuf[0] + fboffs, siz, dmaconf);
-                //svcFlushProcessDataCache(prochand ? prochand : 0xFFFF8001, capin.screencapture[0].framebuf0_vaddr, capin.screencapture[0].framebuf_widthbytesize * 400);
-                //svcStartInterProcessDma(&dmahand, 0xFFFF8001, screenbuf, prochand ? prochand : 0xFFFF8001, (u8*)capin.screencapture[0].framebuf0_vaddr + fboffs, siz, dmaconf);
+                // Commented out before I got here, IIRC. -C
+                //
+                // k->size += 4;
+                // svcStartInterProcessDma(&dmahand, 0xFFFF8001, (u32)screenbuf, prochand ? prochand : 0xFFFF8001, fbuf[0] + fboffs, siz, dmaconf);
+                // svcFlushProcessDataCache(prochand ? prochand : 0xFFFF8001, capin.screencapture[0].framebuf0_vaddr, capin.screencapture[0].framebuf_widthbytesize * 400);
+                // svcStartInterProcessDma(&dmahand, 0xFFFF8001, (u32)screenbuf, prochand ? prochand : 0xFFFF8001, (u8*)capin.screencapture[0].framebuf0_vaddr + fboffs, siz, dmaconf);
                 //screenDMA(&dmahand, screenbuf, 0x600000 + fboffs, siz, dmaconf);
                 //screenDMA(&dmahand, screenbuf, dbgo, siz, dmaconf);
                 
@@ -1014,16 +1074,18 @@ void netfunc(void* __dummy_arg__)
                 	}
                 }
                 
-
-                if\
-                (\
-                    svcStartInterProcessDma\
-                    (\
-                        &dmahand, 0xFFFF8001, (u32)&screenbuf, prochand ? prochand : 0xFFFF8001,\
-                        (u32)(my_gpu_capture_info.screencapture[scr].framebuf0_vaddr + (siz * offs[scr])), siz, &dma_config\
-                    )\
-                    < 0 \
-                )
+                // compares the function Result (s32) to 0, to see if it succeeds
+                // (Function returns 0 or positive int on success, negative int on fail.)
+                //
+                // 1.
+                if( 0 > svcStartInterProcessDma(
+                		&dmahand, // Note: this is where the 'dmahand' variable is set!
+						0xFFFF8001, // "Destination Process Handle"... is this correct?
+						(u32)screenbuf, // Probably correct... One iteration of my code did "&screenbuf", but I now think that's wrong.
+						prochand ? prochand : 0xFFFF8001, // "Source Process Handle"... is this correct? Maybe...
+                        (u32)(my_gpu_capture_info.screencapture[scr].framebuf0_vaddr + (siz * offs[scr])), // Source Address, seems fine.
+						siz, // How much data do we copy
+						&dma_config) ) // This is fine too.
                 {
                     procid = 0;
                     format[scr] = 0xF00FCACE; //invalidate
@@ -1213,22 +1275,23 @@ int main()
     //
     if(is_old_3ds)
     {
+    	// If this is broken, revert to (u8*)?
         screenbuf = (u32*)memalign(8, 50 * 240 * 4); // On Old-3DS
     }
     else
     {
+    	// If this is broken, revert to (u8*)?
         screenbuf = (u32*)memalign(8, 400 * 240 * 4); // On New-3DS
     }
 
-    if(!screenbuf) // If memalign returns null or 0
+    if(!screenbuf) // If memalign() returns null or 0 (fails)
     {
         makerave();
         svcSleepThread(2e9);
         hangmacro();
     }
     
-    //why
-    // Last night I was tired enough that I didn't even know where to begin with rewriting this.
+    // I'm just leaving this here. I don't know what it does.
     if((__excno = setjmp(__exc))) goto killswitch;
 
 #ifdef _3DS
@@ -1306,13 +1369,11 @@ int main()
     
     if(haznet)
     {
-    	//todo - uncomment
-    	//PatStay(0xCCFF00); // what color is this? 100% green + 75% blue? lol
+    	PatStay(0xCCFF00);
     }
     else
     {
-    	//todo - uncomment
-    	//PatStay(0x00FFFF); // bright yellow, this means no wifi yet?
+    	PatStay(0x00FFFF);
     }
 
     // This conditional statement was previously "while(1)"
@@ -1324,6 +1385,9 @@ int main()
     // But if nothing else, we really should change this.
     // You can keep the infinitely running 'while' loop,
     // But, like, split this into more functions so it's possible to navigate this file.
+    //
+    // Well, this might have become broken when I tried changing it
+    // to use AptMainLoop() (or whatever it was called). So maybe leave it. -C (2022-08-10)
 
     while(1)
     {
@@ -1350,6 +1414,7 @@ int main()
             }
             else if(pollSocket(sock, POLLIN) == POLLIN)
             {
+            	//I think cli stands for client
                 int cli = accept(sock, (struct sockaddr*)&sai, &sizeof_sai);
                 if(cli < 0)
                 {
@@ -1369,6 +1434,7 @@ int main()
                     	memoffset=50*240*2+32;
                     else
                     	memoffset=400*240*2+32;
+
                     // Note: I don't know if me rewriting SocketBuffer ends up breaking this.
                     // Because I changed the number of arguments and possibly their order.
                     // I forget, sorry. -C (2022-08-10)
@@ -1399,6 +1465,7 @@ int main()
                         svcSleepThread(2e9);
                     }
                     
+                    //Could above and below if statements be combined? lol -H
                     
                     if(netthread)
                     {
@@ -1421,7 +1488,7 @@ int main()
         
         if(netthread && !threadrunning)
         {
-            //TODO todo?
+            //TODO: Is this code broken? I haven't changed it yet, but it may be. -C
             netthread = nullptr;
             goto reloop;
         }
