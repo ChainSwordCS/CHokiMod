@@ -85,7 +85,7 @@ void initializeGraphics();
 // from test-branch-2 (2022-08-09)
 void initializeSocketBufferMem(u32**,u32*); // Unfinished, likely broken.
 void initializeOurScreenBufferMem(u32**,u32*); // Unfinished, likely broken.
-int mainGetNewSocketEtc(int,struct sockaddr_in*,socklen_t*,SocketBuffer**,SocketBuffer::PacketStruct**); // Unfinished, likely broken.
+//int mainGetNewSocketEtc(int,struct sockaddr_in*,socklen_t*,SocketBuffer**,SocketBuffer::PacketStruct**); // Unfinished, likely broken.
 int netResetFunc(int*); // Unfinished, likely broken.
 int mainTryConnectToSocket(int*); // Unfinished, likely broken.
 
@@ -123,6 +123,174 @@ const int port = 6464;
 // good for me to move a lot of this into external documentation instead.
 // But for right now, I can't be bothered. And a good portion of these comments
 // will become obsolete on their own. -C (2022-08-10)
+
+class SocketBuffer
+{
+public:
+    typedef struct
+    {
+    	// Note: Previous version of code below (but maybe was broken anyway)
+    	//u32 packet_type_byte : 8;
+    	//u32 size : 24
+    	// Also note: u8 data[0]; is unchanged(?)
+
+        u8 packet_type_byte;
+        u8 size; // The size of a given packet *does* change.
+        u16 unused_bytes_for_compatibility;
+        u8 data[0];
+    } PacketStruct;
+
+    int socket_id;
+    u8* buffer_bytearray_aka_pointer; // Hasn't changed; just the name. -C (2022-08-10)
+    int buffer_size; // The total buffer size doesn't change after boot.
+    //int recvsize; // Effectively useless, even in old code.
+
+    // Old Version:
+    // SocketBuffer(int passed_sock, int passed_bufsize)
+    // Version from Test-Branch-1 (2022-08-07):
+    //SocketBuffer(u32 passed_sock, u32 passed_buffer_address, u32 passed_bufsize = 0)
+    SocketBuffer(int passed_sock, int passed_bufsize, u32 passed_buffer_address = 0)
+    {
+        buffer_size = passed_bufsize;
+        socket_id = passed_sock;
+        // Old code:
+        //buffer_bytearray_aka_pointer = new u8[passed_bufsize];
+        //recvsize = 0;
+
+        // Maybe revert or remove because of regressions. -C (2022-08-10)
+        buffer_bytearray_aka_pointer = (u8*)passed_buffer_address; // Convert the u32 address into a usable pointer
+    }
+
+    ~SocketBuffer() // Destructor
+    {
+    	// If this SocketBuffer is already null,
+    	// don't attempt to delete it again.
+    	// (Could this be safely omitted? -C)
+        if(!this)
+        	return;
+        close(socket_id);
+        delete[] buffer_bytearray_aka_pointer;
+    }
+
+    int isAvailable()
+    {
+    	return pollSocket(socket_id, POLLIN, 0) == POLLIN;
+    }
+
+    int readbuf(int flags = 0)
+    {
+        u32 header = 0;
+        // IIRC, setting this to 0 is functionally no different from how this code
+        // used to work. But maybe keep this in mind... -C (2022-10-08)
+        u32 received_size = 0;
+
+        // Get header byte
+        int ret = recv(socket_id, &header, 4, flags);
+        if(ret < 0) return -errno;
+        if(ret < 4) return -1;
+
+        // Old code, but just moved down about 10 lines, *facepalm* -C (2022-08-10)
+        //*(u32*)buffer_bytearray_aka_pointer = header;
+
+        // Maybe remove this line due to brokenness. -C (2022-08-10)
+        // I totally forget how this works and how I had changed it.
+        // Sorry future-me and everyone else who reads this, lol. -C (2022-08-10)
+        // Get size byte
+        ret = recv(socket_id, &received_size, 4, flags);
+
+        // Copy the 4 header bytes to the start of the buffer. And the size
+        PacketStruct* packet_in_buffer = getPointerToBufferAsPacketPointer();
+        *(u32*)buffer_bytearray_aka_pointer = header;
+        // Maybe remove this line due to brokenness. -C (2022-08-10)
+        packet_in_buffer->size = received_size;
+
+        // Previously had a bug here (:
+        //
+        // Size is not obtained from anything the incoming packet just said to us.
+        // Size was last set by 'passed_bufsize' in the SocketBuffer constructor.
+        // (Or last set by an instance of PacketStruct or SocketBuffer idk)
+        //
+        // So in practice: when we want to read a packet, the size is
+        // wrong and we usually end up reading past the data just sent to us.
+        // This could result in an error, or just wasted CPU and RAM time.
+
+
+        int num_reads_remaining = packet_in_buffer->size;
+
+        int offs = 0; // In old code, this was 4. I forget if this will be broken or not. -C (2022-08-10)
+        while(num_reads_remaining)
+        {
+        	// old code version:
+        	//ret = recv(socket_id, buffer_bytearray_aka_pointer + offs, num_reads_remaining, flags);
+            ret = recv(socket_id, packet_in_buffer->data , num_reads_remaining, flags);
+
+            if(ret <= 0) return -errno;
+            num_reads_remaining -= ret;
+            offs += ret;
+        }
+
+        // 'recvsize' variable was written to but never read from, AFAIK. -C (2022-08-10)
+        //recvsize = offs;
+
+        return offs;
+    }
+
+    int wribuf(int flags = 0)
+    {
+    	// TODO: Is this borked now?
+    	//
+    	// Hopefully it's mostly un-borked now, otherwise I'm still
+    	// working on fixing massive regressions everywhere.
+    	// But this function was largely untouched by me. -C (2022-08-10)
+        int mustwri = getPointerToBufferAsPacketPointer()->size + 4;
+        int offs = 0;
+        int ret = 0;
+
+        while(mustwri)
+        {
+            if(mustwri >> 12)
+                ret = send(socket_id, buffer_bytearray_aka_pointer + offs , 0x1000, flags);
+            else
+                ret = send(socket_id, buffer_bytearray_aka_pointer + offs , mustwri, flags);
+            if(ret < 0) return -errno;
+            mustwri -= ret;
+            offs += ret;
+        }
+
+        return offs;
+    }
+
+    PacketStruct* getPointerToBufferAsPacketPointer()
+    {
+        return (PacketStruct*)buffer_bytearray_aka_pointer;
+    }
+
+    int errformat(char* c, ...)
+    {
+        PacketStruct* wip_packet = getPointerToBufferAsPacketPointer();
+
+        int len = 0;
+
+        va_list args;
+        va_start(args, c);
+        len = vsprintf((char*)wip_packet->data + 1, c, args);
+        va_end(args);
+
+        if(len < 0)
+        {
+            puts("out of memory"); //???
+            return -1;
+        }
+
+        //printf("Packet error %i: %s\n", wip_packet->packetid, wip_packet->data + 1);
+
+        wip_packet->data[0] = wip_packet->packet_type_byte;
+        wip_packet->packet_type_byte = 1;
+        wip_packet->size = len + 2;
+
+        return wribuf();
+    }
+};
 
 void corruptVramLol()
 {
@@ -239,7 +407,7 @@ int mainGetNewSocketEtc(int input_sock, struct sockaddr_in* ptr_to_sai, socklen_
 			PatPulse(0x00FF00);
 			// Size of new socket buffer, smaller if on Old-3DS.
 			u32 bufsize;
-			if(isold)
+			if(is_old_3ds)
 			{
 				bufsize = 0xC000;
 			}
@@ -485,7 +653,8 @@ void allocateRamAndShareWithGpu()
 	u32 result;
 	result = svcControlMemory(&mem_shared_address,mem_request_address,0,memblock_size,flags,p1);
 	if(result)
-		hangmacro();
+		//hangmacro();
+
 	//result = svcCreateMemoryBlock(&mem_shared_handle,mem_shared_address,memblock_size,p1,p2);
 	//if(result)
 	//	hangmacro();
@@ -524,7 +693,7 @@ void allocateRamAndShareWithGpu()
 
 
 	if(!mem_shared_address) // If we ended up failing, maybe hang instead idk
-		hangmacro();
+		//hangmacro();
 
 	return;
 }
@@ -607,173 +776,6 @@ int pollSocket(int passed_socket_id, int passed_events, int timeout = 0)
     	return 0;
 }
 
-class SocketBuffer
-{
-public:
-    typedef struct
-    {
-    	// Note: Previous version of code below (but maybe was broken anyway)
-    	//u32 packet_type_byte : 8;
-    	//u32 size : 24
-    	// Also note: u8 data[0]; is unchanged(?)
-
-        u8 packet_type_byte;
-        u8 size; // The size of a given packet *does* change.
-        u16 unused_bytes_for_compatibility;
-        u8 data[0];
-    } PacketStruct;
-
-    int socket_id;
-    u8* buffer_bytearray_aka_pointer; // Hasn't changed; just the name. -C (2022-08-10)
-    int buffer_size; // The total buffer size doesn't change after boot.
-    //int recvsize; // Effectively useless, even in old code.
-
-    // Old Version:
-    // SocketBuffer(int passed_sock, int passed_bufsize)
-    // Version from Test-Branch-1 (2022-08-07):
-    //SocketBuffer(u32 passed_sock, u32 passed_buffer_address, u32 passed_bufsize = 0)
-    SocketBuffer(int passed_sock, int passed_bufsize, u32 passed_buffer_address = 0)
-    {
-        buffer_size = passed_bufsize;
-        socket_id = passed_sock;
-        // Old code:
-        //buffer_bytearray_aka_pointer = new u8[passed_bufsize];
-        //recvsize = 0;
-
-        // Maybe revert or remove because of regressions. -C (2022-08-10)
-        buffer_bytearray_aka_pointer = (u8*)passed_buffer_address; // Convert the u32 address into a usable pointer
-    }
-
-    ~SocketBuffer() // Destructor
-    {
-    	// If this SocketBuffer is already null,
-    	// don't attempt to delete it again.
-    	// (Could this be safely omitted? -C)
-        if(!this)
-        	return;
-        close(socket_id);
-        delete[] buffer_bytearray_aka_pointer;
-    }
-
-    int isAvailable()
-    {
-    	return pollSocket(socket_id, POLLIN) == POLLIN;
-    }
-
-    int readbuf(int flags = 0)
-    {
-        u32 header = 0;
-        // IIRC, setting this to 0 is functionally no different from how this code
-        // used to work. But maybe keep this in mind... -C (2022-10-08)
-        u32 received_size = 0;
-
-        // Get header byte
-        int ret = recv(socket_id, &header, 4, flags);
-        if(ret < 0) return -errno;
-        if(ret < 4) return -1;
-
-        // Old code, but just moved down about 10 lines, *facepalm* -C (2022-08-10)
-        //*(u32*)buffer_bytearray_aka_pointer = header;
-
-        // Maybe remove this line due to brokenness. -C (2022-08-10)
-        // I totally forget how this works and how I had changed it.
-        // Sorry future-me and everyone else who reads this, lol. -C (2022-08-10)
-        // Get size byte
-        ret = recv(socket_id, &received_size, 4, flags);
-
-        // Copy the 4 header bytes to the start of the buffer. And the size
-        PacketStruct* packet_in_buffer = getPointerToBufferAsPacketPointer();
-        *(u32*)buffer_bytearray_aka_pointer = header;
-        // Maybe remove this line due to brokenness. -C (2022-08-10)
-        packet_in_buffer->size = received_size;
-
-        // Previously had a bug here (:
-        //
-        // Size is not obtained from anything the incoming packet just said to us.
-        // Size was last set by 'passed_bufsize' in the SocketBuffer constructor.
-        // (Or last set by an instance of PacketStruct or SocketBuffer idk)
-        //
-        // So in practice: when we want to read a packet, the size is
-        // wrong and we usually end up reading past the data just sent to us.
-        // This could result in an error, or just wasted CPU and RAM time.
-
-
-        int num_reads_remaining = packet_in_buffer->size;
-
-        int offs = 0; // In old code, this was 4. I forget if this will be broken or not. -C (2022-08-10)
-        while(num_reads_remaining)
-        {
-        	// old code version:
-        	//ret = recv(socket_id, buffer_bytearray_aka_pointer + offs, num_reads_remaining, flags);
-            ret = recv(socket_id, packet_in_buffer->data , num_reads_remaining, flags);
-
-            if(ret <= 0) return -errno;
-            num_reads_remaining -= ret;
-            offs += ret;
-        }
-
-        // 'recvsize' variable was written to but never read from, AFAIK. -C (2022-08-10)
-        //recvsize = offs;
-
-        return offs;
-    }
-
-    int wribuf(int flags = 0)
-    {
-    	// TODO: Is this borked now?
-    	//
-    	// Hopefully it's mostly un-borked now, otherwise I'm still
-    	// working on fixing massive regressions everywhere.
-    	// But this function was largely untouched by me. -C (2022-08-10)
-        int mustwri = getPointerToBufferAsPacketPointer()->size + 4;
-        int offs = 0;
-        int ret = 0;
-
-        while(mustwri)
-        {
-            if(mustwri >> 12)
-                ret = send(socket_id, buffer_bytearray_aka_pointer + offs , 0x1000, flags);
-            else
-                ret = send(socket_id, buffer_bytearray_aka_pointer + offs , mustwri, flags);
-            if(ret < 0) return -errno;
-            mustwri -= ret;
-            offs += ret;
-        }
-
-        return offs;
-    }
-
-    PacketStruct* getPointerToBufferAsPacketPointer()
-    {
-        return (PacketStruct*)buffer_bytearray_aka_pointer;
-    }
-
-    int errformat(char* c, ...)
-    {
-        PacketStruct* wip_packet = getPointerToBufferAsPacketPointer();
-
-        int len = 0;
-
-        va_list args;
-        va_start(args, c);
-        len = vsprintf((char*)wip_packet->data + 1, c, args);
-        va_end(args);
-
-        if(len < 0)
-        {
-            puts("out of memory"); //???
-            return -1;
-        }
-
-        //printf("Packet error %i: %s\n", wip_packet->packetid, wip_packet->data + 1);
-
-        wip_packet->data[0] = wip_packet->packet_type_byte;
-        wip_packet->packet_type_byte = 1;
-        wip_packet->size = len + 2;
-
-        return wribuf();
-    }
-};
 
 // These variables were at one point declared up here(?) Don't remember why. -C
 //static bufsoc* soc = nullptr;
@@ -1628,7 +1630,7 @@ int main()
             {
                 if(checkwifi()) goto netreset;
             }
-            else if(pollSocket(sock, POLLIN) == POLLIN)
+            else if(pollSocket(sock, POLLIN, 0) == POLLIN)
             {
             	//I think cli stands for client
                 int cli = accept(sock, (struct sockaddr*)&sai, &sizeof_sai);
@@ -1697,7 +1699,7 @@ int main()
                     }
                 }
             }
-            else if(pollSocket(sock, POLLERR) == POLLERR)
+            else if(pollSocket(sock, POLLERR, 0) == POLLERR)
             {
                 printf("POLLERR (%i) %s", errno, strerror(errno));
                 goto netreset;
