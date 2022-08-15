@@ -1610,10 +1610,10 @@ int main()
     	// This hidScanInput() function call might crash.
         //hidScanInput();
 
-        kDown = hidKeysDown();
+        //kDown = hidKeysDown();
         //kHeld = hidKeysHeld();
-        buttons_pressed = hidKeysHeld();
-        kUp = hidKeysUp();
+        //buttons_pressed = hidKeysHeld(); //TODO: DEBUG. Re-enable me ASAP.
+        //kUp = hidKeysUp();
 
         //printf("svcGetSystemTick: %016llX\n", svcGetSystemTick());
 
