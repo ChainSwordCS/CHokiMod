@@ -904,6 +904,8 @@ void netfunc(void* __dummy_arg__)
     k = socketbuffer_object_pointer->getPointerToBufferAsPacketPointer(); //Just In Case (tm)
     
     PatStay(0x00FF00); // Notif LED = Green
+
+    // Note to self: execution gets here at least. -C (2022-08-17)
     
     format[0] = 0xF00FCACE; //invalidate
     
@@ -933,6 +935,9 @@ void netfunc(void* __dummy_arg__)
     // It can effectively trash the contents of cfgblk on accident.
     // I will implement a variable or something, to denote when
     // another thread is already accessing the SocketBuffer.
+    //
+    // Note 2: I don't actually know if that's correct... -C (2022-08-17)
+    // At any rate, this code seems to work*
     do
     {
         k->packet_type_byte = 2; //MODE
@@ -1003,6 +1008,7 @@ void netfunc(void* __dummy_arg__)
 
 					//reread: // unused label IIRC. -C
 					int cfg_copy_data_size = 1;
+					u8 h;
 					void* memcpy_address_to_copy_to;
 					void* memcpy_address_to_copy_from;
 					u32 memcpy_size_in_bytes = 0;
@@ -1014,7 +1020,7 @@ void netfunc(void* __dummy_arg__)
 							// I don't expect to actually ever receive this IIRC
 							socketbuffer_busy = 0;
 							cfgblk[0] = 1; // Manually enable ourselves.
-							cfgblk[3] = 25; // Manually set JPEG quality to 25
+							cfgblk[3] = 70; // Manually set JPEG quality to 70
 							break;
 						case 0x01: //ERROR
 							// I don't know if ChokiStream actually
@@ -1035,7 +1041,8 @@ void netfunc(void* __dummy_arg__)
 							// Note 2: the first byte of the "Data" is expected to be the location to which data is copied(?????) (the starting point for memcpy i think?)
 
 							// The first byte of Data (or "Data") is an offset, i.e. at what index of cfgblk do we want to start writing to?
-							memcpy_address_to_copy_to = &(cfgblk[k->data[0]]);
+							h = k->data[0];
+							memcpy_address_to_copy_to = &(cfgblk[h]);
 
 							// The fifth byte of Data (or "Data") is where we start copying from. Note, we are copying *FROM* k, which is already in RAM, which is why we get the address of the fifth byte in the array.
 							memcpy_address_to_copy_from = &(k->data[4]);
@@ -1055,6 +1062,9 @@ void netfunc(void* __dummy_arg__)
 							memcpy_size_in_bytes = min( (u32)((u32)0x100 - k->data[0]), (u32)(k->size - 4));
 
 							memcpy(memcpy_address_to_copy_to, memcpy_address_to_copy_from, memcpy_size_in_bytes);
+
+							//TODO: This is stupid. Placeholder.
+							cfgblk[0] = 1;
 
 							// My refactored code seems to be borked )..:
 
@@ -1109,16 +1119,22 @@ void netfunc(void* __dummy_arg__)
         
         // Old Code:
         // It is important that GSPGPU_ImportDisplayCaptureInfo does not fail.
-        if((cfgblk[0] > 0) && (GSPGPU_ImportDisplayCaptureInfo(&my_gpu_capture_info) >= 0))
-        {
+        //if((cfgblk[0] != 0x00) && (GSPGPU_ImportDisplayCaptureInfo(&my_gpu_capture_info) >= 0))
+        //{
         // New code might be broken, IDK. -C
         //
         // If index 0 of config-block is non-zero! (Set by initialization sorta packet)
         // And this ImportDisplayCaptureInfo function doesn't error out...
-        //if(cfgblk[0])
-        //{
+        int r;
+        r = GSPGPU_ImportDisplayCaptureInfo(&my_gpu_capture_info);
+        if(r < 0)
+        {
+        	PatPulse(0x00007F);
+        	yield();
+        }
+        else if(cfgblk[0] && r >= 0)
+        {
         	u8* destination_ptr;
-        	//GSPGPU_ImportDisplayCaptureInfo(&my_gpu_capture_info); // Should be fine?
 
             //test for changed framebuffers
             if\
@@ -1254,6 +1270,9 @@ void netfunc(void* __dummy_arg__)
             
             int loopcnt = 2;
             //lmao, I think this loop runs once. -H
+            //
+            // I don't know the return result of that operation...
+            // It's possible that this is quirky. -C (2022-08-17)
             while(--loopcnt)
             {
                 if(format[scr] == 0xF00FCACE)
@@ -1318,6 +1337,7 @@ void netfunc(void* __dummy_arg__)
                 // This conditional statement also forces output as Targa
                 // if the "JPEG Quality" value received from the PC application
                 // equals 0.
+                // (That is the intended behavior anyway...)
                 if((format[scr] & 0b110) != 0 || cfgblk[4] == 0)
                 {
                     init_tga_image(&img, (u8*)screenbuf, scrw, stride[scr], bits);
@@ -1325,12 +1345,13 @@ void netfunc(void* __dummy_arg__)
                     img.origin_y = (scr * 400) + (stride[scr] * offs[scr]);
                     tga_write_to_FILE(k->data, &img, &imgsize);
 
-                    k->packet_type_byte = 3; //DATA (Targa)
+                    k->packet_type_byte = 0x03; //DATA (Targa)
                     k->size = imgsize;
                 }
                 else
                 {
-                    *(u32*)&k->data[0] = (scr * 400) + (stride[scr] * offs[scr]);
+                	// slightly changed this line, shouldn't break. -C
+                    *((u32*)(k->data)) = (scr * 400) + (stride[scr] * offs[scr]);
 
                     // (Renamed) line of old code:
                     destination_ptr = &(k->data[8]); // The first 8 bytes are a "header". The 9th byte is the beginning of data.
@@ -1338,11 +1359,13 @@ void netfunc(void* __dummy_arg__)
                     // Please make this not all one line. -C
                     int ret3;
 
+                    // Changed cfgblk[3] to cfgblk[4]?
+
                     //Exact old code:
                     // if(!tjCompress2(jencode, (u8*)screenbuf, scrw, bsiz * scrw, stride[scr], format[scr] ? TJPF_RGB : TJPF_RGBX, &dstptr, (u32*)&imgsize, TJSAMP_420, cfgblk[3], TJFLAG_NOREALLOC | TJFLAG_FASTDCT))
                     //
                     //     tjCompress2(void *,        (u8*) const unsigned char *,  int,         int,         int,                                int,unsigned char * *, unsigned long int *,   int,       int, int)
-                    ret3 = tjCompress2(turbo_jpeg_instance_handle, (u8*)screenbuf, scrw, bsiz * scrw, stride[scr], format[scr] ? TJPF_RGB : TJPF_RGBX, &destination_ptr, (u32*)&imgsize, TJSAMP_420, cfgblk[3], TJFLAG_NOREALLOC | TJFLAG_FASTDCT);
+                    ret3 = tjCompress2(turbo_jpeg_instance_handle, (u8*)screenbuf, scrw, bsiz * scrw, stride[scr], format[scr] ? TJPF_RGB : TJPF_RGBX, &destination_ptr, (u64*)&imgsize, TJSAMP_420, cfgblk[4], (int)(TJFLAG_NOREALLOC | TJFLAG_FASTDCT));
 
                     if(!ret3) // Expecting tjCompress2() to return 0 on success.
                     {
@@ -1450,7 +1473,6 @@ void netfunc(void* __dummy_arg__)
                 if(dbgo >= 0x600000) dbgo = 0;
                 */
                 
-                // Free up this thread to do other things? (On Old-3DS)
                 if(is_old_3ds)
                 {
                 	svcSleepThread(5e6);
