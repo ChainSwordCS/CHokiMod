@@ -979,7 +979,7 @@ void netfunc(void* __dummy_arg__)
         	// why
 			while(1)
 			{
-				if((kHeld & (KEY_SELECT | KEY_START)) == (KEY_SELECT | KEY_START))
+				if((buttons_pressed & (KEY_SELECT | KEY_START)) == (KEY_SELECT | KEY_START))
 				{
 					delete socketbuffer_object_pointer;
 					socketbuffer_object_pointer = nullptr;
@@ -991,6 +991,7 @@ void netfunc(void* __dummy_arg__)
 				while(socketbuffer_busy)
 					yield();
 				socketbuffer_busy = 1;
+
 				puts("reading");
 				// Just using variable cy as another "res". why
 				cy = socketbuffer_object_pointer->readbuf();
@@ -1007,7 +1008,8 @@ void netfunc(void* __dummy_arg__)
 					printf("#%i 0x%X | %i\n", k->packet_type_byte, k->size, cy);
 
 					//reread: // unused label IIRC. -C
-					int cfg_copy_data_size = 1;
+					//int cfg_copy_data_size = 1;
+
 					u8 h;
 					void* memcpy_address_to_copy_to;
 					void* memcpy_address_to_copy_from;
@@ -1065,6 +1067,7 @@ void netfunc(void* __dummy_arg__)
 
 							//TODO: This is stupid. Placeholder.
 							cfgblk[0] = 1;
+							//cfgblk[3] = 70;
 
 							// My refactored code seems to be borked )..:
 
@@ -1125,6 +1128,7 @@ void netfunc(void* __dummy_arg__)
         //
         // If index 0 of config-block is non-zero! (Set by initialization sorta packet)
         // And this ImportDisplayCaptureInfo function doesn't error out...
+
         int r;
         r = GSPGPU_ImportDisplayCaptureInfo(&my_gpu_capture_info);
         if(r < 0)
@@ -1338,7 +1342,7 @@ void netfunc(void* __dummy_arg__)
                 // if the "JPEG Quality" value received from the PC application
                 // equals 0.
                 // (That is the intended behavior anyway...)
-                if((format[scr] & 0b110) != 0 || cfgblk[4] == 0)
+                if(((format[scr] & 0b110) != 0) || (cfgblk[3] == 0))
                 {
                     init_tga_image(&img, (u8*)screenbuf, scrw, stride[scr], bits);
                     img.image_type = TGA_IMAGE_TYPE_BGR_RLE;
@@ -1359,13 +1363,11 @@ void netfunc(void* __dummy_arg__)
                     // Please make this not all one line. -C
                     int ret3;
 
-                    // Changed cfgblk[3] to cfgblk[4]?
-
                     //Exact old code:
                     // if(!tjCompress2(jencode, (u8*)screenbuf, scrw, bsiz * scrw, stride[scr], format[scr] ? TJPF_RGB : TJPF_RGBX, &dstptr, (u32*)&imgsize, TJSAMP_420, cfgblk[3], TJFLAG_NOREALLOC | TJFLAG_FASTDCT))
                     //
-                    //     tjCompress2(void *,        (u8*) const unsigned char *,  int,         int,         int,                                int,unsigned char * *, unsigned long int *,   int,       int, int)
-                    ret3 = tjCompress2(turbo_jpeg_instance_handle, (u8*)screenbuf, scrw, bsiz * scrw, stride[scr], format[scr] ? TJPF_RGB : TJPF_RGBX, &destination_ptr, (u64*)&imgsize, TJSAMP_420, cfgblk[4], (int)(TJFLAG_NOREALLOC | TJFLAG_FASTDCT));
+                    //     tjCompress2(void *,        (u8*) const unsigned char *,  int,         int,         int,                                int,unsigned char * *, unsigned long int *,   int,              int, int)
+                    ret3 = tjCompress2(turbo_jpeg_instance_handle, (u8*)screenbuf, (int)(scrw), (int)(bsiz * scrw), (int)(stride[scr]), (int)(format[scr] ? TJPF_RGB : TJPF_RGBX), &destination_ptr, (u32*)&imgsize, TJSAMP_420, (int)(cfgblk[3]), (int)(TJFLAG_NOREALLOC | TJFLAG_FASTDCT));
 
                     if(!ret3) // Expecting tjCompress2() to return 0 on success.
                     {
@@ -1745,7 +1747,7 @@ int main()
 
         //kDown = hidKeysDown();
         //kHeld = hidKeysHeld();
-        buttons_pressed = hidKeysHeld(); //TODO: DEBUG. Re-enable me ASAP.
+        buttons_pressed = hidKeysHeld();
         //kUp = hidKeysUp();
 
         //printf("svcGetSystemTick: %016llX\n", svcGetSystemTick());
@@ -1855,7 +1857,7 @@ int main()
             //while(o--) *(ptr++) = rand();
         }
 
-        yield();
+        //yield();
     }
     
     killswitch:
