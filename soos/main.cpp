@@ -246,6 +246,8 @@ public:
         return offs;
     }
 
+    // Returns value of offs on success?
+    // Returns value of -errno on failure?
     int wribuf(int flags = 0)
     {
     	// TODO: Is this borked now?
@@ -253,19 +255,28 @@ public:
     	// Hopefully it's mostly un-borked now, otherwise I'm still
     	// working on fixing massive regressions everywhere.
     	// But this function was largely untouched by me. -C (2022-08-10)
-        int mustwri = getPointerToBufferAsPacketPointer()->size + 4;
+        u32 mustwri = getPointerToBufferAsPacketPointer()->size + 4;
         int offs = 0;
         int ret = 0;
 
         while(mustwri)
         {
-            if(mustwri >> 12)
+            //if(mustwri >> 12) // bitmask 11111111 11111111 11110000 00000000
+        	if(mustwri >= 0x1000)
                 ret = send(socket_id, buffer_bytearray_aka_pointer + offs , 0x1000, flags);
             else
                 ret = send(socket_id, buffer_bytearray_aka_pointer + offs , mustwri, flags);
-            if(ret < 0) return -errno;
-            mustwri -= ret;
-            offs += ret;
+
+        	if(ret < 0) // If it failed
+        	{
+        		PatPulse(0x0000FF);
+        		yield();
+        	}
+        	else
+        	{
+        		mustwri -= ret;
+        		offs += ret;
+        	}
         }
 
         return offs;
@@ -903,7 +914,7 @@ void netfunc(void* __dummy_arg__)
     // Written before I got here. I forget what or why. -C
     k = socketbuffer_object_pointer->getPointerToBufferAsPacketPointer(); //Just In Case (tm)
     
-    PatStay(0x00FF00); // Notif LED = Green
+    //PatStay(0x00FF00); // Notif LED = Green
 
     // Note to self: execution gets here at least. -C (2022-08-17)
     
