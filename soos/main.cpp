@@ -153,12 +153,16 @@ public:
     {
         buffer_size = passed_bufsize;
         socket_id = passed_sock;
+
         // Old code:
         //buffer_bytearray_aka_pointer = new u8[passed_bufsize];
         //recvsize = 0;
-
         // Maybe revert or remove because of regressions. -C (2022-08-10)
-        buffer_bytearray_aka_pointer = (u8*)passed_buffer_address; // Convert the u32 address into a usable pointer
+        //if(passed_buffer_address != 0)
+        //	buffer_bytearray_aka_pointer = (u8*)passed_buffer_address; // Convert the u32 address into a usable pointer
+
+        // I shouldn't have changed this... It's part of the mem allocation procedure.
+        buffer_bytearray_aka_pointer = new u8[passed_bufsize];
     }
 
     ~SocketBuffer() // Destructor
@@ -995,7 +999,8 @@ void netfunc(void* __dummy_arg__)
 
 						case 0x7E: //CFGBLK_IN
 							// Old Code!
-							//memcpy(cfgblk + k->data[0], &k->data[4], min((u32)(0x100 - k->data[0]), (u32)(k->size - 4)));
+							memcpy(cfgblk + k->data[0], &k->data[4], min((u32)(0x100 - k->data[0]), (u32)(k->size - 4)));
+							// My refactored code seems to be borked )..:
 
 							// Refactored this code. Should be less borked.
 							//
@@ -1007,16 +1012,17 @@ void netfunc(void* __dummy_arg__)
 							// Skip three bytes for no reason... (TODO: Please redo this later)
 							// Copy <size> bytes
 							//
-							cfg_copy_data_size = (u32)(k->size) - 8; // This should probably work
+							//cfg_copy_data_size = (u32)(k->size) - 8; // This should probably work
 
 							// Error-checking for if we possibly underflow due to invalid data.
 							// Note that it's *possible* to receive 256 bytes and write them to config block
 							// But that much was never used in practice.
 							// TODO: When I reimplement this, simplify and remove that extra functionality.
-							if(cfg_copy_data_size > 200)
-								cfg_copy_data_size = 1;
 
-							memcpy(cfgblk + (k->data[0]), &k->data[4], cfg_copy_data_size);
+							//if(cfg_copy_data_size > 200)
+							//	cfg_copy_data_size = 1;
+
+							//memcpy(cfgblk + (k->data[0]), &k->data[4], cfg_copy_data_size);
 
 							break;
 
@@ -1622,7 +1628,8 @@ int main()
         // Also it's annoying -C
         //if(kDown) PatPulse(0x0000FF);
 
-        if(buttons_pressed == (KEY_SELECT | KEY_START)) break;
+        if(buttons_pressed == (KEY_SELECT | KEY_START))
+        	break;
 
         if(!socketbuffer_object_pointer)
         {
@@ -1632,9 +1639,9 @@ int main()
             }
             else if(pollSocket(sock, POLLIN, 0) == POLLIN)
             {
-            	//I think cli stands for client
-                int cli = accept(sock, (struct sockaddr*)&sai, &sizeof_sai);
-                if(cli < 0)
+            	//formerly this variable was named "cli"
+                int new_socket_file_descriptor = accept(sock, (struct sockaddr*)&sai, &sizeof_sai);
+                if(new_socket_file_descriptor < 0)
                 {
                     printf("Failed to accept client: (%i) %s\n", errno, strerror(errno));
                     if(errno == EINVAL) goto netreset;
@@ -1661,7 +1668,7 @@ int main()
                     // socketbuffer_object_pointer = new SocketBuffer(cli, is_old_3ds ? 0xC000 : 0x70000);
                     // Test-Branch-1 (2022-08-07):
                     // socketbuffer_object_pointer = new SocketBuffer(cli, mem_shared_address+memoffset, memoffset); // third argument passed used to be "is_old_3ds ? 0xC000 : 0x70000
-                    socketbuffer_object_pointer = new SocketBuffer(cli, is_old_3ds ? 0xC000 : 0x70000);
+                    socketbuffer_object_pointer = new SocketBuffer(new_socket_file_descriptor, is_old_3ds ? 0xC000 : 0x70000);
                     k = socketbuffer_object_pointer->getPointerToBufferAsPacketPointer();
 
                     if(is_old_3ds)
