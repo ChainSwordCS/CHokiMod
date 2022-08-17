@@ -108,13 +108,14 @@ static Handle mem_shared_handle;
 static u32 mem_shared_address;
 static u32 buttons_pressed = 0;
 
+static u32 socketbuffer_busy = 0; // 1 if currently being read from, 2 if currently being written to
+
 // = 0 if New-3DS (128MB more RAM, 2 more CPU cores, higher CPU clock speed, CPU L2-Cache)
 // = 1 if Old-3DS (IIRC... -C)
 // Default to 1 (if only for backwards-compatibility with old code)
 static u32 is_old_3ds = 1;
 
 const int port = 6464;
-
 static Handle hid_user_mem_handle;
 
 //I think this is over-commented -H
@@ -927,6 +928,11 @@ void netfunc(void* __dummy_arg__)
     threadrunning = 1;
     
     // why???
+    //
+    // Note: If this code runs in the middle of receiving packets and copying to cfgblk,
+    // It can effectively trash the contents of cfgblk on accident.
+    // I will implement a variable or something, to denote when
+    // another thread is already accessing the SocketBuffer.
     do
     {
         k->packet_type_byte = 2; //MODE
@@ -977,6 +983,9 @@ void netfunc(void* __dummy_arg__)
 					// both while loops or just one? -C
 				}
 
+				while(socketbuffer_busy)
+					yield();
+				socketbuffer_busy = 1;
 				puts("reading");
 				// Just using variable cy as another "res". why
 				cy = socketbuffer_object_pointer->readbuf();
@@ -985,6 +994,7 @@ void netfunc(void* __dummy_arg__)
 					printf("Failed to recvbuf: (%i) %s\n", errno, strerror(errno));
 					delete socketbuffer_object_pointer;
 					socketbuffer_object_pointer = nullptr;
+					socketbuffer_busy = 0;
 					break;
 				}
 				else
@@ -1002,6 +1012,7 @@ void netfunc(void* __dummy_arg__)
 						case 0x00: //CONNECT
 							// For compatibility, just initialize ourselves anyway...
 							// I don't expect to actually ever receive this IIRC
+							socketbuffer_busy = 0;
 							cfgblk[0] = 1; // Manually enable ourselves.
 							cfgblk[3] = 25; // Manually set JPEG quality to 25
 							break;
@@ -1011,6 +1022,7 @@ void netfunc(void* __dummy_arg__)
 							puts("forced dc");
 							delete socketbuffer_object_pointer;
 							socketbuffer_object_pointer = nullptr;
+							socketbuffer_busy = 0;
 							break;
 
 						case 0x7E: //CFGBLK_IN
@@ -1068,6 +1080,7 @@ void netfunc(void* __dummy_arg__)
 
 							//memcpy(cfgblk + (k->data[0]), &k->data[4], cfg_copy_data_size);
 
+							socketbuffer_busy = 0;
 							break;
 
 						default:
@@ -1076,6 +1089,7 @@ void netfunc(void* __dummy_arg__)
 							// They're from the old code.
 							//delete socketbuffer_object_pointer;
 							//socketbuffer_object_pointer = nullptr;
+							socketbuffer_busy = 0;
 							break;
 					}
 
@@ -1124,6 +1138,10 @@ void netfunc(void* __dummy_arg__)
                 format[0] = my_gpu_capture_info.screencapture[0].format;
                 format[1] = my_gpu_capture_info.screencapture[1].format;
                 
+                while(socketbuffer_busy)
+                	yield();
+                socketbuffer_busy = 2;
+
                 // Note this one line of code used to be like 4 lines up. Small chance it's broken.
                 k->packet_type_byte = 2; //MODE
 
@@ -1138,7 +1156,6 @@ void netfunc(void* __dummy_arg__)
                 socketbuffer_object_pointer->wribuf();
                 
                 // The above code should be safe. For some reason, the code just below this might be broken.
-                yield();
 
                 k->packet_type_byte = 0xFF; // Debug Packet (sending to PC)
                 k->size = sizeof(my_gpu_capture_info); // This should be hard-coded to something but whatever.
@@ -1153,6 +1170,8 @@ void netfunc(void* __dummy_arg__)
 
                 socketbuffer_object_pointer->wribuf();
                 
+                socketbuffer_busy = 0;
+
 
                 // what
                 if(dmahand)
@@ -1243,6 +1262,11 @@ void netfunc(void* __dummy_arg__)
                     continue;
                 }
                 
+                while(socketbuffer_busy)
+                	yield();
+                socketbuffer_busy = 2;
+
+                // Crap. I forget why this is where it is........ -C (2022-08-16)
                 k->size = 0;
                 
                 if(dmahand)
@@ -1413,6 +1437,7 @@ void netfunc(void* __dummy_arg__)
                 {
                 	socketbuffer_object_pointer->wribuf();
                 }
+                socketbuffer_busy = 0;
 
                 // Commented out before I got here. -C
                 /*
@@ -1825,8 +1850,10 @@ int main()
         while(*vsoc) yield(); //pls don't optimize kthx
     }
     
-    if(socketbuffer_object_pointer) delete socketbuffer_object_pointer;
-    else close(sock);
+    if(socketbuffer_object_pointer)
+    	delete socketbuffer_object_pointer;
+    else
+    	close(sock);
 
     puts("Shutting down sockets...");
     SOCU_ShutdownSockets();
