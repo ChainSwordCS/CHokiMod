@@ -115,6 +115,8 @@ static u32 is_old_3ds = 1;
 
 const int port = 6464;
 
+static Handle hid_user_mem_handle;
+
 //I think this is over-commented -H
 
 // You are not wrong my friend! It's now even worse than before, so that's good.
@@ -130,14 +132,18 @@ public:
     typedef struct
     {
     	// Note: Previous version of code below (but maybe was broken anyway)
-    	//u32 packet_type_byte : 8;
-    	//u32 size : 24
-    	// Also note: u8 data[0]; is unchanged(?)
+    	u32 packet_type_byte : 8;
+    	u32 size : 24;
 
-        u8 packet_type_byte;
-        u8 size; // The size of a given packet *does* change.
-        u16 unused_bytes_for_compatibility;
+        //u8 packet_type_byte; // This seems to work
+
+
+        //u8 size; // The size of a given packet *does* change.
+        //u16 unused_bytes_for_compatibility;
+
+        // This variable declaration is unchanged from the old code, FYI.
         u8 data[0];
+
     } PacketStruct;
 
     int socket_id;
@@ -321,6 +327,9 @@ void initializeThingsWeNeed()
 	acInit(); // Wifi
 	initializeGraphics();
 	//allocateRamAndShareWithGpu(); // No.
+
+	hidInit();
+	//HIDUSER_GetHandles(&hid_user_mem_handle,nullptr,nullptr,nullptr,nullptr,nullptr);
 
 	return;
 }
@@ -906,6 +915,9 @@ void netfunc(void* __dummy_arg__)
 	dma_config.channelId = -1; // auto-assign to a free channel (Arm11: 3-7, Arm9: 0-1)
 	//TODO: Do we need to grab a DMA handle? Did I forget that? Because it looks to just be 0
 	// It could be defined more than one place elsewhere... I don't know... -C
+	//
+	// Note to self! We *do* have a dma handle. Somewhere (I forget where) we pass &dmahand as an argument
+	// and the DMA Handle is written there for us. -C (2022-08-16)
 
 	// This was commented out before I got here. -C
     //dmaconf[2] = 4;
@@ -981,6 +993,9 @@ void netfunc(void* __dummy_arg__)
 
 					//reread: // unused label IIRC. -C
 					int cfg_copy_data_size = 1;
+					void* memcpy_address_to_copy_to;
+					void* memcpy_address_to_copy_from;
+					u32 memcpy_size_in_bytes = 0;
 
 					switch(k->packet_type_byte)
 					{
@@ -988,6 +1003,7 @@ void netfunc(void* __dummy_arg__)
 							// For compatibility, just initialize ourselves anyway...
 							// I don't expect to actually ever receive this IIRC
 							cfgblk[0] = 1; // Manually enable ourselves.
+							cfgblk[3] = 25; // Manually set JPEG quality to 25
 							break;
 						case 0x01: //ERROR
 							// I don't know if ChokiStream actually
@@ -999,7 +1015,35 @@ void netfunc(void* __dummy_arg__)
 
 						case 0x7E: //CFGBLK_IN
 							// Old Code!
-							memcpy(cfgblk + k->data[0], &k->data[4], min((u32)(0x100 - k->data[0]), (u32)(k->size - 4)));
+							//memcpy(cfgblk + k->data[0], &k->data[4], min((u32)(0x100 - k->data[0]), (u32)(k->size - 4)));
+
+							// Refactoring this again because I hate it.
+
+							// Note: the "packet type" and "packet size" are chopped off and not copied.
+							// Note 2: the first byte of the "Data" is expected to be the location to which data is copied(?????) (the starting point for memcpy i think?)
+
+							// The first byte of Data (or "Data") is an offset, i.e. at what index of cfgblk do we want to start writing to?
+							memcpy_address_to_copy_to = &(cfgblk[k->data[0]]);
+
+							// The fifth byte of Data (or "Data") is where we start copying from. Note, we are copying *FROM* k, which is already in RAM, which is why we get the address of the fifth byte in the array.
+							memcpy_address_to_copy_from = &(k->data[4]);
+
+							// The number of bytes to copy! Simple (TM)
+							//
+							// The lesser of the two:
+							// a. Received size (k->data[3]) minus 4 because we throw away an extra four bytes above
+							// b. Maximum size of cfgblk (0x100) minus the offset (k->data[0])
+							//
+							// Notes
+							// 1. If the reported size is 0-3, we will underflow (and this will error-handle that).
+							// 2. If the copied data would go beyond the end of the cfgblk array (due to high offset and size), this will error-handle that(?)
+							// 3. the offset (k->data[0]) will never be greater than 255 (0xFF) so we will never underflow there.
+							//
+							// Subtracting 4 from the size is correct.
+							memcpy_size_in_bytes = min( (u32)((u32)0x100 - k->data[0]), (u32)(k->size - 4));
+
+							memcpy(memcpy_address_to_copy_to, memcpy_address_to_copy_from, memcpy_size_in_bytes);
+
 							// My refactored code seems to be borked )..:
 
 							// Refactored this code. Should be less borked.
@@ -1050,15 +1094,17 @@ void netfunc(void* __dummy_arg__)
         }
         
         // Old Code:
-        //if(cfgblk[0] && GSPGPU_ImportDisplayCaptureInfo(&capin) >= 0)
+        // It is important that GSPGPU_ImportDisplayCaptureInfo does not fail.
+        if((cfgblk[0] > 0) && (GSPGPU_ImportDisplayCaptureInfo(&my_gpu_capture_info) >= 0))
+        {
         // New code might be broken, IDK. -C
         //
         // If index 0 of config-block is non-zero! (Set by initialization sorta packet)
         // And this ImportDisplayCaptureInfo function doesn't error out...
-        if(cfgblk[0])
-        {
+        //if(cfgblk[0])
+        //{
         	u8* destination_ptr;
-        	GSPGPU_ImportDisplayCaptureInfo(&my_gpu_capture_info); // Should be fine?
+        	//GSPGPU_ImportDisplayCaptureInfo(&my_gpu_capture_info); // Should be fine?
 
             //test for changed framebuffers
             if\
@@ -1080,9 +1126,10 @@ void netfunc(void* __dummy_arg__)
                 
                 // Note this one line of code used to be like 4 lines up. Small chance it's broken.
                 k->packet_type_byte = 2; //MODE
-                k->size = 4 * 4;
+
+                k->size = 4 * 4; // Why? Just hard-code it to 16???
                 
-                u32* kdata = (u32*)k->data;
+                u32* kdata = (u32*)k->data; // Pointer to k->data as if it was an array of u32 objects.
                 
                 kdata[0] = format[0];
                 kdata[1] = my_gpu_capture_info.screencapture[0].framebuf_widthbytesize;
@@ -1090,9 +1137,20 @@ void netfunc(void* __dummy_arg__)
                 kdata[3] = my_gpu_capture_info.screencapture[1].framebuf_widthbytesize;
                 socketbuffer_object_pointer->wribuf();
                 
-                k->packet_type_byte = 0xFF;
-                k->size = sizeof(my_gpu_capture_info);
-                *(GSPGPU_CaptureInfo*)k->data = my_gpu_capture_info;
+                // The above code should be safe. For some reason, the code just below this might be broken.
+                yield();
+
+                k->packet_type_byte = 0xFF; // Debug Packet (sending to PC)
+                k->size = sizeof(my_gpu_capture_info); // This should be hard-coded to something but whatever.
+
+                //*(GSPGPU_CaptureInfo*)k->data = my_gpu_capture_info;
+                //
+                // Write to k->data[0] as if k->data was an array of GSPGPU_CaptureInfo objects.
+                // I think... -C (2022-08-16)
+                //void* k_gpu_cap = (void*)(k->data); // Scratch this line of code. -C
+                //
+                ((GSPGPU_CaptureInfo*)(k->data))[0] = my_gpu_capture_info;
+
                 socketbuffer_object_pointer->wribuf();
                 
 
@@ -1210,7 +1268,8 @@ void netfunc(void* __dummy_arg__)
                 int imgsize = 0;
                 
                 // TODO: Maybe remove this line for regression reasons? -C
-                destination_ptr = &k->data[8];
+                // Legit don't remember what this does or why it's here. lmao. -C (2022-08-16)
+                //destination_ptr = &k->data[8];
 
 
 
@@ -1221,7 +1280,21 @@ void netfunc(void* __dummy_arg__)
                 // And I'll bugfix the Targa implementation in this code too. -C
                 //if(!cfgblk[3])
                 //{
-                if((format[scr] & 7) >> 1 || !cfgblk[3])
+                //
+                // (format[scr] & 0b110)
+                // This conditional statement checks the framebuffer color format...
+                // True if the color format is:
+                // GL_RGB565_OES (2),  GL_RGB5_A1_OES (3),  or GL_RGBA4_OES (4)
+                // False if the color format is:
+                // GL_RGBA8_OES (0),  GL_RGB8_OES (1)
+                //
+                // These color formats will be forced to output as Targa, because
+                // encoding them to JPEG is not yet implemented.
+                //
+                // This conditional statement also forces output as Targa
+                // if the "JPEG Quality" value received from the PC application
+                // equals 0.
+                if((format[scr] & 0b110) != 0 || cfgblk[4] == 0)
                 {
                     init_tga_image(&img, (u8*)screenbuf, scrw, stride[scr], bits);
                     img.image_type = TGA_IMAGE_TYPE_BGR_RLE;
@@ -1236,7 +1309,7 @@ void netfunc(void* __dummy_arg__)
                     *(u32*)&k->data[0] = (scr * 400) + (stride[scr] * offs[scr]);
 
                     // (Renamed) line of old code:
-                    //u8* destination_ptr = &k->data[8];
+                    destination_ptr = &(k->data[8]); // The first 8 bytes are a "header". The 9th byte is the beginning of data.
 
                     // Please make this not all one line. -C
                     int ret3;
@@ -1247,11 +1320,15 @@ void netfunc(void* __dummy_arg__)
                     //     tjCompress2(void *,        (u8*) const unsigned char *,  int,         int,         int,                                int,unsigned char * *, unsigned long int *,   int,       int, int)
                     ret3 = tjCompress2(turbo_jpeg_instance_handle, (u8*)screenbuf, scrw, bsiz * scrw, stride[scr], format[scr] ? TJPF_RGB : TJPF_RGBX, &destination_ptr, (u32*)&imgsize, TJSAMP_420, cfgblk[3], TJFLAG_NOREALLOC | TJFLAG_FASTDCT);
 
-                    if(!ret3)
+                    if(!ret3) // Expecting tjCompress2() to return 0 on success.
                     {
-                    	k->size = imgsize + 4; // Formerly +8, not +4.
+                    	k->size = imgsize + 8; // Formerly +8, not +4.
                     }
-                    k->packet_type_byte = 4; //DATA (JPEG)
+                    else
+                    {
+                    	k->size = 0; // I added this, it may not be at all necessary.
+                    }
+                    k->packet_type_byte = 0x04; //DATA (JPEG)
                 }
 
                 // Commented out before I got here, IIRC. -C
@@ -1297,8 +1374,6 @@ void netfunc(void* __dummy_arg__)
                 
                 // compares the function Result (s32) to 0, to see if it succeeds
                 // (Function returns 0 or positive int on success, negative int on fail.)
-                //
-                // 1.
                 if( 0 > svcStartInterProcessDma(
                 		&dmahand, // Note: this is where the 'dmahand' variable is set!
 						0xFFFF8001, // "Destination Process Handle"... is this correct?
@@ -1329,7 +1404,12 @@ void netfunc(void* __dummy_arg__)
                 //gspWaitForEvent(GSPGPU_EVENT_PPF, false);
 
 
-                if(k->size)
+                // TODO: Should this be done *before* we do DMA stuff?
+                // Why do we do DMA stuff before this?
+                // Both are after we copied everything we wanted to k...
+                // -C (2022-08-16)
+                //
+                if(k->size) // If size is 0, we decide to send nothing.
                 {
                 	socketbuffer_object_pointer->wribuf();
                 }
@@ -1618,7 +1698,7 @@ int main()
 
         //kDown = hidKeysDown();
         //kHeld = hidKeysHeld();
-        //buttons_pressed = hidKeysHeld(); //TODO: DEBUG. Re-enable me ASAP.
+        buttons_pressed = hidKeysHeld(); //TODO: DEBUG. Re-enable me ASAP.
         //kUp = hidKeysUp();
 
         //printf("svcGetSystemTick: %016llX\n", svcGetSystemTick());
@@ -1626,7 +1706,7 @@ int main()
         // If any buttons are pressed, make the Notif LED pulse red?
         // Pure waste of CPU time for literally no reason
         // Also it's annoying -C
-        //if(kDown) PatPulse(0x0000FF);
+        if(buttons_pressed) PatPulse(0x0000FF);
 
         if(buttons_pressed == (KEY_SELECT | KEY_START))
         	break;

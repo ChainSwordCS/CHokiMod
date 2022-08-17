@@ -283,6 +283,7 @@ AccessControlInfo:
    - hid:USER
    - http:C # HTTP stuff. Perhaps not needed?
    - i2c::MCU
+   - ir:rst # Infrared-related stuff (THIS IS NEEDED for NEW-3DS ZL,ZR,C-Stick)
    - mcu::HWC # Maybe used for the Notification LED?
    - mic:u
    - ndm:u # I don't know.
