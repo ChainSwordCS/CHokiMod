@@ -405,12 +405,12 @@ int mainGetNewSocketEtc(int input_sock, struct sockaddr_in* ptr_to_sai, socklen_
 		    {
 		    	return -1;
 		    }
-		    PatPulse(0x0000FF);
+		    //PatPulse(0x0000FF);
 		    return -2;
 		}
 		else
 		{
-			PatPulse(0x00FF00);
+			//PatPulse(0x00FF00);
 			// Size of new socket buffer, smaller if on Old-3DS.
 			u32 bufsize;
 			if(is_old_3ds)
@@ -456,7 +456,7 @@ int netResetFunc(int* ptr_to_sock)
 	if(wifi && (errno == EINVAL || r < 0) )
 	{
 	    errno = 0;
-	    PatStay(0x00FFFF);
+	    //PatStay(0x00FFFF);
 	    while(r < 0)
 	    {
 	    	r = ACU_GetStatus(&wifi);
@@ -946,7 +946,7 @@ void netfunc(void* __dummy_arg__)
     //dmaconf[2] = 4;
     //screenInit();
     
-    PatPulse(0x7F007F); // Notif LED = Purple-ish
+    //PatPulse(0x7F007F); // Notif LED = Purple-ish
     threadrunning = 1;
     
     // why???
@@ -973,19 +973,12 @@ void netfunc(void* __dummy_arg__)
     }
     while(0);
     
-    // This might be malfunctional and might be an infinite loop.
-    // Even if it were, I don't know if that's actually *bad*
-    // or if it's intended behavior. -C
-    //
     // We have a thread opened.
     // It'll loop through this code indefinitely,
     // unless it hits a 'break' command,
     // or if the main thread says threadrunning = 0
     //
-    // Actually, I may have misread this again. Not 100% sure. -C (2022-08-07)
-    //
     // Infinite loop unless halted by an outside force.
-    // I think. Dunno if intentional, dunno if it works. -C (2022-08-09)
     //
     // TODO: Consider changing this to or adding
     // AptMainLoop() (or whatever it was called).
@@ -996,10 +989,10 @@ void netfunc(void* __dummy_arg__)
     {
         if(socketbuffer_object_pointer->isAvailable())
         {
-        	// why
+        	// why? Fine, I guess. lol.
 			while(1)
 			{
-				PatStay(0x7F007F); // Debug Code
+				PatStay(0x007F00); // Debug Code, Debug LED Green
 				if((buttons_pressed & (KEY_SELECT | KEY_START)) == (KEY_SELECT | KEY_START))
 				{
 					delete socketbuffer_object_pointer;
@@ -1024,12 +1017,11 @@ void netfunc(void* __dummy_arg__)
 					//socketbuffer_busy = 0;
 					break;
 				}
-				else
+				else // readbuf(); returns a positive integer on success.
 				{
 					printf("#%i 0x%X | %i\n", k->packet_type_byte, k->size, cy);
 
 					//reread: // unused label IIRC. -C
-					//int cfg_copy_data_size = 1;
 
 					u8 h;
 					void* memcpy_address_to_copy_to;
@@ -1055,6 +1047,7 @@ void netfunc(void* __dummy_arg__)
 							break;
 
 						case 0x7E: //CFGBLK_IN
+							PatStay(0x003838); // Debug Code, Debug LED Yellow
 							// Old Code!
 							//memcpy(cfgblk + k->data[0], &k->data[4], min((u32)(0x100 - k->data[0]), (u32)(k->size - 4)));
 
@@ -1090,10 +1083,6 @@ void netfunc(void* __dummy_arg__)
 							cfgblk[0] = 1;
 							//cfgblk[3] = 70;
 
-							// My refactored code seems to be borked )..:
-
-							// Refactored this code. Should be less borked.
-							//
 							// The first byte *of the packet* is the packet-type
 							// Bytes 6-8 are the size of the data, in bytes. (24-bit integer)
 							// And everything after is perceived as data.
@@ -1104,17 +1093,10 @@ void netfunc(void* __dummy_arg__)
 							//
 							//cfg_copy_data_size = (u32)(k->size) - 8; // This should probably work
 
-							// Error-checking for if we possibly underflow due to invalid data.
 							// Note that it's *possible* to receive 256 bytes and write them to config block
 							// But that much was never used in practice.
 							// TODO: When I reimplement this, simplify and remove that extra functionality.
 
-							//if(cfg_copy_data_size > 200)
-							//	cfg_copy_data_size = 1;
-
-							//memcpy(cfgblk + (k->data[0]), &k->data[4], cfg_copy_data_size);
-
-							//socketbuffer_busy = 0;
 							break;
 
 						default:
@@ -1154,7 +1136,7 @@ void netfunc(void* __dummy_arg__)
         r = GSPGPU_ImportDisplayCaptureInfo(&my_gpu_capture_info);
         if(r < 0)
         {
-        	PatPulse(0x00007F);
+        	//PatPulse(0x00007F);
         	yield();
         }
         else if(cfgblk[0] && r >= 0)
@@ -1169,7 +1151,7 @@ void netfunc(void* __dummy_arg__)
                 my_gpu_capture_info.screencapture[1].format != format[1]\
             )
             {
-                PatStay(0xFFFF00); // Notif LED = Teal (Green + Blue)
+                //PatStay(0xFFFF00); // Notif LED = Teal (Green + Blue)
                 
                 // Already commented out before I got here. -C
                 //
@@ -1238,13 +1220,13 @@ void netfunc(void* __dummy_arg__)
                 else //use APT fuckery, auto-assume application as all retail applets use VRAM framebuffers
                 {
                 	// Debug LED Pattern: Red, Green, Red, Green...
-                    memset(&pat.r[0], 0xFF, 16);
-                    memset(&pat.r[16], 0, 16);
-                    memset(&pat.g[0], 0, 16);
-                    memset(&pat.g[16], 0xFF, 16);
-                    memset(&pat.b[0], 0, 32);
-                    pat.ani = 0x2004;
-                    PatApply();
+                    //memset(&pat.r[0], 0xFF, 16);
+                    //memset(&pat.r[16], 0, 16);
+                    //memset(&pat.g[0], 0, 16);
+                    //memset(&pat.g[16], 0xFF, 16);
+                    //memset(&pat.b[0], 0, 32);
+                    //pat.ani = 0x2004;
+                    //PatApply();
                     
                     u64 progid = -1ULL;
                     bool loaded = false;
@@ -1388,7 +1370,7 @@ void netfunc(void* __dummy_arg__)
                     }
                     else
                     {
-                    	PatPulse(0x0000FF);
+                    	//PatPulse(0x0000FF);
                     }
 
                     k->packet_type_byte = 0x03; //DATA (Targa)
@@ -1536,14 +1518,14 @@ void netfunc(void* __dummy_arg__)
     }
     
     // Debug LED Color Pattern: Yellow, Purple, Yellow, Purple...
-    memset(&pat.r[0], 0xFF, 16);
-    memset(&pat.g[0], 0xFF, 16);
-    memset(&pat.b[0], 0x00, 16);
-    memset(&pat.r[16],0x7F, 16);
-    memset(&pat.g[16],0x00, 16);
-    memset(&pat.b[16],0x7F, 16);
-    pat.ani = 0x0406;
-    PatApply();
+    //memset(&pat.r[0], 0xFF, 16);
+    //memset(&pat.g[0], 0xFF, 16);
+    //memset(&pat.b[0], 0x00, 16);
+    //memset(&pat.r[16],0x7F, 16);
+    //memset(&pat.g[16],0x00, 16);
+    //memset(&pat.b[16],0x7F, 16);
+    //pat.ani = 0x0406;
+    //PatApply();
     
     if(socketbuffer_object_pointer)
     {
@@ -1776,7 +1758,7 @@ int main()
     }
     else
     {
-    	PatStay(0x00FFFF);
+    	//PatStay(0x00FFFF);
     }
 
     // This conditional statement was previously "while(1)"
@@ -1863,10 +1845,10 @@ int main()
 
                     if(!netthread)
                     {
-                        memset(&pat, 0, sizeof(pat));
-                        memset(&pat.r[0], 0xFF, 16);
-                        pat.ani = 0x102;
-                        PatApply();
+                        //memset(&pat, 0, sizeof(pat));
+                        //memset(&pat.r[0], 0xFF, 16);
+                        //pat.ani = 0x102;
+                        //PatApply();
 
                         svcSleepThread(2e9);
                     }
