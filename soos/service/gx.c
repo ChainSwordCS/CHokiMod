@@ -11,14 +11,14 @@ void gxInit()
     svcCreateEvent(&gspEvent, RESET_ONESHOT);
     GSPGPU_RegisterInterruptRelayQueue(gspEvent, 0x1, &gspSharedMemHandle, &gfxThreadID);
     svcMapMemoryBlock(gspSharedMemHandle, (u32)gfxSharedMemory, (MemPerm)0x3, (MemPerm)0x10000000);
-    gxCmdBuf=(u32*)(gfxSharedMemory+0x800+gfxThreadID*0x200);
-    gspInitEventHandler(gspEvent, (vu8*) gfxSharedMemory, gfxThreadID);
+    gpuCmdBuf=(u32*)(gfxSharedMemory+0x800+gfxThreadID*0x200);
+    //gspInitEventHandler(gspEvent, (vu8*) gfxSharedMemory, gfxThreadID);
     gspWaitForVBlank();
 }
 
 void gxExit()
 {
-    gspExitEventHandler();
+    //gspExitEventHandler();
     svcUnmapMemoryBlock(gspSharedMemHandle, (u32)gfxSharedMemory);
     GSPGPU_UnregisterInterruptRelayQueue();
     svcCloseHandle(gspSharedMemHandle);

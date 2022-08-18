@@ -270,7 +270,7 @@ void CPPCrashHandler()
 }
 
 
-extern "C" u32 __get_bytes_per_pixel(GSPGPU_FramebufferFormats format);
+extern "C" u32 __get_bytes_per_pixel(GSPGPU_FramebufferFormat format);
 
 const int port = 6464;
 
@@ -335,6 +335,9 @@ void netfunc(void* __dummy_arg__)
     memset(dmaconf, 0, sizeof(dmaconf));
     dmaconf[0] = -1; //don't care
     //dmaconf[2] = 4;
+    DmaConfig dma_config;
+    dmaConfigInitDefault(&dma_config);
+    dma_config.channelId = -1; // auto-assign to a free channel (Arm11: 3-7, Arm9: 0-1)
     
     //screenInit();
     
@@ -515,7 +518,7 @@ void netfunc(void* __dummy_arg__)
                     svcStopDma(dmahand);
                     svcCloseHandle(dmahand);
                     dmahand = 0;
-                    if(!isold) svcFlushProcessDataCache(0xFFFF8001, (u8*)screenbuf, capin.screencapture[scr].framebuf_widthbytesize * 400);
+                    if(!isold) svcFlushProcessDataCache(0xFFFF8001, (u32)screenbuf, capin.screencapture[scr].framebuf_widthbytesize * 400);
                 }
                 
                 int imgsize = 0;
@@ -566,8 +569,8 @@ void netfunc(void* __dummy_arg__)
                 (\
                     svcStartInterProcessDma\
                     (\
-                        &dmahand, 0xFFFF8001, screenbuf, prochand ? prochand : 0xFFFF8001,\
-                        (u8*)capin.screencapture[scr].framebuf0_vaddr + (siz * offs[scr]), siz, dmaconf\
+                        &dmahand, 0xFFFF8001, (u32)screenbuf, prochand ? prochand : 0xFFFF8001,\
+                        (u32)((u8*)capin.screencapture[scr].framebuf0_vaddr + (siz * offs[scr])), siz, &dma_config\
                     )\
                     < 0 \
                 )
@@ -628,14 +631,14 @@ void netfunc(void* __dummy_arg__)
 
 static FILE* f = nullptr;
 
-ssize_t stdout_write(struct _reent* r, int fd, const char* ptr, size_t len)
+ssize_t stdout_write(struct _reent* r, void* fd, const char* ptr, size_t len)
 {
     if(!f) return 0;
     fputs("[STDOUT] ", f);
     return fwrite(ptr, 1, len, f);
 }
 
-ssize_t stderr_write(struct _reent* r, int fd, const char* ptr, size_t len)
+ssize_t stderr_write(struct _reent* r, void* fd, const char* ptr, size_t len)
 {
     if(!f) return 0;
     fputs("[STDERR] ", f);
@@ -652,8 +655,9 @@ int main()
     
     soc = nullptr;
     
-    f = fopen("/HzLog.log", "w");
-    if(f <= 0) f = nullptr;
+    u32 retf = (u32)fopen("/HzLog.log", "a");
+    f = (FILE*)retf;
+    if(retf == 0) f = nullptr;
     else
     {
         devoptab_list[STD_OUT] = &devop_stdout;
