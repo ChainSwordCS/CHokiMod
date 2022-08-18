@@ -148,7 +148,10 @@ public:
     } PacketStruct;
 
     int socket_id;
-    u8* buffer_bytearray_aka_pointer; // Hasn't changed; just the name. -C (2022-08-10)
+
+    // SocketBuffer-buffer-pointer/array. Different from Packet-data-pointer/array (???) -C
+    u8* buffer_bytearray_aka_pointer;
+
     int buffer_size; // The total buffer size doesn't change after boot.
     //int recvsize; // Effectively useless, even in old code.
 
@@ -191,6 +194,7 @@ public:
     	return (pollsocket_pollin_condition);
     }
 
+    // Returns the number of bytes read, or -1 or -errno or maybe 0 on failure.
     int readbuf(int flags = 0)
     {
         u32 header = 0;
@@ -202,69 +206,43 @@ public:
         int ret = recv(socket_id, &header, 4, flags);
         if(ret < 0) return -errno;
         if(ret < 4) return -1;
-
-        // Old code, but just moved down about 10 lines, *facepalm* -C (2022-08-10)
-        //*(u32*)buffer_bytearray_aka_pointer = header;
-
-        // Maybe remove this line due to brokenness. -C (2022-08-10)
-        // I totally forget how this works and how I had changed it.
-        // Sorry future-me and everyone else who reads this, lol. -C (2022-08-10)
-        // Get size byte
-        ret = recv(socket_id, &received_size, 4, flags);
-
+        // This line is logically sound.
+        *(u32*)buffer_bytearray_aka_pointer = header;
         // Copy the 4 header bytes to the start of the buffer. And the size
         PacketStruct* packet_in_buffer = getPointerToBufferAsPacketPointer();
-        *(u32*)buffer_bytearray_aka_pointer = header;
-        // Maybe remove this line due to brokenness. -C (2022-08-10)
-        packet_in_buffer->size = received_size;
-
-        // Previously had a bug here (:
-        //
-        // Size is not obtained from anything the incoming packet just said to us.
-        // Size was last set by 'passed_bufsize' in the SocketBuffer constructor.
-        // (Or last set by an instance of PacketStruct or SocketBuffer idk)
-        //
-        // So in practice: when we want to read a packet, the size is
-        // wrong and we usually end up reading past the data just sent to us.
-        // This could result in an error, or just wasted CPU and RAM time.
-
-
+        // This is the size idiot. I'm dumb. I borked this last time I worked on it. -C (2022-08-18)
         int num_reads_remaining = packet_in_buffer->size;
-
-        int offs = 0; // In old code, this was 4. I forget if this will be broken or not. -C (2022-08-10)
-        while(num_reads_remaining)
+        // Depending on how exactly the code is written, this may need to be 4.
+        int offs = 4;
+        while(num_reads_remaining != 0)
         {
-        	// old code version:
-        	//ret = recv(socket_id, buffer_bytearray_aka_pointer + offs, num_reads_remaining, flags);
-            ret = recv(socket_id, packet_in_buffer->data , num_reads_remaining, flags);
-
-            if(ret <= 0) return -errno;
+        	ret = recv(socket_id, buffer_bytearray_aka_pointer+offs, num_reads_remaining, flags);
+            // If we get -1, it failed. If we get 0, we got zero bytes just now.
+        	if(ret <= 0)
+            	return -errno;
             num_reads_remaining -= ret;
             offs += ret;
         }
-
         // 'recvsize' variable was written to but never read from, AFAIK. -C (2022-08-10)
         //recvsize = offs;
 
+        // Return value of this function is how many bytes we just read.
         return offs;
     }
 
-    // Returns value of offs on success?
-    // Returns value of -errno on failure?
+    // Returns the number of bytes written, or -1 or -errno or maybe 0 on failure.
     int wribuf(int flags = 0)
     {
-    	// TODO: Is this borked now?
-    	//
-    	// Hopefully it's mostly un-borked now, otherwise I'm still
-    	// working on fixing massive regressions everywhere.
-    	// But this function was largely untouched by me. -C (2022-08-10)
-        u32 mustwri = getPointerToBufferAsPacketPointer()->size + 4;
+    	// Basically all this code is untouched. -C
+        int mustwri = getPointerToBufferAsPacketPointer()->size + 4;
+        // offs was set to 0 in the original code too. -C
         int offs = 0;
         int ret = 0;
 
         while(mustwri)
         {
-            //if(mustwri >> 12) // bitmask 11111111 11111111 11110000 00000000
+            // if(mustwri >> 12) // bitmask 11111111 11111111 11110000 00000000
+        	// Long story short: Don't accidentally buffer-overflow.
         	if(mustwri >= 0x1000)
         	{
                 ret = send(socket_id, buffer_bytearray_aka_pointer + offs , 0x1000, flags);
@@ -275,20 +253,16 @@ public:
             }
 
         	if(ret < 0) // If it failed
-        	{
-        		PatPulse(0x0000FF);
-        		yield();
-        	}
-        	else
-        	{
-        		mustwri -= ret;
-        		offs += ret;
-        	}
+        		return -errno;
+
+        	mustwri -= ret;
+        	offs += ret;
         }
 
         return offs;
     }
 
+    // This code is so weird dude. I promise I only refactored the names. -C
     PacketStruct* getPointerToBufferAsPacketPointer()
     {
         return (PacketStruct*)buffer_bytearray_aka_pointer;
@@ -795,24 +769,43 @@ int checkwifi()
     return haznet; // whyy use haznet in the first place
 }
 
-
-int pollSocket(int passed_socket_id, int passed_events, int timeout)
+// Returns 0 on error
+// Returns the returned-events, with a bitmask of the passed-events applied
+// (i.e. if you're checking for 01, it'll return 01 or 00.)
+int pollSocket(int passed_socket_id, int passed_events, int timeout = 0)
 {
-	struct pollfd pfds = pollfd(); // Initialize it first...
+	struct pollfd pfds = pollfd(); // Initialize it first... (?????)
 
     pfds.fd = passed_socket_id;
     pfds.events = passed_events;
+
     nfds_t num_of_file_descriptors = 1;
 
-    if(timeout == 0)
-    	timeout = 100; // I don't know. But maybe fixes a bug?
-    
-    if(poll(&pfds, num_of_file_descriptors, timeout) > 0)
+    // poll(); would return 1 on a _net_error_code 'E2BIG', in theory. (described in soc_common.c)
+    // poll(); would return the value of nfds (num_of_file_descriptors) on success?
+    // We always pass in 1, so it should return 1 on success(?)
+    //
+    // poll(); will only return 0 if cmdbuf[1] is 0 and ALSO cmdbuf[2] is 0.
+    // poll(); will return -1 on error.
+    // poll(); will occasionally return a different negative int on error.
+    // poll(); will occasionally return the result of svcSendSyncRequest, if it was non-zero. (Is this ever 1 in practice? Perhaps not)
+    //
+    // For more info, see:
+    // https://github.com/devkitPro/libctru/blob/master/libctru/source/services/soc/soc_poll.c
+    // https://github.com/devkitPro/libctru/blob/master/libctru/include/3ds/svc.h
+    // https://github.com/devkitPro/libctru/blob/master/libctru/source/services/soc/soc_common.c
+    //
+    // -ChainSwordCS (2022-08-18)
+    if(poll(&pfds, num_of_file_descriptors, timeout) == 1)
     {
-        return ((pfds.revents) & passed_events); // Is this logically sound? I haven't checked. -C
+    	// If we are passed 01 (POLLIN), and it succeeds, the pollSocket function returns 01.
+    	// If we are passed 08 (POLLERR), and it succeeds, the pollSocket function returns 08.
+        return pfds.revents & passed_events;
     }
     else
     {
+    	// Simplify everything about poll();
+    	// and just return 0 on error.
     	return 0;
     }
 }
