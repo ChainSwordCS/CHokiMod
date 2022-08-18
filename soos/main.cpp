@@ -1314,7 +1314,6 @@ void netfunc(void* __dummy_arg__)
                     //if(!is_old_3ds) svcFlushProcessDataCache(0xFFFF8001, (u8*)screenbuf, capin.screencapture[scr].framebuf_widthbytesize * 400);
 					//if(!is_old_3ds) svcFlushProcessDataCache(0xFFFF8001, (u32)&screenbuf, my_gpu_capture_info.screencapture[scr].framebuf_widthbytesize * 400);
                     //
-                    // Adjusted code style here, just now. -C (2022-08-10)
                     if(!is_old_3ds)
                     {
                     	svcFlushProcessDataCache(0xFFFF8001,\
@@ -1353,12 +1352,33 @@ void netfunc(void* __dummy_arg__)
                 // if the "JPEG Quality" value received from the PC application
                 // equals 0.
                 // (That is the intended behavior anyway...)
-                if(((format[scr] & 0b110) != 0) || (cfgblk[3] == 0))
+
+                // I know this is stupid, just let me be stupid in peace )...: -C
+                bool tga_conditional = false;
+                // If requested JPEG quality is 0, we do Targa instead
+                if(cfgblk[3] == 0)
+                	tga_conditional = true;
+                // If the framebuffer color format is not supported
+                // by our current JPEG code (formats listed above),
+                // then force-enable Targa and not JPEG.
+                if((format[scr] & 0b110) != 0)
+                	tga_conditional = true;
+
+                if(tga_conditional)
                 {
-                    init_tga_image(&img, (u8*)screenbuf, scrw, stride[scr], bits);
+                    init_tga_image(&img, (u8*)screenbuf, (u16)scrw, (u16)stride[scr], (u8)bits);
                     img.image_type = TGA_IMAGE_TYPE_BGR_RLE;
                     img.origin_y = (scr * 400) + (stride[scr] * offs[scr]);
-                    tga_write_to_FILE(k->data, &img, &imgsize);
+                    tga_result r_tga = tga_write_to_FILE(k->data, &img, &imgsize);
+
+                    if(r_tga == (tga_result)TGA_NOERR)
+                    {
+                    	PatPulse(0x00);
+                    }
+                    else
+                    {
+                    	PatPulse(0x00);
+                    }
 
                     k->packet_type_byte = 0x03; //DATA (Targa)
                     k->size = imgsize;
