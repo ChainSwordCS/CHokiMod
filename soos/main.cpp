@@ -183,9 +183,12 @@ public:
         delete[] buffer_bytearray_aka_pointer;
     }
 
+    // Made this super verbose for no reason. -C
     int isAvailable()
     {
-    	return pollSocket(socket_id, POLLIN, 0) == POLLIN;
+    	int r_pollsocket = pollSocket(socket_id, POLLIN, 0);
+    	bool pollsocket_pollin_condition = (r_pollsocket == POLLIN);
+    	return (pollsocket_pollin_condition);
     }
 
     int readbuf(int flags = 0)
@@ -263,9 +266,13 @@ public:
         {
             //if(mustwri >> 12) // bitmask 11111111 11111111 11110000 00000000
         	if(mustwri >= 0x1000)
+        	{
                 ret = send(socket_id, buffer_bytearray_aka_pointer + offs , 0x1000, flags);
+        	}
             else
+            {
                 ret = send(socket_id, buffer_bytearray_aka_pointer + offs , mustwri, flags);
+            }
 
         	if(ret < 0) // If it failed
         	{
@@ -789,16 +796,25 @@ int checkwifi()
 }
 
 
-int pollSocket(int passed_socket_id, int passed_events, int timeout = 0)
+int pollSocket(int passed_socket_id, int passed_events, int timeout)
 {
-    struct pollfd pfds;
+	struct pollfd pfds = pollfd(); // Initialize it first...
+
     pfds.fd = passed_socket_id;
     pfds.events = passed_events;
+    nfds_t num_of_file_descriptors = 1;
+
+    if(timeout == 0)
+    	timeout = 100; // I don't know. But maybe fixes a bug?
     
-    if(poll(&pfds, 1, timeout) == 1)
-        return pfds.revents & passed_events;
+    if(poll(&pfds, num_of_file_descriptors, timeout) > 0)
+    {
+        return ((pfds.revents) & passed_events); // Is this logically sound? I haven't checked. -C
+    }
     else
+    {
     	return 0;
+    }
 }
 
 
@@ -1280,7 +1296,7 @@ void netfunc(void* __dummy_arg__)
                     }
                 }
                 
-                PatStay(0x00FF00); // Notif LED = Green
+                //PatStay(0x00FF00); // Notif LED = Green
             }
             
             int loopcnt = 2;
@@ -1406,7 +1422,8 @@ void netfunc(void* __dummy_arg__)
                     }
                     else
                     {
-                    	k->size = 0; // I added this, it may not be at all necessary.
+                    	//k->size = 0; // I added this, it may not be at all necessary.
+                    	PatPulse(0x00FFFF);
                     }
                     k->packet_type_byte = 0x04; //DATA (JPEG)
                 }
@@ -1454,14 +1471,16 @@ void netfunc(void* __dummy_arg__)
                 
                 // compares the function Result (s32) to 0, to see if it succeeds
                 // (Function returns 0 or positive int on success, negative int on fail.)
-                if( 0 > svcStartInterProcessDma(
+                int r_dma = svcStartInterProcessDma(
                 		&dmahand, // Note: this is where the 'dmahand' variable is set!
 						0xFFFF8001, // "Destination Process Handle"... is this correct?
 						(u32)screenbuf, // Probably correct... One iteration of my code did "&screenbuf", but I now think that's wrong.
 						prochand ? prochand : 0xFFFF8001, // "Source Process Handle"... is this correct? Maybe...
                         (u32)(my_gpu_capture_info.screencapture[scr].framebuf0_vaddr + (siz * offs[scr])), // Source Address, seems fine.
 						siz, // How much data do we copy
-						&dma_config) ) // This is fine too.
+						&dma_config); // This is fine too.
+
+                if(r_dma < 0)
                 {
                     procid = 0;
                     format[scr] = 0xF00FCACE; //invalidate
@@ -1489,7 +1508,7 @@ void netfunc(void* __dummy_arg__)
                 // Both are after we copied everything we wanted to k...
                 // -C (2022-08-16)
                 //
-                if(k->size) // If size is 0, we decide to send nothing.
+                if(k->size > 0) // If size is 0, we decide to send nothing.
                 {
                 	socketbuffer_object_pointer->wribuf();
                 }
