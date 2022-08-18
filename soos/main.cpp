@@ -359,7 +359,7 @@ void initializeGraphics()
 	Result r = srvGetServiceHandle(&gsp_gpu_handle, "gsp::Gpu");
 	if(r) // Function returns 0 if no error occured.
 	{
-		PatStay(0x0000FF); // Notif LED = red
+		//PatStay(0x0000FF); // Notif LED = red
 	}
 	// Note to others: We probably shouldn't need GPU rights at all for what we're doing. -C
 	return;
@@ -854,8 +854,8 @@ void CPPCrashHandler()
     
     puts("\n");
     
-    PatStay(0xFFFFFF);
-    PatPulse(0xFF);
+    //PatStay(0xFFFFFF);
+    //PatPulse(0xFF);
     
     svcSleepThread(1e9);
     
@@ -1003,6 +1003,8 @@ void netfunc(void* __dummy_arg__)
     {
         if(socketbuffer_object_pointer->isAvailable())
         {
+        	if(threadrunning) // debug code
+        	    PatStay(0x7F007F);
         	// why
 			while(1)
 			{
@@ -1770,7 +1772,7 @@ int main()
 
     if(haznet)
     {
-    	PatStay(0xCCFF00);
+    	//PatStay(0xCCFF00);
     }
     else
     {
@@ -1824,11 +1826,11 @@ int main()
                 {
                     printf("Failed to accept client: (%i) %s\n", errno, strerror(errno));
                     if(errno == EINVAL) goto netreset;
-                    PatPulse(0x0000FF);
+                    //PatPulse(0x0000FF);
                 }
                 else
                 {
-                    PatPulse(0x00FF00);
+                    //PatPulse(0x00FF00);
 
                     //TODO: Uhh, make sure this area of code isn't completely broken... -C (2022-08-10)
                     //
