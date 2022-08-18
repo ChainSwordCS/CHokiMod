@@ -999,9 +999,9 @@ void netfunc(void* __dummy_arg__)
 					// both while loops or just one? -C
 				}
 
-				while(socketbuffer_busy)
-					yield();
-				socketbuffer_busy = 1;
+				//while(socketbuffer_busy)
+				//	yield();
+				//socketbuffer_busy = 1;
 
 				puts("reading");
 				// Just using variable cy as another "res". why
@@ -1011,7 +1011,7 @@ void netfunc(void* __dummy_arg__)
 					printf("Failed to recvbuf: (%i) %s\n", errno, strerror(errno));
 					delete socketbuffer_object_pointer;
 					socketbuffer_object_pointer = nullptr;
-					socketbuffer_busy = 0;
+					//socketbuffer_busy = 0;
 					break;
 				}
 				else
@@ -1031,7 +1031,7 @@ void netfunc(void* __dummy_arg__)
 						case 0x00: //CONNECT
 							// For compatibility, just initialize ourselves anyway...
 							// I don't expect to actually ever receive this IIRC
-							socketbuffer_busy = 0;
+							//socketbuffer_busy = 0;
 							cfgblk[0] = 1; // Manually enable ourselves.
 							cfgblk[3] = 70; // Manually set JPEG quality to 70
 							break;
@@ -1041,7 +1041,7 @@ void netfunc(void* __dummy_arg__)
 							puts("forced dc");
 							delete socketbuffer_object_pointer;
 							socketbuffer_object_pointer = nullptr;
-							socketbuffer_busy = 0;
+							//socketbuffer_busy = 0;
 							break;
 
 						case 0x7E: //CFGBLK_IN
@@ -1104,7 +1104,7 @@ void netfunc(void* __dummy_arg__)
 
 							//memcpy(cfgblk + (k->data[0]), &k->data[4], cfg_copy_data_size);
 
-							socketbuffer_busy = 0;
+							//socketbuffer_busy = 0;
 							break;
 
 						default:
@@ -1113,7 +1113,7 @@ void netfunc(void* __dummy_arg__)
 							// They're from the old code.
 							//delete socketbuffer_object_pointer;
 							//socketbuffer_object_pointer = nullptr;
-							socketbuffer_busy = 0;
+							//socketbuffer_busy = 0;
 							break;
 					}
 
@@ -1169,9 +1169,9 @@ void netfunc(void* __dummy_arg__)
                 format[0] = my_gpu_capture_info.screencapture[0].format;
                 format[1] = my_gpu_capture_info.screencapture[1].format;
                 
-                while(socketbuffer_busy)
-                	yield();
-                socketbuffer_busy = 2;
+                //while(socketbuffer_busy)
+                //	yield();
+                //socketbuffer_busy = 2;
 
                 // Note this one line of code used to be like 4 lines up. Small chance it's broken.
                 k->packet_type_byte = 2; //MODE
@@ -1201,7 +1201,7 @@ void netfunc(void* __dummy_arg__)
 
                 socketbuffer_object_pointer->wribuf();
                 
-                socketbuffer_busy = 0;
+                //socketbuffer_busy = 0;
 
 
                 // what
@@ -1296,9 +1296,9 @@ void netfunc(void* __dummy_arg__)
                     continue;
                 }
                 
-                while(socketbuffer_busy)
-                	yield();
-                socketbuffer_busy = 2;
+                //while(socketbuffer_busy)
+                //	yield();
+                //socketbuffer_busy = 2;
 
                 // Crap. I forget why this is where it is........ -C (2022-08-16)
                 k->size = 0;
@@ -1473,7 +1473,7 @@ void netfunc(void* __dummy_arg__)
                 {
                 	socketbuffer_object_pointer->wribuf();
                 }
-                socketbuffer_busy = 0;
+                //socketbuffer_busy = 0;
 
                 // Commented out before I got here. -C
                 /*
