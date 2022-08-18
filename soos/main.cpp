@@ -996,11 +996,10 @@ void netfunc(void* __dummy_arg__)
     {
         if(socketbuffer_object_pointer->isAvailable())
         {
-        	if(threadrunning) // debug code
-        	    PatStay(0x7F007F);
         	// why
 			while(1)
 			{
+				PatStay(0x7F007F); // Debug Code
 				if((buttons_pressed & (KEY_SELECT | KEY_START)) == (KEY_SELECT | KEY_START))
 				{
 					delete socketbuffer_object_pointer;
@@ -1238,6 +1237,7 @@ void netfunc(void* __dummy_arg__)
                 }
                 else //use APT fuckery, auto-assume application as all retail applets use VRAM framebuffers
                 {
+                	// Debug LED Pattern: Red, Green, Red, Green...
                     memset(&pat.r[0], 0xFF, 16);
                     memset(&pat.r[16], 0, 16);
                     memset(&pat.g[0], 0, 16);
@@ -1384,11 +1384,11 @@ void netfunc(void* __dummy_arg__)
 
                     if(r_tga == (tga_result)TGA_NOERR)
                     {
-                    	PatPulse(0x00);
+                    	//PatPulse(0x00);
                     }
                     else
                     {
-                    	PatPulse(0x00);
+                    	PatPulse(0x0000FF);
                     }
 
                     k->packet_type_byte = 0x03; //DATA (Targa)
@@ -1535,6 +1535,7 @@ void netfunc(void* __dummy_arg__)
         else yield();
     }
     
+    // Debug LED Color Pattern: Yellow, Purple, Yellow, Purple...
     memset(&pat.r[0], 0xFF, 16);
     memset(&pat.g[0], 0xFF, 16);
     memset(&pat.b[0], 0x00, 16);
