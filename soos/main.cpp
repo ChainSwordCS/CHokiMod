@@ -103,9 +103,16 @@ void CPPCrashHandler();
 void netfunc(void*);
 int main(); // So you can call main() from main() (:
 
-static u32 gsp_gpu_handle;
-static Handle mem_shared_handle;
 static u32 mem_shared_address;
+
+// GSP GPU stuff
+static u32 gsp_gpu_handle;
+static Handle gpu_mem_shared_handle;
+static u32 gpu_mem_shared;
+static u32 my_gsp_event;
+static u8 my_gsp_thread_id;
+static Thread my_gsp_event_thread;
+
 static u32 buttons_pressed = 0;
 
 static u32 socketbuffer_busy = 0; // 1 if currently being read from, 2 if currently being written to
@@ -327,15 +334,42 @@ void initializeThingsWeNeed()
 	return;
 }
 
+// Lots of code borrowed and slightly modified from libctru - gspgpu.c
 void initializeGraphics()
 {
-	// gspInit() crashes IIRC.
-	Result r = srvGetServiceHandle(&gsp_gpu_handle, "gsp::Gpu");
-	if(r) // Function returns 0 if no error occured.
-	{
-		//PatStay(0x0000FF); // Notif LED = red
-	}
-	// Note to others: We probably shouldn't need GPU rights at all for what we're doing. -C
+	// gspInit() crashes if we call it without calling gspExit() first.
+	gspExit();
+	yield();
+	yield();
+	int r = gspInit();
+	if(r < 0)
+		PatStay(0x0000FF);
+
+	// Retrieve a GSP service session handle
+	//Result r = srvGetServiceHandle(&gsp_gpu_handle, "gsp::Gpu");
+	//if(r<0)
+	//	PatStay(0x0000FF); // Notif LED = red
+
+	// Acquire GPU rights
+	//r = GSPGPU_AcquireRight(0);
+	//if(r<0)
+	//	PatStay(0x0000FF);
+
+	// Register ourselves as a user of graphics hardware
+	//svcCreateEvent(&my_gsp_event, RESET_ONESHOT);
+	//r = GSPGPU_RegisterInterruptRelayQueue(my_gsp_event, 0x1, &gpu_mem_shared_handle, &my_gsp_thread_id);
+	//if(r!=0x1)
+	//	PatStay(0x0000FF);
+
+	// Don't gspHardwareInit(); ? idk.
+
+	// Map GSP shared memory
+	//gpu_mem_shared = mappableAlloc(0x1000);
+	//svcMapMemoryBlock(gpu_mem_shared_handle, gpu_mem_shared, MEMPERM_READWRITE, MEMPERM_READWRITE);
+
+	//my_gsp_event_thread = threadCreate(gspEventThreadMain, 0x0, GSP_EVENT_STACK_SIZE, 0x1A, -2, true);
+
+
 	return;
 }
 
@@ -984,6 +1018,7 @@ void netfunc(void* __dummy_arg__)
     // However, that very well may break things.
     // It might have caused things to break when I
     // added it to the main() function. -C (2022-08-10)
+    PatStay(0x001C1C); // Debug LED very dim Yellow (Thread is indeed running)
     while(threadrunning)
     {
     	// TODO: Checking for data sent from PC every loop is
@@ -1049,6 +1084,7 @@ void netfunc(void* __dummy_arg__)
 
 						case 0x7E: //CFGBLK_IN
 							PatStay(0x00387F); // Debug Code, Debug LED Orange
+
 							// Old Code!
 							//memcpy(cfgblk + k->data[0], &k->data[4], min((u32)(0x100 - k->data[0]), (u32)(k->size - 4)));
 
@@ -1099,8 +1135,14 @@ void netfunc(void* __dummy_arg__)
 							// TODO: When I reimplement this, simplify and remove that extra functionality.
 
 							yield(); // Wait a little bit, let the orange actually be visible.
+							PatStay(0x001C1C);
 							// Also, if the user is incrementally changing JPEG quality, we don't
 							// need to try and process *all* of that info anyway. -C
+							//
+							// Note: That's not how that works. Now the 3DS lags behind when the
+							// PC sends too many packets in quick succession. -C
+							// TODO: Refactor this and fix it.
+
 							break;
 
 						default:
@@ -1123,7 +1165,7 @@ void netfunc(void* __dummy_arg__)
 		// But keep in mind, there's a small chance this is breaking something... -C (2022-08-10)
         }
         
-        PatStay(0x001C1C); // Debug LED very dim Yellow (Thread is indeed running)
+        //PatStay(0x001C1C); // Debug LED very dim Yellow (Thread is indeed running)
         //PatStay(0x003800); // Debug Code, Debug LED Green
 
         if(!socketbuffer_object_pointer)
@@ -1145,11 +1187,12 @@ void netfunc(void* __dummy_arg__)
         r = GSPGPU_ImportDisplayCaptureInfo(&my_gpu_capture_info);
         if(r < 0)
         {
-        	//PatPulse(0x00007F);
+        	PatStay(0x00007F);
         	yield();
         }
         else // if GSPGPU_ImportDisplayCaptureInfo succeeds
         {
+        	PatStay(0x003800); // Debug Code, Debug LED Green
         	// (Sono's Comment)
 			//test for changed framebuffers
 			if\
@@ -1290,8 +1333,9 @@ void netfunc(void* __dummy_arg__)
         //else if(cfgblk[0] && r >= 0)
 
         // if cfgblk[0] is non-zero, and make sure we didn't just fail
-        if(cfgblk[0] && r >= 0)
+        if(cfgblk[0] != 0) //&& r >= 0)
         {
+        	PatStay(0x007F00); // Debug LED: green at 50% brightness
         	u8* destination_ptr; // Consider moving this down.
 
             int loopcnt = 2;
@@ -1362,7 +1406,7 @@ void netfunc(void* __dummy_arg__)
                 // equals 0.
                 // (That is the intended behavior anyway...)
 
-                PatStay(0x003838); // Debug LED: yellow at 25% brightness
+                //PatStay(0x003838); // Debug LED: yellow at 25% brightness
 
                 // I know this is stupid, just let me be stupid in peace )...: -C
                 bool tga_conditional = false;
@@ -1375,9 +1419,9 @@ void netfunc(void* __dummy_arg__)
                 if((format[scr] & 0b110) != 0)
                 	tga_conditional = true;
 
-                if(tga_conditional)
+                if(tga_conditional) // The code is messing up here or something
                 {
-                	PatStay(0x007F00); // Debug LED: green at 50% brightness
+                	//PatStay(0x007F00); // Debug LED: green at 50% brightness
                     init_tga_image(&img, (u8*)screenbuf, (u16)scrw, (u16)stride[scr], (u8)bits);
                     img.image_type = TGA_IMAGE_TYPE_BGR_RLE;
                     img.origin_y = (scr * 400) + (stride[scr] * offs[scr]);
@@ -1387,12 +1431,12 @@ void netfunc(void* __dummy_arg__)
                     {
                     	//PatPulse(0x00);
                     	k->size = imgsize;
-                    	PatStay(0x007F00); // Debug LED: green at 50% brightness
+                    	//PatStay(0x007F00); // Debug LED: green at 50% brightness
                     }
                     else
                     {
                     	//PatPulse(0x0000FF);
-                    	PatStay(0x00007F); // Debug LED: red at 50% brightness
+                    	//PatStay(0x00007F); // Debug LED: red at 50% brightness
                     }
 
                     k->packet_type_byte = 0x03; //DATA (Targa)
@@ -1423,12 +1467,12 @@ void netfunc(void* __dummy_arg__)
 
                     if(ret3 == 0) // Expecting tjCompress2() returns 0 on success, -1 on failure
                     {
-                    	PatStay(0x007F00); // Debug LED: green at 50% brightness
+                    	//PatStay(0x007F00); // Debug LED: green at 50% brightness
                     	k->size = imgsize + 8; // Formerly +8, not +4.
                     }
                     else // We fail here, right now. -C (2022-08-18)
                     {
-                    	PatStay(0x00007F); // Debug LED: red at 50% brightness
+                    	//PatStay(0x00007F); // Debug LED: red at 50% brightness
                     	//k->size = 0; // I added this, it may not be at all necessary.
                     	//PatPulse(0x00FFFF);
                     }
@@ -1499,7 +1543,7 @@ void netfunc(void* __dummy_arg__)
                 }
                 else
                 {
-                	PatStay(0x00FF00);
+                	//PatStay(0x00FF00);
                 	//PatStay(0x007F1C); // Debug LED: Yellow-green (50% green, 12.5% red)
                 }
                 
