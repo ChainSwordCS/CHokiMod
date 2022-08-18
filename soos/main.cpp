@@ -1318,7 +1318,7 @@ void netfunc(void* __dummy_arg__)
                     if(!is_old_3ds)
                     {
                     	svcFlushProcessDataCache(0xFFFF8001,\
-                    	(u32)&screenbuf,\
+                    	(u32)screenbuf,\
 						my_gpu_capture_info.screencapture[scr].framebuf_widthbytesize * 400);
                     }
                 }
