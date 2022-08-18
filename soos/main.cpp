@@ -342,7 +342,7 @@ void initializeGraphics()
 	yield();
 	yield();
 	int r = gspInit();
-	if(r < 0)
+	if(r != 0) // Just in case
 		PatStay(0x0000FF);
 
 	// Retrieve a GSP service session handle
@@ -1184,13 +1184,15 @@ void netfunc(void* __dummy_arg__)
 
         // TODO: Do we *need* to get this info every frame? Would it be okay to assume the info is unchanged for 30-60 frames?
         int r;
-        r = GSPGPU_ImportDisplayCaptureInfo(&my_gpu_capture_info);
+        r = GSPGPU_ImportDisplayCaptureInfo(&my_gpu_capture_info); // TODO: Currently broken here. -C (2022-08-18)
+
         if(r < 0)
         {
-        	PatStay(0x00007F);
+        	//PatStay(0x00007F);
         	yield();
         }
-        else // if GSPGPU_ImportDisplayCaptureInfo succeeds
+
+        if(r >= 0)// if GSPGPU_ImportDisplayCaptureInfo succeeds
         {
         	PatStay(0x003800); // Debug Code, Debug LED Green
         	// (Sono's Comment)
@@ -1335,7 +1337,7 @@ void netfunc(void* __dummy_arg__)
         // if cfgblk[0] is non-zero, and make sure we didn't just fail
         if(cfgblk[0] != 0) //&& r >= 0)
         {
-        	PatStay(0x007F00); // Debug LED: green at 50% brightness
+        	//PatStay(0x007F00); // Debug LED: green at 50% brightness
         	u8* destination_ptr; // Consider moving this down.
 
             int loopcnt = 2;
