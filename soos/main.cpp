@@ -888,6 +888,7 @@ static SocketBuffer* socketbuffer_object_pointer = nullptr;
 static SocketBuffer::PacketStruct* k = nullptr;
 
 static Thread netthread = 0;
+static Handle os_thread_handle_of_netthread = 0;
 static vu32 threadrunning = 0;
 
 // screenbuf = Beginning of the data in the packet we are making...
@@ -936,11 +937,9 @@ void netfunc(void* __dummy_arg__)
 	DmaConfig dma_config;
 	dmaConfigInitDefault(&dma_config);
 	dma_config.channelId = -1; // auto-assign to a free channel (Arm11: 3-7, Arm9: 0-1)
-	//TODO: Do we need to grab a DMA handle? Did I forget that? Because it looks to just be 0
-	// It could be defined more than one place elsewhere... I don't know... -C
-	//
-	// Note to self! We *do* have a dma handle. Somewhere (I forget where) we pass &dmahand as an argument
-	// and the DMA Handle is written there for us. -C (2022-08-16)
+	dma_config.endianSwapSize = 0;
+	dma_config.flags = 0;
+
 
 	// This was commented out before I got here. -C
     //dmaconf[2] = 4;
@@ -987,12 +986,14 @@ void netfunc(void* __dummy_arg__)
     // added it to the main() function. -C (2022-08-10)
     while(threadrunning)
     {
+    	// TODO: Checking for data sent from PC every loop is
+    	// a waste of CPU time. I'll change it somehow eventually. -C
         if(socketbuffer_object_pointer->isAvailable())
         {
         	// why? Fine, I guess. lol.
 			while(1)
 			{
-				PatStay(0x007F00); // Debug Code, Debug LED Green
+				//PatStay(0x003800); // Debug Code, Debug LED Green
 				if((buttons_pressed & (KEY_SELECT | KEY_START)) == (KEY_SELECT | KEY_START))
 				{
 					delete socketbuffer_object_pointer;
@@ -1047,7 +1048,7 @@ void netfunc(void* __dummy_arg__)
 							break;
 
 						case 0x7E: //CFGBLK_IN
-							PatStay(0x003838); // Debug Code, Debug LED Yellow
+							PatStay(0x00387F); // Debug Code, Debug LED Orange
 							// Old Code!
 							//memcpy(cfgblk + k->data[0], &k->data[4], min((u32)(0x100 - k->data[0]), (u32)(k->size - 4)));
 
@@ -1080,7 +1081,7 @@ void netfunc(void* __dummy_arg__)
 							memcpy(memcpy_address_to_copy_to, memcpy_address_to_copy_from, memcpy_size_in_bytes);
 
 							//TODO: This is stupid. Placeholder.
-							cfgblk[0] = 1;
+							//cfgblk[0] = 1;
 							//cfgblk[3] = 70;
 
 							// The first byte *of the packet* is the packet-type
@@ -1097,6 +1098,9 @@ void netfunc(void* __dummy_arg__)
 							// But that much was never used in practice.
 							// TODO: When I reimplement this, simplify and remove that extra functionality.
 
+							yield(); // Wait a little bit, let the orange actually be visible.
+							// Also, if the user is incrementally changing JPEG quality, we don't
+							// need to try and process *all* of that info anyway. -C
 							break;
 
 						default:
@@ -1111,6 +1115,7 @@ void netfunc(void* __dummy_arg__)
 
 					break;
 				}
+				break; // Just in case
 			}
 		// Having added this bracket SHOULDN'T break anything...
 		// Because previously, "if(socketbuffer_object_pointer->isAvailable())"
@@ -1118,6 +1123,9 @@ void netfunc(void* __dummy_arg__)
 		// But keep in mind, there's a small chance this is breaking something... -C (2022-08-10)
         }
         
+        PatStay(0x001C1C); // Debug LED very dim Yellow (Thread is indeed running)
+        //PatStay(0x003800); // Debug Code, Debug LED Green
+
         if(!socketbuffer_object_pointer)
         {
         	break;
@@ -1132,6 +1140,7 @@ void netfunc(void* __dummy_arg__)
         // If index 0 of config-block is non-zero! (Set by initialization sorta packet)
         // And this ImportDisplayCaptureInfo function doesn't error out...
 
+        // TODO: Do we *need* to get this info every frame? Would it be okay to assume the info is unchanged for 30-60 frames?
         int r;
         r = GSPGPU_ImportDisplayCaptureInfo(&my_gpu_capture_info);
         if(r < 0)
@@ -1139,148 +1148,162 @@ void netfunc(void* __dummy_arg__)
         	//PatPulse(0x00007F);
         	yield();
         }
-        else if(cfgblk[0] && r >= 0)
+        else // if GSPGPU_ImportDisplayCaptureInfo succeeds
         {
-        	u8* destination_ptr;
+        	// (Sono's Comment)
+			//test for changed framebuffers
+			if\
+			(\
+				my_gpu_capture_info.screencapture[0].format != format[0]\
+				||\
+				my_gpu_capture_info.screencapture[1].format != format[1]\
+			)
+			{
+				//PatStay(0xFFFF00); // Notif LED = Teal (Green + Blue)
 
-            //test for changed framebuffers
-            if\
-            (\
-                my_gpu_capture_info.screencapture[0].format != format[0]\
-                ||\
-                my_gpu_capture_info.screencapture[1].format != format[1]\
-            )
-            {
-                //PatStay(0xFFFF00); // Notif LED = Teal (Green + Blue)
-                
-                // Already commented out before I got here. -C
-                //
-                //fbuf[0] = (u8*)capin.screencapture[0].framebuf0_vaddr;
-                //fbuf[1] = (u8*)capin.screencapture[1].framebuf0_vaddr;
+				// Already commented out before I got here. -C
+				//
+				//fbuf[0] = (u8*)capin.screencapture[0].framebuf0_vaddr;
+				//fbuf[1] = (u8*)capin.screencapture[1].framebuf0_vaddr;
 
-                format[0] = my_gpu_capture_info.screencapture[0].format;
-                format[1] = my_gpu_capture_info.screencapture[1].format;
-                
-                //while(socketbuffer_busy)
-                //	yield();
-                //socketbuffer_busy = 2;
+				format[0] = my_gpu_capture_info.screencapture[0].format;
+				format[1] = my_gpu_capture_info.screencapture[1].format;
 
-                // Note this one line of code used to be like 4 lines up. Small chance it's broken.
-                k->packet_type_byte = 2; //MODE
+				//while(socketbuffer_busy)
+				//	yield();
+				//socketbuffer_busy = 2;
 
-                k->size = 4 * 4; // Why? Just hard-code it to 16???
-                
-                u32* kdata = (u32*)k->data; // Pointer to k->data as if it was an array of u32 objects.
-                
-                kdata[0] = format[0];
-                kdata[1] = my_gpu_capture_info.screencapture[0].framebuf_widthbytesize;
-                kdata[2] = format[1];
-                kdata[3] = my_gpu_capture_info.screencapture[1].framebuf_widthbytesize;
-                socketbuffer_object_pointer->wribuf();
-                
-                // The above code should be safe. For some reason, the code just below this might be broken.
+				// Note this one line of code used to be like 4 lines up. Small chance it's broken.
+				k->packet_type_byte = 2; //MODE
 
-                k->packet_type_byte = 0xFF; // Debug Packet (sending to PC)
-                k->size = sizeof(my_gpu_capture_info); // This should be hard-coded to something but whatever.
+				k->size = 4 * 4; // Why? Just hard-code it to 16???
 
-                //*(GSPGPU_CaptureInfo*)k->data = my_gpu_capture_info;
-                //
-                // Write to k->data[0] as if k->data was an array of GSPGPU_CaptureInfo objects.
-                // I think... -C (2022-08-16)
-                //void* k_gpu_cap = (void*)(k->data); // Scratch this line of code. -C
-                //
-                ((GSPGPU_CaptureInfo*)(k->data))[0] = my_gpu_capture_info;
+				u32* kdata = (u32*)k->data; // Pointer to k->data as if it was an array of u32 objects.
 
-                socketbuffer_object_pointer->wribuf();
-                
-                //socketbuffer_busy = 0;
+				kdata[0] = format[0];
+				kdata[1] = my_gpu_capture_info.screencapture[0].framebuf_widthbytesize;
+				kdata[2] = format[1];
+				kdata[3] = my_gpu_capture_info.screencapture[1].framebuf_widthbytesize;
+				socketbuffer_object_pointer->wribuf();
+
+				// The above code should be safe. For some reason, the code just below this might be broken.
+
+				k->packet_type_byte = 0xFF; // Debug Packet (sending to PC)
+				k->size = sizeof(my_gpu_capture_info); // This should be hard-coded to something but whatever.
+
+				//*(GSPGPU_CaptureInfo*)k->data = my_gpu_capture_info;
+				//
+				// Write to k->data[0] as if k->data was an array of GSPGPU_CaptureInfo objects.
+				// I think... -C (2022-08-16)
+				//void* k_gpu_cap = (void*)(k->data); // Scratch this line of code. -C
+				//
+
+				// This should be functionally the same but I'm reverting this change.
+				//((GSPGPU_CaptureInfo*)(k->data))[0] = my_gpu_capture_info;
+				*(GSPGPU_CaptureInfo*)k->data = my_gpu_capture_info;
+
+				socketbuffer_object_pointer->wribuf();
+
+				//socketbuffer_busy = 0;
 
 
-                // what
-                if(dmahand)
-                {
-                    svcStopDma(dmahand);
-                    svcCloseHandle(dmahand);
-                    dmahand = 0;
-                }
-                
-                procid = 0;
-                
-                
-                //test for VRAM
-                if\
-                (\
-                    (u32)my_gpu_capture_info.screencapture[0].framebuf0_vaddr >= 0x1F000000\
-                    &&\
-                    (u32)my_gpu_capture_info.screencapture[0].framebuf0_vaddr <  0x1F600000\
-                )
-                {
-                    //nothing to do?
-                }
-                else //use APT fuckery, auto-assume application as all retail applets use VRAM framebuffers
-                {
-                	// Debug LED Pattern: Red, Green, Red, Green...
-                    //memset(&pat.r[0], 0xFF, 16);
-                    //memset(&pat.r[16], 0, 16);
-                    //memset(&pat.g[0], 0, 16);
-                    //memset(&pat.g[16], 0xFF, 16);
-                    //memset(&pat.b[0], 0, 32);
-                    //pat.ani = 0x2004;
-                    //PatApply();
-                    
-                    u64 progid = -1ULL;
-                    bool loaded = false;
-                    
-                    while(1)
-                    {
-                        loaded = false;
-                        while(1)
-                        {
-                        	// &loaded = pRegistered / Pointer to output the registration status to
-                        	// loaded = Registration Status(?) of the specified application(?)
-                        	// If this function returns negative (s32), then break?
-                            if(APT_GetAppletInfo((NS_APPID)0x300, &progid, nullptr, &loaded, nullptr, nullptr) < 0)
-                            {
-                            	break;
-                            }
-                            if(loaded)
-                            {
-                            	break;
-                            }
-                            
-                            svcSleepThread(15e6);
-                        }
-                        
-                        if(!loaded)
-                        {
-                        	break;
-                        }
-                        
-                        if(NS_LaunchTitle(progid, 0, &procid) >= 0)
-                        {
-                        	break;
-                        }
-                    }
-                    
-                    if(loaded)
-                    {
-                    	// Commented out before I got here. -C
-                    	// svcOpenProcess(&prochand, procid);
-                    }
-                    else
-                    {
-                    	format[0] = 0xF00FCACE; //invalidate
-                    }
-                }
-                
-                //PatStay(0x00FF00); // Notif LED = Green
-            }
-            
+				// what
+				if(dmahand)
+				{
+					svcStopDma(dmahand);
+					svcCloseHandle(dmahand);
+					dmahand = 0;
+				}
+
+				procid = 0;
+
+
+				//test for VRAM
+				if\
+				(\
+					(u32)my_gpu_capture_info.screencapture[0].framebuf0_vaddr >= 0x1F000000\
+					&&\
+					(u32)my_gpu_capture_info.screencapture[0].framebuf0_vaddr <  0x1F600000\
+				)
+				{
+					//nothing to do?
+				}
+				else //use APT fuckery, auto-assume application as all retail applets use VRAM framebuffers
+				{
+					// Debug LED Pattern: Red, Green, Red, Green...
+					//memset(&pat.r[0], 0xFF, 16);
+					//memset(&pat.r[16], 0, 16);
+					//memset(&pat.g[0], 0, 16);
+					//memset(&pat.g[16], 0xFF, 16);
+					//memset(&pat.b[0], 0, 32);
+					//pat.ani = 0x2004;
+					//PatApply();
+
+					u64 app_program_id = -1ULL;
+					bool application_registered = false;
+
+					while(1)
+					{
+						application_registered = false; // ?
+						while(1)
+						{
+							// &application_registered = pRegistered / Pointer to output the registration status to
+							// application_registered = Registration Status(?) of the specified application(?)
+							if(APT_GetAppletInfo(APPID_APPLICATION, &app_program_id, nullptr, &application_registered, nullptr, nullptr) < 0)
+							{
+								break; // Break on failure
+							}
+							if(application_registered == true)
+							{
+								break; // Break if true. Otherwise, svcSleepThread and repeat.
+							}
+
+							svcSleepThread(15e6);
+						}
+
+						if(!application_registered)
+						{
+							break; // Break if this has become false.
+						}
+
+						if(NS_LaunchTitle(app_program_id, 0, &procid) >= 0)
+						{
+							break; // If successful, break. If we fail, loop.
+						}
+					}
+
+					if(application_registered)
+					{
+						// Commented out before I got here. -C
+						// svcOpenProcess(&prochand, procid);
+					}
+					else
+					{
+						format[0] = 0xF00FCACE; //invalidate
+					}
+				}
+
+				//PatStay(0x00FF00); // Notif LED = Green
+			}
+
+        }
+        //else if(cfgblk[0] && r >= 0)
+
+        // if cfgblk[0] is non-zero, and make sure we didn't just fail
+        if(cfgblk[0] && r >= 0)
+        {
+        	u8* destination_ptr; // Consider moving this down.
+
             int loopcnt = 2;
             //lmao, I think this loop runs once. -H
+            // "--loopcnt" returns the value of loopcnt.
+            // So true if 1, false if 0. -C
             //
-            // I don't know the return result of that operation...
-            // It's possible that this is quirky. -C (2022-08-17)
+            // Ohhhhh. This is, like, a ratio of
+            // how often we process frames vs
+            // how often we check if settings have changed.
+            // By default it's 1:1, but I'll likely change
+            // it to 2 or more if I can. -C
             while(--loopcnt)
             {
                 if(format[scr] == 0xF00FCACE)
@@ -1294,6 +1317,7 @@ void netfunc(void* __dummy_arg__)
                 //socketbuffer_busy = 2;
 
                 // Crap. I forget why this is where it is........ -C (2022-08-16)
+                // Default value...
                 k->size = 0;
                 
                 if(dmahand)
@@ -1321,15 +1345,7 @@ void netfunc(void* __dummy_arg__)
                 // Legit don't remember what this does or why it's here. lmao. -C (2022-08-16)
                 //destination_ptr = &k->data[8];
 
-
-
-                // This is nice and all, but absolutely not.
-                // This has to be reorganized.
-                // I still like Targa as an option but y'know. An option.
-                // And right now ChokiStream doesn't support "TGAHz" yet either. But it will.
-                // And I'll bugfix the Targa implementation in this code too. -C
                 //if(!cfgblk[3])
-                //{
                 //
                 // (format[scr] & 0b110)
                 // This conditional statement checks the framebuffer color format...
@@ -1345,6 +1361,8 @@ void netfunc(void* __dummy_arg__)
                 // if the "JPEG Quality" value received from the PC application
                 // equals 0.
                 // (That is the intended behavior anyway...)
+
+                PatStay(0x003838); // Debug LED: yellow at 25% brightness
 
                 // I know this is stupid, just let me be stupid in peace )...: -C
                 bool tga_conditional = false;
@@ -1367,6 +1385,8 @@ void netfunc(void* __dummy_arg__)
                     if(r_tga == (tga_result)TGA_NOERR)
                     {
                     	//PatPulse(0x00);
+                    	k->size = imgsize;
+                    	PatStay(0x007F00); // Debug LED: green at 50% brightness
                     }
                     else
                     {
@@ -1374,7 +1394,7 @@ void netfunc(void* __dummy_arg__)
                     }
 
                     k->packet_type_byte = 0x03; //DATA (Targa)
-                    k->size = imgsize;
+                    //k->size = imgsize;
                 }
                 else
                 {
@@ -1401,6 +1421,7 @@ void netfunc(void* __dummy_arg__)
 
                     if(ret3 == 0) // Expecting tjCompress2() returns 0 on success, -1 on failure
                     {
+                    	PatStay(0x007F00); // Debug LED: green at 50% brightness
                     	k->size = imgsize + 8; // Formerly +8, not +4.
                     }
                     else // We fail here, right now. -C (2022-08-18)
@@ -1444,6 +1465,7 @@ void netfunc(void* __dummy_arg__)
                 
                 Handle prochand = 0;
 
+                // what
                 if(procid)
                 {
                 	if(svcOpenProcess(&prochand, procid) < 0)
@@ -1452,13 +1474,17 @@ void netfunc(void* __dummy_arg__)
                 	}
                 }
                 
-                // compares the function Result (s32) to 0, to see if it succeeds
-                // (Function returns 0 or positive int on success, negative int on fail.)
+                // Note: unexpected behavior may occur if data is read before this DMA is finished.
+                // The dma-handle will be signaled when it's complete.
+                // Note 2: Changed destination process handle from 0xFFFF8001 to
+                // the handle stored in netthread (this thread's handle)
+                //
+                os_thread_handle_of_netthread = threadGetHandle(netthread);
                 int r_dma = svcStartInterProcessDma(
                 		&dmahand, // Note: this is where the 'dmahand' variable is set!
-						0xFFFF8001, // "Destination Process Handle"... is this correct?
+						os_thread_handle_of_netthread, //0xFFFF8001, // "Destination Process Handle"... is this correct?
 						(u32)screenbuf, // Probably correct... One iteration of my code did "&screenbuf", but I now think that's wrong.
-						prochand ? prochand : 0xFFFF8001, // "Source Process Handle"... is this correct? Maybe...
+						(prochand ? prochand : os_thread_handle_of_netthread), // "Source Process Handle"... is this correct? Maybe...
                         (u32)(my_gpu_capture_info.screencapture[scr].framebuf0_vaddr + (siz * offs[scr])), // Source Address, seems fine.
 						siz, // How much data do we copy
 						&dma_config); // This is fine too.
@@ -1468,7 +1494,12 @@ void netfunc(void* __dummy_arg__)
                     procid = 0;
                     format[scr] = 0xF00FCACE; //invalidate
                 }
+                else
+                {
+                	PatStay(0x007F1C); // Debug LED: Yellow-green (50% green, 12.5% red)
+                }
                 
+                // Why do we do this?
                 if(prochand)
                 {
                     svcCloseHandle(prochand);
@@ -1517,15 +1548,17 @@ void netfunc(void* __dummy_arg__)
         else yield();
     }
     
+    //PatStay(0x0010FF); // Thread shut down, Debug LED very-Red -ish Orange
+    // Debug Info: Thread has shut down. (Will restart on its own)
     // Debug LED Color Pattern: Yellow, Purple, Yellow, Purple...
-    //memset(&pat.r[0], 0xFF, 16);
-    //memset(&pat.g[0], 0xFF, 16);
-    //memset(&pat.b[0], 0x00, 16);
-    //memset(&pat.r[16],0x7F, 16);
-    //memset(&pat.g[16],0x00, 16);
-    //memset(&pat.b[16],0x7F, 16);
-    //pat.ani = 0x0406;
-    //PatApply();
+    memset(&pat.r[0], 0xFF, 16);
+    memset(&pat.g[0], 0xFF, 16);
+    memset(&pat.b[0], 0x00, 16);
+    memset(&pat.r[16],0x7F, 16);
+    memset(&pat.g[16],0x00, 16);
+    memset(&pat.b[16],0x7F, 16);
+    pat.ani = 0x0406;
+    PatApply();
     
     if(socketbuffer_object_pointer)
     {
