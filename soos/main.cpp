@@ -317,18 +317,26 @@ void initializeThingsWeNeed()
 {
 	// These top two, we maybe shouldn't need. But if they are enabled,
 	// they sometimes cause crashes. -C
-	//nsInit();
-	//aptInit();
+
+	aptExit();
+	nsExit();
+	hidExit();
+	yield();
+	yield();
+	yield();
+	aptInit();
+	nsInit();
+	hidInit();
 
 	mcuInit(); // Notif LED
 	// Notif LED = Orange (Boot just started, no fail yet...)
 	PatStay(0x0037FF);
 
 	acInit(); // Wifi
+
 	initializeGraphics();
 	//allocateRamAndShareWithGpu(); // No.
 
-	hidInit();
 	//HIDUSER_GetHandles(&hid_user_mem_handle,nullptr,nullptr,nullptr,nullptr,nullptr);
 
 	return;
@@ -338,12 +346,26 @@ void initializeThingsWeNeed()
 void initializeGraphics()
 {
 	// gspInit() crashes if we call it without calling gspExit() first.
+
 	gspExit();
 	yield();
 	yield();
+	yield();
+	GSPGPU_ResetGpuCore();
+	yield();
+	yield();
+	yield();
 	int r = gspInit();
-	if(r != 0) // Just in case
+	//if(r != 0) // Just in case
+		//PatStay(0x0000FF);
+
+	gsp_gpu_handle = *(gspGetSessionHandle());
+	r = gspHasGpuRight();
+	if(r)
+		PatStay(0x00FF00);
+	else
 		PatStay(0x0000FF);
+
 
 	// Retrieve a GSP service session handle
 	//Result r = srvGetServiceHandle(&gsp_gpu_handle, "gsp::Gpu");
@@ -1185,10 +1207,11 @@ void netfunc(void* __dummy_arg__)
         // TODO: Do we *need* to get this info every frame? Would it be okay to assume the info is unchanged for 30-60 frames?
         int r;
         r = GSPGPU_ImportDisplayCaptureInfo(&my_gpu_capture_info); // TODO: Currently broken here. -C (2022-08-18)
+        // Note: This function from libctru hasn't changed since 2017.
 
         if(r < 0)
         {
-        	//PatStay(0x00007F);
+        	PatStay(0x00007F);
         	yield();
         }
 
