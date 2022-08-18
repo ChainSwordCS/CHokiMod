@@ -1081,7 +1081,7 @@ void netfunc(void* __dummy_arg__)
 							memcpy(memcpy_address_to_copy_to, memcpy_address_to_copy_from, memcpy_size_in_bytes);
 
 							//TODO: This is stupid. Placeholder.
-							//cfgblk[0] = 1;
+							cfgblk[0] = 1;
 							//cfgblk[3] = 70;
 
 							// The first byte *of the packet* is the packet-type
@@ -1377,6 +1377,7 @@ void netfunc(void* __dummy_arg__)
 
                 if(tga_conditional)
                 {
+                	PatStay(0x007F00); // Debug LED: green at 50% brightness
                     init_tga_image(&img, (u8*)screenbuf, (u16)scrw, (u16)stride[scr], (u8)bits);
                     img.image_type = TGA_IMAGE_TYPE_BGR_RLE;
                     img.origin_y = (scr * 400) + (stride[scr] * offs[scr]);
@@ -1391,6 +1392,7 @@ void netfunc(void* __dummy_arg__)
                     else
                     {
                     	//PatPulse(0x0000FF);
+                    	PatStay(0x00007F); // Debug LED: red at 50% brightness
                     }
 
                     k->packet_type_byte = 0x03; //DATA (Targa)
@@ -1426,6 +1428,7 @@ void netfunc(void* __dummy_arg__)
                     }
                     else // We fail here, right now. -C (2022-08-18)
                     {
+                    	PatStay(0x00007F); // Debug LED: red at 50% brightness
                     	//k->size = 0; // I added this, it may not be at all necessary.
                     	//PatPulse(0x00FFFF);
                     }
@@ -1481,13 +1484,13 @@ void netfunc(void* __dummy_arg__)
                 //
                 os_thread_handle_of_netthread = threadGetHandle(netthread);
                 int r_dma = svcStartInterProcessDma(
-                		&dmahand, // Note: this is where the 'dmahand' variable is set!
-						os_thread_handle_of_netthread, //0xFFFF8001, // "Destination Process Handle"... is this correct?
-						(u32)screenbuf, // Probably correct... One iteration of my code did "&screenbuf", but I now think that's wrong.
-						(prochand ? prochand : os_thread_handle_of_netthread), // "Source Process Handle"... is this correct? Maybe...
-                        (u32)(my_gpu_capture_info.screencapture[scr].framebuf0_vaddr + (siz * offs[scr])), // Source Address, seems fine.
-						siz, // How much data do we copy
-						&dma_config); // This is fine too.
+                		&dmahand,
+						os_thread_handle_of_netthread, // "Destination Process Handle"
+						(u32)screenbuf, // Destination Address
+						(prochand ? prochand : os_thread_handle_of_netthread), // "Source Process Handle"
+                        (u32)my_gpu_capture_info.screencapture[scr].framebuf0_vaddr + (siz * offs[scr]), // Source Address
+						siz, // Amount of data to copy (bytes)
+						&dma_config);
 
                 if(r_dma < 0)
                 {
@@ -1496,7 +1499,8 @@ void netfunc(void* __dummy_arg__)
                 }
                 else
                 {
-                	PatStay(0x007F1C); // Debug LED: Yellow-green (50% green, 12.5% red)
+                	PatStay(0x00FF00);
+                	//PatStay(0x007F1C); // Debug LED: Yellow-green (50% green, 12.5% red)
                 }
                 
                 // Why do we do this?
@@ -1549,6 +1553,7 @@ void netfunc(void* __dummy_arg__)
     }
     
     //PatStay(0x0010FF); // Thread shut down, Debug LED very-Red -ish Orange
+    //
     // Debug Info: Thread has shut down. (Will restart on its own)
     // Debug LED Color Pattern: Yellow, Purple, Yellow, Purple...
     memset(&pat.r[0], 0xFF, 16);
@@ -1566,6 +1571,7 @@ void netfunc(void* __dummy_arg__)
         socketbuffer_object_pointer = nullptr;
     }
     
+    // why
     if(dmahand)
     {
         svcStopDma(dmahand);
@@ -1690,15 +1696,17 @@ int main()
     // Hoping to obsolete the next two 'if' statements
     // When re-re-rewriting memory allocation... lol. -C (2022-08-10)
     //
+    // Might adjust the mem allocation code for real this time. -C (2022-08-18)
+    //
     if(is_old_3ds)
     {
     	// If this is broken, revert to (u8*)?
-        screenbuf = (u32*)memalign(8, 50 * 240 * 4); // On Old-3DS
+        screenbuf = memalign(8, 50 * 240 * 4); // On Old-3DS
     }
     else
     {
     	// If this is broken, revert to (u8*)?
-        screenbuf = (u32*)memalign(8, 400 * 240 * 4); // On New-3DS
+        screenbuf = memalign(8, 400 * 240 * 4); // On New-3DS
     }
 
     if(!screenbuf) // If memalign() returns null or 0 (fails)
