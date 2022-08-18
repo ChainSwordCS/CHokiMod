@@ -1412,20 +1412,26 @@ void netfunc(void* __dummy_arg__)
                     // Please make this not all one line. -C
                     int ret3;
 
+                    // Unfortunately, I have no idea what this bit of code does.
+                    int arg_a = 0;
+                    if(format[scr])
+                    	arg_a = (int)TJPF_RGB;
+                    else
+                    	arg_a = (int)TJPF_RGBX;
                     //Exact old code:
                     // if(!tjCompress2(jencode, (u8*)screenbuf, scrw, bsiz * scrw, stride[scr], format[scr] ? TJPF_RGB : TJPF_RGBX, &dstptr, (u32*)&imgsize, TJSAMP_420, cfgblk[3], TJFLAG_NOREALLOC | TJFLAG_FASTDCT))
                     //
-                    //     tjCompress2(void *,        (u8*) const unsigned char *,  int,         int,         int,                                int,unsigned char * *, unsigned long int *,   int,              int, int)
-                    ret3 = tjCompress2(turbo_jpeg_instance_handle, (u8*)screenbuf, (int)(scrw), (int)(bsiz * scrw), (int)(stride[scr]), (int)(format[scr] ? TJPF_RGB : TJPF_RGBX), &destination_ptr, (u32*)&imgsize, TJSAMP_420, (int)(cfgblk[3]), (int)(TJFLAG_NOREALLOC | TJFLAG_FASTDCT));
+                    //     tjCompress2(void *,               (u8*) const unsigned char *,  int,         int,         int,                        int,unsigned char * *, unsigned long int *,   int,              int, int)
+                    ret3 = tjCompress2((void*)turbo_jpeg_instance_handle, (u8*)screenbuf, (int)(scrw), (int)(bsiz * scrw), (int)(stride[scr]), arg_a, &destination_ptr, (u32*)&imgsize, (int)TJSAMP_420, (int)(cfgblk[3]), (int)(TJFLAG_NOREALLOC | TJFLAG_FASTDCT));
 
-                    if(!ret3) // Expecting tjCompress2() to return 0 on success.
+                    if(ret3 == 0) // Expecting tjCompress2() returns 0 on success, -1 on failure
                     {
                     	k->size = imgsize + 8; // Formerly +8, not +4.
                     }
-                    else
+                    else // We fail here, right now. -C (2022-08-18)
                     {
                     	//k->size = 0; // I added this, it may not be at all necessary.
-                    	PatPulse(0x00FFFF);
+                    	//PatPulse(0x00FFFF);
                     }
                     k->packet_type_byte = 0x04; //DATA (JPEG)
                 }
