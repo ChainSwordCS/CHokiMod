@@ -41,7 +41,7 @@ extern "C"
 //#include "service/screen.h"
 #include "service/mcu.h"
 #include "misc/pattern.h"
-//#include "service/gx.h"
+#include "service/gx.h"
 
 #include "tga/targa.h"
 #include "turbojpeg.h"
@@ -351,7 +351,7 @@ void initializeGraphics()
 	yield();
 	yield();
 	yield();
-	GSPGPU_ResetGpuCore();
+	//GSPGPU_ResetGpuCore();
 	yield();
 	yield();
 	yield();
@@ -360,37 +360,16 @@ void initializeGraphics()
 		//PatStay(0x0000FF);
 
 	gsp_gpu_handle = *(gspGetSessionHandle());
-	r = gspHasGpuRight();
-	if(r)
-		PatStay(0x00FF00);
-	else
-		PatStay(0x0000FF);
 
+	// Only one process can have rendering rights at a time.
 
-	// Retrieve a GSP service session handle
-	//Result r = srvGetServiceHandle(&gsp_gpu_handle, "gsp::Gpu");
-	//if(r<0)
-	//	PatStay(0x0000FF); // Notif LED = red
-
-	// Acquire GPU rights
 	//r = GSPGPU_AcquireRight(0);
-	//if(r<0)
+	// I don't know if this is important but it fails.
+	//r = gspHasGpuRight();
+	//if(r)
+	//	PatStay(0x00FF00);
+	//else
 	//	PatStay(0x0000FF);
-
-	// Register ourselves as a user of graphics hardware
-	//svcCreateEvent(&my_gsp_event, RESET_ONESHOT);
-	//r = GSPGPU_RegisterInterruptRelayQueue(my_gsp_event, 0x1, &gpu_mem_shared_handle, &my_gsp_thread_id);
-	//if(r!=0x1)
-	//	PatStay(0x0000FF);
-
-	// Don't gspHardwareInit(); ? idk.
-
-	// Map GSP shared memory
-	//gpu_mem_shared = mappableAlloc(0x1000);
-	//svcMapMemoryBlock(gpu_mem_shared_handle, gpu_mem_shared, MEMPERM_READWRITE, MEMPERM_READWRITE);
-
-	//my_gsp_event_thread = threadCreate(gspEventThreadMain, 0x0, GSP_EVENT_STACK_SIZE, 0x1A, -2, true);
-
 
 	return;
 }
@@ -914,7 +893,7 @@ void CPPCrashHandler()
     longjmp(__exc, 1);
 }
 
-
+// what
 extern "C" u32 __get_bytes_per_pixel(GSPGPU_FramebufferFormat format);
 
 static u32 kDown = 0;
@@ -930,6 +909,7 @@ static int cy = 0;
 static u32 offs[2] = {0, 0};
 static u32 limit[2] = {1, 1};
 static u32 stride[2] = {80, 80};
+// I hate this so much but fine
 static u32 format[2] = {0xF00FCACE, 0xF00FCACE};
 
 static u8 cfgblk[0x100];
@@ -1206,8 +1186,16 @@ void netfunc(void* __dummy_arg__)
 
         // TODO: Do we *need* to get this info every frame? Would it be okay to assume the info is unchanged for 30-60 frames?
         int r;
+        //gspWaitForVBlank(); // Maybe this will help?
+        //r = GSPGPU_SaveVramSysArea(); // Don't know if this is allowed, lol.
+        //if(r>=0)
+        	//PatStay(0x00FF00);
         r = GSPGPU_ImportDisplayCaptureInfo(&my_gpu_capture_info); // TODO: Currently broken here. -C (2022-08-18)
         // Note: This function from libctru hasn't changed since 2017.
+
+        // Try this instead?
+
+        //r = GSPGPU_ReadHWRegs()
 
         if(r < 0)
         {
@@ -1358,7 +1346,7 @@ void netfunc(void* __dummy_arg__)
         //else if(cfgblk[0] && r >= 0)
 
         // if cfgblk[0] is non-zero, and make sure we didn't just fail
-        if(cfgblk[0] != 0) //&& r >= 0)
+        if(cfgblk[0] != 0 && r >= 0)
         {
         	//PatStay(0x007F00); // Debug LED: green at 50% brightness
         	u8* destination_ptr; // Consider moving this down.
