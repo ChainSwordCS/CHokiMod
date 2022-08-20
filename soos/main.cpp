@@ -1668,26 +1668,52 @@ void netfunc(void* __dummy_arg__)
     threadrunning = 0;
 }
 
-static FILE* file = nullptr;
+static FILE* log_file_ptr = nullptr;
 
-ssize_t stdout_write(struct _reent* r, void* fd, const char* ptr, size_t len) //used to be "int fd" not "void* fd"
+static ssize_t stdout_write(struct _reent* r, void* fd, const char* ptr, size_t len) //used to be "int fd" not "void* fd"
 {
-    if(!file) return 0;
-    fputs("[STDOUT] ", file);
-    return fwrite(ptr, 1, len, file);
+    if(log_file_ptr == NULL)
+    	return 0;
+
+    fputs("[STDOUT] ", log_file_ptr);
+    return fwrite(ptr, 1, len, log_file_ptr);
 }
 
-ssize_t stderr_write(struct _reent* r, void* fd, const char* ptr, size_t len)
+static ssize_t stderr_write(struct _reent* r, void* fd, const char* ptr, size_t len)
 {
-    if(!file) return 0;
-    fputs("[STDERR] ", file);
-    return fwrite(ptr, 1, len, file);
+    if(!log_file_ptr) return 0;
+    fputs("[STDERR] ", log_file_ptr);
+    return fwrite(ptr, 1, len, log_file_ptr);
 }
 
 // Note: Changing "stdout_write" to "&stdout_write" does not, in fact, fix it. -C (2022-08-10)
                                      //{name, structSize, *open r, *close r, *write r, *read r, *seek r, *fstat_r}
-static const devoptab_t devop_stdout = { "stdout", 0, nullptr, nullptr, stdout_write, nullptr, nullptr, nullptr };
-static const devoptab_t devop_stderr = { "stderr", 0, nullptr, nullptr, stderr_write, nullptr, nullptr, nullptr };
+static const devoptab_t devop_stdout = { "stdout", 0, NULL, NULL, stdout_write, NULL, NULL, NULL};
+static const devoptab_t devop_stderr = { "stderr", 0, NULL, NULL, stderr_write, NULL, NULL, NULL};
+
+void initSdLogStuff()
+{
+	// Changed to "a", for "Append". So we add new text to the file.
+	log_file_ptr = fopen("/HzLog.log", "a");
+	//if((s32)log_file_ptr <= 0)  //Maybe switch condition to (log_file_ptr == NULL)?? -H
+	if(log_file_ptr != NULL)
+	{
+		//devoptab_list is from sys/iosupport.h. Idk what it does. -H
+		devoptab_list[STD_OUT] = &devop_stdout;
+		devoptab_list[STD_ERR] = &devop_stderr;
+
+		// Redirect stdout and stderr to the file? -C (2022-08-19)
+		freopen("HzLog.log", "a", stdout);
+		freopen("HzLog.log", "a", stderr);
+
+		//Turn off buffering for stdout and stderr.
+		setvbuf(stdout, nullptr, _IONBF, 0);
+		setvbuf(stderr, nullptr, _IONBF, 0);
+
+		//puts("Hello world, ChainSwordCS is cool and gamer");
+	}
+
+}
 
 int main()
 {
@@ -1702,20 +1728,7 @@ int main()
 	// Isn't this already initialized to null?
     socketbuffer_object_pointer = nullptr;
     
-    // Changed to "a", for "Append". So we add new text to the file.
-    file = fopen("/HzLog.log", "a");
-    if((s32)file <= 0)  //Maybe switch condition to (file == NULL)?? -H
-		file = nullptr;
-    else
-    {
-        //devoptab_list is from sys/iosupport.h. Idk what it does. -H
-        devoptab_list[STD_OUT] = &devop_stdout;
-		devoptab_list[STD_ERR] = &devop_stderr;
-
-        //Turn off buffering for stdout and stderr.
-		setvbuf(stdout, nullptr, _IONBF, 0);
-		setvbuf(stderr, nullptr, _IONBF, 0);
-    }
+    initSdLogStuff();
     
     memset(&pat, 0, sizeof(pat));
     memset(&my_gpu_capture_info, 0, sizeof(my_gpu_capture_info));
@@ -2046,10 +2059,10 @@ int main()
 
     acExit();
 
-    if(file)
+    if(log_file_ptr)
     {
-        fflush(file);
-        fclose(file);
+        fflush(log_file_ptr);
+        fclose(log_file_ptr);
     }
 
     //hidExit();
