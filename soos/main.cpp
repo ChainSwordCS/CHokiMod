@@ -355,7 +355,7 @@ void initializeGraphics()
 	yield();
 	yield();
 	yield();
-	int r = gspInit();
+	gspInit();
 	//if(r != 0) // Just in case
 		//PatStay(0x0000FF);
 
@@ -1008,6 +1008,12 @@ void netfunc(void* __dummy_arg__)
     }
     while(0);
     
+    // Is this something I want to do? Will this even work?
+    // I think *this thread* may need its own handle for the GSP.
+    // -C (2022-08-19)
+    // JK, lol, this causes the thread to crash / hang.
+    //gspInit();
+
     // We have a thread opened.
     // It'll loop through this code indefinitely,
     // unless it hits a 'break' command,
@@ -1020,7 +1026,7 @@ void netfunc(void* __dummy_arg__)
     // However, that very well may break things.
     // It might have caused things to break when I
     // added it to the main() function. -C (2022-08-10)
-    PatStay(0x001C1C); // Debug LED very dim Yellow (Thread is indeed running)
+    //PatStay(0x001C1C); // Debug LED very dim Yellow (Thread is indeed running)
     while(threadrunning)
     {
     	// TODO: Checking for data sent from PC every loop is
@@ -1085,7 +1091,7 @@ void netfunc(void* __dummy_arg__)
 							break;
 
 						case 0x7E: //CFGBLK_IN
-							PatStay(0x00387F); // Debug Code, Debug LED Orange
+							//PatStay(0x00387F); // Debug Code, Debug LED Orange
 
 							// Old Code!
 							//memcpy(cfgblk + k->data[0], &k->data[4], min((u32)(0x100 - k->data[0]), (u32)(k->size - 4)));
@@ -1137,7 +1143,7 @@ void netfunc(void* __dummy_arg__)
 							// TODO: When I reimplement this, simplify and remove that extra functionality.
 
 							yield(); // Wait a little bit, let the orange actually be visible.
-							PatStay(0x001C1C);
+							//PatStay(0x001C1C);
 							// Also, if the user is incrementally changing JPEG quality, we don't
 							// need to try and process *all* of that info anyway. -C
 							//
@@ -1217,18 +1223,24 @@ void netfunc(void* __dummy_arg__)
         // This function seems to always fail. I'm investigating why. -C (2022-08-19)
         // https://www.3dbrew.org/wiki/GSPGPU:ImportDisplayCaptureInfo
 
+        memcpy(0,0,0);
+
         r = GSPGPU_ImportDisplayCaptureInfo(&my_gpu_capture_info); // TODO: Currently broken here. -C (2022-08-18)
         // Note: This function from libctru hasn't changed since 2017.
 
+        printf("Address of my_gpu_capture_info = %i\n", &my_gpu_capture_info);
+        printf("GSPGPU_ImportDisplayCaptureInfo function called...\n");
+        printf("Function return value = %i\n", r);
+
         if(r < 0)
         {
-        	PatStay(0x00007F);
+        	//PatStay(0x00007F);
         	yield();
         }
 
         if(r >= 0)// if GSPGPU_ImportDisplayCaptureInfo succeeds
         {
-        	PatStay(0x003800); // Debug Code, Debug LED Green
+        	//PatStay(0x003800); // Debug Code, Debug LED Green
         	// (Sono's Comment)
 			//test for changed framebuffers
 			if\
