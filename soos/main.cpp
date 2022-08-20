@@ -318,15 +318,15 @@ void initializeThingsWeNeed()
 	// These top two, we maybe shouldn't need. But if they are enabled,
 	// they sometimes cause crashes. -C
 
-	aptExit();
-	nsExit();
-	hidExit();
-	yield();
-	yield();
-	yield();
-	aptInit();
-	nsInit();
-	hidInit();
+	//aptExit();
+	//nsExit();
+	//hidExit();
+	//yield();
+	//yield();
+	//yield();
+	//aptInit();
+	//nsInit();
+	//hidInit();
 
 	mcuInit(); // Notif LED
 	// Notif LED = Orange (Boot just started, no fail yet...)
@@ -347,7 +347,7 @@ void initializeGraphics()
 {
 	// gspInit() crashes if we call it without calling gspExit() first.
 
-	gspExit();
+	//gspExit();
 	yield();
 	yield();
 	yield();
@@ -984,6 +984,8 @@ void netfunc(void* __dummy_arg__)
     //PatPulse(0x7F007F); // Notif LED = Purple-ish
     threadrunning = 1;
     
+    //initializeGraphics(); // Does this work? Does it solve anything?
+
     // why???
     //
     // Note: If this code runs in the middle of receiving packets and copying to cfgblk,
@@ -1222,8 +1224,6 @@ void netfunc(void* __dummy_arg__)
 
         // This function seems to always fail. I'm investigating why. -C (2022-08-19)
         // https://www.3dbrew.org/wiki/GSPGPU:ImportDisplayCaptureInfo
-
-        memcpy(0,0,0);
 
         r = GSPGPU_ImportDisplayCaptureInfo(&my_gpu_capture_info); // TODO: Currently broken here. -C (2022-08-18)
         // Note: This function from libctru hasn't changed since 2017.
@@ -1729,23 +1729,29 @@ void initSdLogStuff()
 
 int main()
 {
-	//is_old_3ds, or is_old, tells us if we are running on Original/"Old" 3DS (reduced clock speed and RAM...)
-	if(APPMEMTYPE <= 5) // Perhaps a weird way of checking this, but it does work.
-	{
-	    is_old_3ds = 1;
-	}
+	// Note! This successfully executing is dependent on timing, I think. ): -C (2022-08-20)
 
-	initializeThingsWeNeed();
+	mcuInit(); // Notif LED
+	// Notif LED = Orange (Boot just started, no fail yet...)
+	//PatStay(0x0037FF);
+	nsInit();
 
 	// Isn't this already initialized to null?
     socketbuffer_object_pointer = nullptr;
-    
+
+	//initializeThingsWeNeed();
     initSdLogStuff();
     
     memset(&pat, 0, sizeof(pat));
     memset(&my_gpu_capture_info, 0, sizeof(my_gpu_capture_info));
     memset(cfgblk, 0, sizeof(cfgblk));
     
+    //is_old_3ds, or is_old, tells us if we are running on Original/"Old" 3DS (reduced clock speed and RAM...)
+    if(APPMEMTYPE <= 5) // Perhaps a weird way of checking this, but it does work.
+    {
+        is_old_3ds = 1;
+    }
+
     if(is_old_3ds)
     {
         limit[0] = 8; // Multiply by this to get the full horizontal res of a screen.
@@ -1761,23 +1767,33 @@ int main()
         stride[1] = 320;
     }
 
+    // Notif LED = Orange (Boot just started, no fail yet...)
+    PatStay(0x0037FF);
 
+    acInit();
+
+    do
+    {
+        u32 siz = is_old_3ds ? 0x10000 : 0x200000;
+        ret = socInit((u32*)memalign(0x1000, siz), siz);
+    }
+    while(0);
     // Web socket stuff. Size of a buffer; is page-aligned (0x1000)
-    u32 soc_buffer_size;
+    //u32 soc_buffer_size;
 
-    if(is_old_3ds)
-    {
-    	soc_buffer_size = 0x10000; // If Old-3DS
-    }
-    else
-    {
-    	soc_buffer_size = 0x200000; // If New-3DS
-    }
+    //if(is_old_3ds)
+    //{
+    	//soc_buffer_size = 0x10000; // If Old-3DS
+    //}
+    //else
+    //{
+    	//soc_buffer_size = 0x200000; // If New-3DS
+    //}
 
     // Initialize the SOC service.
     // Potential issue: userland-privileged programs can't change the buffer address (pointer) after creation.
     // This may or may not ever be an issue, but I'm documenting it for completeness. -C (2022-08-10)
-    ret = socInit((u32*)memalign(0x1000, soc_buffer_size), soc_buffer_size);
+    //ret = socInit((u32*)memalign(0x1000, soc_buffer_size), soc_buffer_size);
 
     if(ret < 0)
     {
@@ -1797,6 +1813,8 @@ int main()
     	hangmacro();
     }
 
+    // Call this function exactly here(?) -C (2022-08-20)
+    gspInit();
 
     // Hoping to obsolete the next two 'if' statements
     // When re-re-rewriting memory allocation... lol. -C (2022-08-10)
