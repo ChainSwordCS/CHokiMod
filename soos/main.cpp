@@ -1174,7 +1174,30 @@ void netfunc(void* __dummy_arg__)
         {
         	break;
         }
-        
+
+
+        // Note to self: consider trying different functions too.
+        // Like the code just below this message. -C (2022-08-19)
+        //
+        // u32 screen0_framebuffer1_address = 0;
+        // r = GSPGPU_ReadHWRegs(addr,&screen0_framebuffer1_address,len);
+        //
+        // Try to read GPU external hardware registers directly?
+        //
+        // User VA     Physical Address  Name
+        // 0x1EF00400  0x10400400        Framebuffer Setup (Top Screen) (Length $100)
+        // 0x1EF00500  0x10400500        Framebuffer Setup (Bottom Screen) (Length $100)
+        //
+        // https://www.3dbrew.org/wiki/GPU/External_Registers#LCD_Source_Framebuffer_Setup
+        //
+        // offset $68 = Framebuffer A 1st Address (left eye if 3D)
+        // offset $6C = Framebuffer A 2nd Address (left eye if 3D)
+        // offset $70 = Framebuffer format (and other settings?)
+        // offset $94 = Framebuffer B 1st Address (right eye if 3D)
+        // offset $98 = Framebuffer B 2nd Address (right eye if 3D)
+
+
+
         // Old Code:
         // It is important that GSPGPU_ImportDisplayCaptureInfo does not fail.
         //if((cfgblk[0] != 0x00) && (GSPGPU_ImportDisplayCaptureInfo(&my_gpu_capture_info) >= 0))
@@ -1184,18 +1207,18 @@ void netfunc(void* __dummy_arg__)
         // If index 0 of config-block is non-zero! (Set by initialization sorta packet)
         // And this ImportDisplayCaptureInfo function doesn't error out...
 
-        // TODO: Do we *need* to get this info every frame? Would it be okay to assume the info is unchanged for 30-60 frames?
         int r;
         //gspWaitForVBlank(); // Maybe this will help?
-        //r = GSPGPU_SaveVramSysArea(); // Don't know if this is allowed, lol.
+        //r = GSPGPU_SaveVramSysArea(); // This seems to crash, maybe not allowed? idk
         //if(r>=0)
         	//PatStay(0x00FF00);
+
+
+        // This function seems to always fail. I'm investigating why. -C (2022-08-19)
+        // https://www.3dbrew.org/wiki/GSPGPU:ImportDisplayCaptureInfo
+
         r = GSPGPU_ImportDisplayCaptureInfo(&my_gpu_capture_info); // TODO: Currently broken here. -C (2022-08-18)
         // Note: This function from libctru hasn't changed since 2017.
-
-        // Try this instead?
-
-        //r = GSPGPU_ReadHWRegs()
 
         if(r < 0)
         {
