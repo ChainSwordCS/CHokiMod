@@ -25,7 +25,7 @@ AccessControlInfo:
   # Exheader Format Version
   DescVersion                   : 2 # don't change
   
-  # Minimum Required Kernel Version (below is for 11.0.0)
+  # Minimum Required Kernel Version (below is for 11.0.0). Note, I don't have much ability to test on earlier firmware yet.
   ReleaseKernelMajor            : "02"
   ReleaseKernelMinor            : "51"
 
@@ -72,7 +72,7 @@ AccessControlInfo:
   MemoryType                    : Base # Application/System/Base
   SystemMode                    : 64MB # 64MB(Default)/96MB/80MB/72MB/32MB
   IdealProcessor                : 1 # Thinking about other processors lol
-  AffinityMask                  : 1 # Shouldn't be 15. Try 1 or 3 etc.
+  AffinityMask                  : 15 # Shouldn't be 15. Try 1 or 3 etc.
   Priority                      : 20 # Was 20. Try 48 but I forget why. 16 is default(?)
   MaxCpu                        : 0x9E # Try 158 but I forget why. 0x9E is default. 0 = Let System Decide.
   HandleTableSize               : 0x200 # Default
@@ -266,37 +266,43 @@ AccessControlInfo:
   # Actually, these are just permissions.
   # Having too few hurts us more than having too many.
   # Current number is 25.
+  #
+  # ChainSwordCS (2022-08-20 7:00 PM):
+  # I just reverted these to what they originally were.
+  # We'll see what happens, and if this breaks.
+  #
   ServiceAccessControl:
    - APT:S # APT Service, System level. Needed for snooping on other applications.
-   - ac:i # AC Services (Wifi-related); ac:i for more permissions (might need for DHCP, UPnP, idk...)
+   - ac:u # AC Services (Wifi-related); ac:i for more permissions (might need for DHCP, UPnP, idk...)
    - am:net
-   - boss:U
-   - cam:u
-   - cdc:HID # HID Codec Service. I added this, I don't know if it's needed.
-   - cecd:u
-   - cfg:nor # Config NVRAM Service (Interface for SPI::NOR, accessing WiFi NVRAM/SPI Flash)
-   - cfg:u
-   - cfg:i
+   #- boss:U
+   #- cam:u
+   #- cdc:HID # HID Codec Service. I added this, I don't know if it's needed.
+   #- cecd:u
+   #- cfg:nor # Config NVRAM Service (Interface for SPI::NOR, accessing WiFi NVRAM/SPI Flash)
+   #- cfg:u
+   #- cfg:i
+   - csnd:SND # Is this actually needed?
    - fs:USER # Fine to leave on. File system access stuff.
    - gsp::Gpu # GSP GPU Service. Most likely very needed.
    - gsp::Lcd
    - hid:USER
    - http:C # HTTP stuff. Perhaps not needed?
-   - i2c::MCU
+   #- i2c::MCU
    - ir:rst # Infrared-related stuff (THIS IS NEEDED for NEW-3DS ZL,ZR,C-Stick)
    - mcu::HWC # Maybe used for the Notification LED?
-   - mic:u
-   - ndm:u # I don't know.
+   #- mic:u
+   #- ndm:u # I don't know.
    - ns:s
-   - nwm::EXT
-   - nwm::UDS
-   - nwm::SOC # NWM, socket stuff. May not be needed, IDK.
-   - pm:app
+   #- nwm::EXT
+   #- nwm::UDS
+   #- nwm::SOC # NWM, socket stuff. May not be needed, IDK.
+   #- pm:app
    - ptm:sysm # Actually used to CheckNew3DS, and ConfigureNew3DSCPU
-   - ptm:u
+   #- ptm:u
    - soc:U # Sockets. I could include soc:P for Privileged, but I don't know if it's at all necessary.
    - ssl:C # SSL stuff. Perhaps not needed?
-   - y2r:u # Related to processing colors. A Camera service. IDK exactly.
+   #- y2r:u # Related to processing colors. A Camera service. IDK exactly.
 
 SystemControlInfo:
   SaveDataSize: 0KB # Change if the app uses savedata (Is "0K" acceptable syntax? Forget it...)
@@ -341,36 +347,37 @@ SystemControlInfo:
   # Even if this did impact performance in any meaningful way,
   # Performing but badly is better than not working at all?
   # 
+  # Reverted to what it was previously.
   Dependency: 
     ac: 0x0004013000002402
     am: 0x0004013000001502
-    boss: 0x0004013000003402
-    camera: 0x0004013000001602
-    cecd: 0x0004013000002602
-    cfg: 0x0004013000001702
-    codec: 0x0004013000001802
+    #boss: 0x0004013000003402
+    #camera: 0x0004013000001602
+    #cecd: 0x0004013000002602
+    #cfg: 0x0004013000001702
+    #codec: 0x0004013000001802
     csnd: 0x0004013000002702
-    dlp: 0x0004013000002802
+    #dlp: 0x0004013000002802
     dsp: 0x0004013000001a02
-    friends: 0x0004013000003202
-    gpio: 0x0004013000001b02
+    #friends: 0x0004013000003202
+    #gpio: 0x0004013000001b02
     gsp: 0x0004013000001c02
     hid: 0x0004013000001d02
     http: 0x0004013000002902
     i2c: 0x0004013000001e02
-    ir: 0x0004013000003302
+    #ir: 0x0004013000003302
     mcu: 0x0004013000001f02
-    mic: 0x0004013000002002
-    ndm: 0x0004013000002b02
-    news: 0x0004013000003502
-    nfc: 0x0004013000004002
-    nim: 0x0004013000002c02
-    nwm: 0x0004013000002d02
-    pdn: 0x0004013000002102
-    ps: 0x0004013000003102
-    ptm: 0x0004013000002202
-    qtm: 0x0004013020004202
-    ro: 0x0004013000003702
+    #mic: 0x0004013000002002
+    #ndm: 0x0004013000002b02
+    #news: 0x0004013000003502
+    #nfc: 0x0004013000004002
+    #nim: 0x0004013000002c02
+    #nwm: 0x0004013000002d02
+    #pdn: 0x0004013000002102
+    #ps: 0x0004013000003102
+    #ptm: 0x0004013000002202
+    #qtm: 0x0004013020004202
+    #ro: 0x0004013000003702
     socket: 0x0004013000002e02
-    spi: 0x0004013000002302
+    #spi: 0x0004013000002302
     ssl: 0x0004013000002f02

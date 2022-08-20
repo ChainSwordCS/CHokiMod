@@ -1740,7 +1740,16 @@ int main()
     socketbuffer_object_pointer = nullptr;
 
 	//initializeThingsWeNeed();
-    initSdLogStuff();
+    //initSdLogStuff();
+    log_file_ptr = fopen("/HzLog.log", "a");
+    if(log_file_ptr != NULL)
+    {
+        devoptab_list[STD_OUT] = &devop_stdout;
+        devoptab_list[STD_ERR] = &devop_stderr;
+
+    	setvbuf(stdout, nullptr, _IONBF, 0);
+    	setvbuf(stderr, nullptr, _IONBF, 0);
+    }
     
     memset(&pat, 0, sizeof(pat));
     memset(&my_gpu_capture_info, 0, sizeof(my_gpu_capture_info));
@@ -1800,7 +1809,7 @@ int main()
     	// The returned value of the socInit function
     	// is written at 0x001000F0 in RAM (for debug). (...?)
     	*(u32*)0x1000F0 = ret;
-    	hangmacro();
+    	//hangmacro();
     }
 
 
@@ -1810,11 +1819,12 @@ int main()
     {
     	// Write a debug error code in RAM (at 0x001000F0) (...?)
     	*(u32*)0x1000F0 = 0xDEADDEAD;
-    	hangmacro();
+    	//hangmacro();
     }
 
     // Call this function exactly here(?) -C (2022-08-20)
-    gspInit();
+    //gspInit();
+    initializeGraphics();
 
     // Hoping to obsolete the next two 'if' statements
     // When re-re-rewriting memory allocation... lol. -C (2022-08-10)
@@ -1824,12 +1834,12 @@ int main()
     if(is_old_3ds)
     {
     	// If this is broken, revert to (u8*)?
-        screenbuf = memalign(8, 50 * 240 * 4); // On Old-3DS
+        screenbuf = (u32*)memalign(8, 50 * 240 * 4); // On Old-3DS
     }
     else
     {
     	// If this is broken, revert to (u8*)?
-        screenbuf = memalign(8, 400 * 240 * 4); // On New-3DS
+        screenbuf = (u32*)memalign(8, 400 * 240 * 4); // On New-3DS
     }
 
     if(!screenbuf) // If memalign() returns null or 0 (fails)
