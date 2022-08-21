@@ -65,7 +65,7 @@ LIBS	:= -lturbojpeg -lz -lctru -lm
 # list of directories containing libraries, this must be the top level containing
 # include and lib
 #---------------------------------------------------------------------------------
-LIBDIRS	:= $(CTRULIB) $(DEVKITPRO)/portlibs/armv6k
+LIBDIRS	:= $(CTRULIB) $(DEVKITPRO)/portlibs/3ds
 
 
 #---------------------------------------------------------------------------------
