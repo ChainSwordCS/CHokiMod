@@ -334,7 +334,7 @@ void initializeThingsWeNeed()
 
 	acInit(); // Wifi
 
-	initializeGraphics();
+	//initializeGraphics();
 	//allocateRamAndShareWithGpu(); // No.
 
 	//HIDUSER_GetHandles(&hid_user_mem_handle,nullptr,nullptr,nullptr,nullptr,nullptr);
@@ -348,18 +348,25 @@ void initializeGraphics()
 	// gspInit() crashes if we call it without calling gspExit() first.
 
 	//gspExit();
-	yield();
-	yield();
-	yield();
+	//yield();
+	//yield();
+	//yield();
 	//GSPGPU_ResetGpuCore();
-	yield();
-	yield();
-	yield();
-	gspInit();
+	//yield();
+	//yield();
+	//yield();
+	//gspInit();
 	//if(r != 0) // Just in case
 		//PatStay(0x0000FF);
 
-	gsp_gpu_handle = *(gspGetSessionHandle());
+	void* gsp_ref_cnt_ptr;
+
+	//AtomicPostIncrement(gsp_ref_cnt_ptr); //
+	if(srvGetServiceHandle(&gsp_gpu_handle, "gsp::Gpu") < 0)
+		PatStay(0x0000FF);
+	else
+		PatStay(0x00FF00);
+	//gsp_gpu_handle = *(gspGetSessionHandle());
 
 	// Only one process can have rendering rights at a time.
 
@@ -1735,21 +1742,14 @@ int main()
 	// Notif LED = Orange (Boot just started, no fail yet...)
 	//PatStay(0x0037FF);
 	nsInit();
+	hidInit(); // Might break
+	//aptInit(); // Might break
 
 	// Isn't this already initialized to null?
     socketbuffer_object_pointer = nullptr;
 
 	//initializeThingsWeNeed();
-    //initSdLogStuff();
-    log_file_ptr = fopen("/HzLog.log", "a");
-    if(log_file_ptr != NULL)
-    {
-        devoptab_list[STD_OUT] = &devop_stdout;
-        devoptab_list[STD_ERR] = &devop_stderr;
-
-    	setvbuf(stdout, nullptr, _IONBF, 0);
-    	setvbuf(stderr, nullptr, _IONBF, 0);
-    }
+    initSdLogStuff();
     
     memset(&pat, 0, sizeof(pat));
     memset(&my_gpu_capture_info, 0, sizeof(my_gpu_capture_info));
