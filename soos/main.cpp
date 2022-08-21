@@ -20,6 +20,8 @@
 
 extern "C"
 {
+#include <ctime>
+
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
@@ -1734,6 +1736,18 @@ void initSdLogStuff()
 
 }
 
+// Pass this function a string, and it will printf() that string with the date and time a line above
+void printMsgWithTime(const char* passed_text)
+{
+	timeval my_timeval_obj;
+	__SYSCALL(gettod_r)(nullptr,&my_timeval_obj,nullptr);
+	char* time_text = std::asctime(std::localtime(&(my_timeval_obj.tv_sec)));
+
+	// I did this because the time text has a newline control character at the end of it
+	// And it looks fine and I can't be bothered figuring out how to remove it. -C
+	printf("[TIME]: %s[DEBUG]: %s\n",time_text,passed_text);
+}
+
 int main()
 {
 	// Note! This successfully executing is dependent on timing, I think. ): -C (2022-08-20)
@@ -1742,14 +1756,16 @@ int main()
 	// Notif LED = Orange (Boot just started, no fail yet...)
 	//PatStay(0x0037FF);
 	nsInit();
-	hidInit(); // Might break
+	//hidInit(); // Might break
 	//aptInit(); // Might break
 
 	// Isn't this already initialized to null?
     socketbuffer_object_pointer = nullptr;
 
 	//initializeThingsWeNeed();
+
     initSdLogStuff();
+	printMsgWithTime(&"Execution started, log initialized. Hello world! :3"[0]);
     
     memset(&pat, 0, sizeof(pat));
     memset(&my_gpu_capture_info, 0, sizeof(my_gpu_capture_info));
