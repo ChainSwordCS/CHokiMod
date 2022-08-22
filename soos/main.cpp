@@ -103,6 +103,7 @@ int checkwifi();
 int pollSocket(int,int,int);
 void CPPCrashHandler();
 void netfunc(void*);
+void printMsgWithTime(const char*);
 int main(); // So you can call main() from main() (:
 
 static u32 mem_shared_address;
@@ -126,6 +127,8 @@ static u32 is_old_3ds = 1;
 
 const int port = 6464;
 static Handle hid_user_mem_handle;
+
+static bool enable_debug_logging = true;
 
 //I think this is over-commented -H
 
@@ -361,13 +364,22 @@ void initializeGraphics()
 	//if(r != 0) // Just in case
 		//PatStay(0x0000FF);
 
-	void* gsp_ref_cnt_ptr;
+	//void* gsp_ref_cnt_ptr;
 
 	//AtomicPostIncrement(gsp_ref_cnt_ptr); //
-	if(srvGetServiceHandle(&gsp_gpu_handle, "gsp::Gpu") < 0)
-		PatStay(0x0000FF);
-	else
-		PatStay(0x00FF00);
+	int r = srvGetServiceHandle(&gsp_gpu_handle, "gsp::Gpu");
+
+	if(enable_debug_logging)
+	{
+		if(r<0)
+			printMsgWithTime(&"Failed to get gsp::Gpu handle."[0]);
+		else
+			printMsgWithTime(&"Successfully got gsp::Gpu handle."[0]);
+
+		printf(" handle(u32) = %i ; return code = %i\n",gsp_gpu_handle,r);
+	}
+
+
 	//gsp_gpu_handle = *(gspGetSessionHandle());
 
 	// Only one process can have rendering rights at a time.
@@ -1730,8 +1742,6 @@ void initSdLogStuff()
 		//Turn off buffering for stdout and stderr.
 		setvbuf(stdout, nullptr, _IONBF, 0);
 		setvbuf(stderr, nullptr, _IONBF, 0);
-
-		//puts("Hello world, ChainSwordCS is cool and gamer");
 	}
 
 }
@@ -1745,7 +1755,7 @@ void printMsgWithTime(const char* passed_text)
 
 	// I did this because the time text has a newline control character at the end of it
 	// And it looks fine and I can't be bothered figuring out how to remove it. -C
-	printf("[TIME]: %s[DEBUG]: %s\n",time_text,passed_text);
+	printf("[TIME]: %s[DEBUG]: %s",time_text,passed_text);
 }
 
 int main()
@@ -1764,8 +1774,11 @@ int main()
 
 	//initializeThingsWeNeed();
 
-    initSdLogStuff();
-	printMsgWithTime(&"Execution started, log initialized. Hello world! :3"[0]);
+    if(enable_debug_logging)
+    {
+    	initSdLogStuff();
+    	printMsgWithTime(&"Execution started, log initialized. Hello world! :3\n"[0]);
+    }
     
     memset(&pat, 0, sizeof(pat));
     memset(&my_gpu_capture_info, 0, sizeof(my_gpu_capture_info));
