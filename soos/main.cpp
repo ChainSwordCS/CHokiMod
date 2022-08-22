@@ -110,15 +110,15 @@ static u32 mem_shared_address;
 
 // GSP GPU stuff
 static u32 gsp_gpu_handle;
-static Handle gpu_mem_shared_handle;
-static u32 gpu_mem_shared;
-static u32 my_gsp_event;
-static u8 my_gsp_thread_id;
-static Thread my_gsp_event_thread;
+//static Handle gpu_mem_shared_handle;
+//static u32 gpu_mem_shared;
+//static u32 my_gsp_event;
+//static u8 my_gsp_thread_id;
+//static Thread my_gsp_event_thread;
 
 static u32 buttons_pressed = 0;
 
-static u32 socketbuffer_busy = 0; // 1 if currently being read from, 2 if currently being written to
+//static u32 socketbuffer_busy = 0; // 1 if currently being read from, 2 if currently being written to
 
 // = 0 if New-3DS (128MB more RAM, 2 more CPU cores, higher CPU clock speed, CPU L2-Cache)
 // = 1 if Old-3DS (IIRC... -C)
@@ -126,7 +126,7 @@ static u32 socketbuffer_busy = 0; // 1 if currently being read from, 2 if curren
 static u32 is_old_3ds = 1;
 
 const int port = 6464;
-static Handle hid_user_mem_handle;
+//static Handle hid_user_mem_handle;
 
 static bool enable_debug_logging = true;
 
@@ -212,7 +212,7 @@ public:
 		u32 header = 0;
 		// IIRC, setting this to 0 is functionally no different from how this code
 		// used to work. But maybe keep this in mind... -C (2022-10-08)
-		u32 received_size = 0;
+		//u32 received_size = 0;
 
 		// Get header byte
 		int ret = recv(socket_id, &header, 4, flags);
@@ -318,31 +318,20 @@ void corruptVramLol()
 	return;
 }
 
+// Note this doesn't include socInit, which is required.
 void initializeThingsWeNeed()
 {
-	// These top two, we maybe shouldn't need. But if they are enabled,
-	// they sometimes cause crashes. -C
-
-	//aptExit();
-	//nsExit();
-	//hidExit();
-	//yield();
-	//yield();
-	//yield();
-	//aptInit();
-	//nsInit();
-	//hidInit();
-
 	mcuInit(); // Notif LED
-	// Notif LED = Orange (Boot just started, no fail yet...)
-	PatStay(0x0037FF);
+	// Wow. What we needed to do was wait just slightly longer. I hate this.
+	yield();
+	nsInit(); // May be needed, was in original code.
+
+	//aptInit(); // Consistently breaks (causes "error has occured") (maybe try calling aptExit if you really need APT)
+
+	//hidInit(); // Might break
+	//HIDUSER_GetHandles(&hid_user_mem_handle,nullptr,nullptr,nullptr,nullptr,nullptr);
 
 	acInit(); // Wifi
-
-	//initializeGraphics();
-	//allocateRamAndShareWithGpu(); // No.
-
-	//HIDUSER_GetHandles(&hid_user_mem_handle,nullptr,nullptr,nullptr,nullptr,nullptr);
 
 	return;
 }
@@ -350,13 +339,20 @@ void initializeThingsWeNeed()
 // Lots of code borrowed and slightly modified from libctru - gspgpu.c
 void initializeGraphics()
 {
-	// gspInit() may crash if we call it without calling gspExit() first.
-
 	int r = 0;
-	// We successfully get a gsp::Gpu handle from this...
-	//r = srvGetServiceHandle(&gsp_gpu_handle, "gsp::Gpu");
 
-	if(false)//if(enable_debug_logging)
+	// Note! Time and time again, empirical testing has proven that
+	// gspInit just doesn't work for our purposes. I don't know why.
+	// Also, does gspExit do anything good for us? Or only bad things?
+	// -ChainSwordCS (2022-08-21)
+
+	// We successfully get a gsp::Gpu handle from this
+	r = srvGetServiceHandle(&gsp_gpu_handle, "gsp::Gpu");
+
+	// Alternate, old code. Still considering trying this. -C
+	//gsp_gpu_handle = *(gspGetSessionHandle());
+
+	if(enable_debug_logging)
 	{
 		if(r<0)
 			printMsgWithTime(&"Failed to get gsp::Gpu handle."[0]);
@@ -366,41 +362,19 @@ void initializeGraphics()
 		printf(" handle(u32) = %i ; return code = %i\n",gsp_gpu_handle,r);
 	}
 
-	gspExit();
-	yield();
-	yield();
-
-	r = gspInit();
-	if(enable_debug_logging)
-	{
-		if(r<0)
-			printMsgWithTime(&"gspInit failed!"[0]);
-		else
-			printMsgWithTime(&"gspInit success!"[0]);
-
-		printf(" return code = %i\n",r);
-	}
-
-	//gsp_gpu_handle = *(gspGetSessionHandle());
-
-	// Only one process can have rendering rights at a time.
+	// Note: only one process can have rendering rights at a time.
+	// Thus, this code remains unused (for now?) -C
+	//
+	// The first line is a bit of old code, not necessarily required.
 	//r = GSPGPU_AcquireRight(0);
-	// I don't know if this is important but it fails.
-	//r = gspHasGpuRight();
-	//if(r)
-	//	PatStay(0x00FF00);
-	//else
-	//	PatStay(0x0000FF);
-
-
-
-	if(enable_debug_logging)
-	{
-		if(gspHasGpuRight())
-			printMsgWithTime(&"gspHasGpuRight returned true\n"[0]);
-		else
-			printMsgWithTime(&"gspHasGpuRight returned false\n"[0]);
-	}
+	//
+	//if(enable_debug_logging)
+	//{
+	//	if(gspHasGpuRight())
+	//		printMsgWithTime(&"gspHasGpuRight returned true\n"[0]);
+	//	else
+	//		printMsgWithTime(&"gspHasGpuRight returned false (this is expected behavior)\n"[0]);
+	//}
 
 	return;
 }
@@ -969,6 +943,11 @@ static tjhandle turbo_jpeg_instance_handle = nullptr;
 
 void netfunc(void* __dummy_arg__)
 {
+	if(enable_debug_logging)
+	{
+		printMsgWithTime(&"Code execution reached Checkpoint 3; netfunc() in a new thread\n"[0]);
+	}
+
 	u32 siz = 0x80;
 	u32 bsiz = 1;
 	u32 scrw = 1;
@@ -1772,17 +1751,10 @@ int main()
 {
 	// Note! This successfully executing is dependent on timing, I think. ): -C (2022-08-20)
 
-	mcuInit(); // Notif LED
-	// Notif LED = Orange (Boot just started, no fail yet...)
-	//PatStay(0x0037FF);
-	nsInit();
-	//hidInit(); // Might break
-	//aptInit(); // Might break
+	initializeThingsWeNeed();
 
 	// Isn't this already initialized to null?
 	socketbuffer_object_pointer = nullptr;
-
-	//initializeThingsWeNeed();
 
 	if(enable_debug_logging)
 	{
@@ -1821,7 +1793,8 @@ int main()
 	// Notif LED = Orange (Boot just started, no fail yet...)
 	PatStay(0x0037FF);
 
-	acInit();
+	//acInit was previously called here, but it shouldn't matter(?)
+	//acInit();
 
 	// Web socket stuff. Size of a buffer; is page-aligned (0x1000)
 	//u32 soc_buffer_size;
@@ -1859,6 +1832,11 @@ int main()
 		// Write a debug error code in RAM (at 0x001000F0) (...?)
 		*(u32*)0x1000F0 = 0xDEADDEAD;
 		//hangmacro();
+	}
+
+	if(enable_debug_logging)
+	{
+		printMsgWithTime(&"Code execution reached Checkpoint 1\n"[0]);
 	}
 
 	// Call this function exactly here(?) -C (2022-08-20)
@@ -1972,6 +1950,11 @@ int main()
 	else
 	{
 		//PatStay(0x00FFFF);
+	}
+
+	if(enable_debug_logging)
+	{
+		printMsgWithTime(&"Code execution reached Checkpoint 2; the while-loop in main()\n"[0]);
 	}
 
 	// This conditional statement was previously "while(1)"
@@ -2108,6 +2091,11 @@ int main()
 	}
 
 	killswitch:
+
+	if(enable_debug_logging)
+	{
+		printMsgWithTime(&"Code execution reached killswitch; a fatal error has occurred.\n"[0]);
+	}
 
 	PatStay(0xFF0000); // If we ever actually reach killswitch, make the Notif LED blue
 
