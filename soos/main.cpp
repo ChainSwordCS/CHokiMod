@@ -352,45 +352,92 @@ void initializeThingsWeNeed()
 }
 
 // Lots of code borrowed and slightly modified from libctru - gspgpu.c
+//
+// This is stupid. Do I even need GSP or GPU permissions at all?
 void initializeGraphics()
 {
 	int r;
 
-	// gspInit() crashes if we call it without calling gspExit() first.
-
-
-	// I think a gspExit call may not hurt necessarily...
-	// but it may be unneeded, and may do more harm than good.
-	//gspExit();
-
 	// Funny enough, an svcSleepThread function call may be outright required...
-	yield();
-	yield();
-	yield();
-	//GSPGPU_ResetGpuCore(); // Might break. Same story as gspExit.
-	yield();
-	yield();
-	yield();
-	r = gspInit();
-
-	// This should work, but if it doesn't then alternatively
-	// try the commented-out function below it.
-	gsp_gpu_handle = *(gspGetSessionHandle());
-	//srvGetServiceHandle(&gsp_gpu_handle, "gsp::Gpu");
+	// I'll keep this theory in mind.
 
 	if(enable_debug_logging)
 	{
-		if(r<0)
-			printMsgWithTime(&"Failed to get gsp::Gpu handle."[0]);
-		else
-			printMsgWithTime(&"Successfully got gsp::Gpu handle."[0]);
+		// See wiki for detailed docs. -C
+		if(0)
+		{
+			printMsgWithTime(&"Attempting to call gspExit..."[0]);
+			gspExit();
+			printf(" it didn't crash\n");
+		}
 
-		printf(" handle(u32) = %i ; return code = %i\n",gsp_gpu_handle,r);
+		// See wiki for detailed docs. -C
+		if(0)
+		{
+			printMsgWithTime(&"Attempting to call GSPGPU_ResetGpuCore\n"[0]);
+			r = GSPGPU_ResetGpuCore();
+			printMsgWithTime(&"GSPGPU_ResetGpuCore return code = "[0]);
+			printf("%i",r);
+			if(r<0)
+				printf(" (error)\n");
+			else
+				printf(" (success)\n");
+		}
+
+		// See wiki for detailed docs. -C
+		if(0)
+		{
+			printMsgWithTime(&"Attempting to call gspInit\n"[0]);
+			r = gspInit();
+			printMsgWithTime(&"gspInit return code = "[0]);
+			printf("%i",r);
+			if(r<0)
+				printf(" (error)\n");
+			else
+				printf(" (success)\n");
+		}
+
+
+		// IIRC, calling both of these either crashes or hangs on a black screen (depending on order). -C (2022-08-24)
+
+		if(1)
+		{
+			printMsgWithTime(&"Attempting to call gspGetSessionHandle\n"[0]);
+			gsp_gpu_handle = (u32)gspGetSessionHandle();
+			printMsgWithTime(&"gsp_gpu_handle (u32 pointer) = "[0]);
+			printf("%i\nValue at that address = %i\n", gsp_gpu_handle, *(u32*)(gsp_gpu_handle));
+		}
+
+		if(0)
+		{
+			printMsgWithTime(&"Attempting to call srcGetServiceHandle\n"[0]);
+			r = srvGetServiceHandle(&gsp_gpu_handle, "gsp::Gpu");
+			printMsgWithTime(&"srvGetServiceHandle return code = "[0]);
+			printf("%i",r);
+			if(r<0)
+				printf(" (error)\n");
+			else
+				printf(" (success)\n");
+			printf("gsp_gpu_handle (u32 pointer) = %i\n", gsp_gpu_handle);
+			printf("Value at that address = %i\n", *(u32*)(gsp_gpu_handle));
+		}
+
+		// Note: only one process can have rendering rights at a time.
+		// We probably shouldn't neeeeed GPU rights...
+		//
+		// Also, this piece of code is unfinished now. -C (2022-08-22)
+		if(0)
+		{
+			printMsgWithTime(&"Attempting to call GSPGPU_AcquireRight"[0]);
+			r = GSPGPU_AcquireRight(0);
+		}
+	}
+	else
+	{
+		// If debug logging is off, just do the thing.
+		// (I don't currently know what works best; I'm testing.) -C (2022-08-22)
 	}
 
-	// Note: only one process can have rendering rights at a time.
-	// We probably shouldn't neeeeed GPU rights...
-	//r = GSPGPU_AcquireRight(0);
 	return;
 }
 
@@ -1240,7 +1287,7 @@ void netfunc(void* __dummy_arg__)
         // If index 0 of config-block is non-zero! (Set by initialization sorta packet)
         // And this ImportDisplayCaptureInfo function doesn't error out...
 
-        int r;
+        int r = 0;
         //gspWaitForVBlank(); // Maybe this will help?
         //r = GSPGPU_SaveVramSysArea(); // This seems to crash, maybe not allowed? idk
         //if(r>=0)
@@ -1250,12 +1297,48 @@ void netfunc(void* __dummy_arg__)
         // This function seems to always fail. I'm investigating why. -C (2022-08-19)
         // https://www.3dbrew.org/wiki/GSPGPU:ImportDisplayCaptureInfo
 
-        r = GSPGPU_ImportDisplayCaptureInfo(&my_gpu_capture_info); // TODO: Currently broken here. -C (2022-08-18)
+        //r = GSPGPU_ImportDisplayCaptureInfo(&my_gpu_capture_info); // TODO: Currently broken here. -C (2022-08-18)
         // Note: This function from libctru hasn't changed since 2017.
 
-        printf("Address of my_gpu_capture_info = %i\n", &my_gpu_capture_info);
-        printf("GSPGPU_ImportDisplayCaptureInfo function called...\n");
-        printf("Function return value = %i\n", r);
+        // Placeholder, debug conditional statement for
+        // testing a totally new way of doing this. -C
+
+        const u32 fb0addr = 0x1EF00400;
+        const u32 fb1addr = 0x1EF00500;
+
+        if(1)
+        {
+        	if(enable_debug_logging)
+        		printMsgWithTime(&"Attempting to copy framebuffer data from GPU External Registers...\n"[0]);
+
+        	my_gpu_capture_info.screencapture[0].format = *((u32*)(fb0addr + 0x70)) & 0b0111;
+
+        	// This is confusingly written and dumb so here's a breakdown:
+        	// Take (fb0addr+0x68), interpret it as a pointer to a u32,
+        	// Get the u32 at that address,
+        	// and interpret ***THAT U32*** as a pointer to another u32.
+        	//
+        	my_gpu_capture_info.screencapture[0].framebuf0_vaddr = (u32*) * (u32*)(fb0addr + 0x68); // TODO: Does this give me a virtual or physical address?
+        	my_gpu_capture_info.screencapture[0].framebuf1_vaddr = (u32*) * (u32*)(fb0addr + 0x6C); // Currently unused I think
+
+        	// Number of bytes per row (every ""row"" is 240 px)
+        	// Just calc this from color format.
+        	if(my_gpu_capture_info.screencapture[0].format <= 1)
+        		my_gpu_capture_info.screencapture[0].framebuf_widthbytesize = 240 * 3;
+        	else
+        		my_gpu_capture_info.screencapture[0].framebuf_widthbytesize = 240 * 2;
+
+        	r = 1; // Just say that we did it.
+        }
+
+        if(enable_debug_logging)
+        {
+        	printMsgWithTime(&"Accessed GPU External Registers; no crash (yet)\n"[0]);
+        	printf("Screen 0 color format = %i\n", my_gpu_capture_info.screencapture[0].format);
+        	printf("Screen 0 address = %i\n", my_gpu_capture_info.screencapture[0].framebuf0_vaddr);
+        	printf("Screen 1 color format = %i\n", my_gpu_capture_info.screencapture[1].format);
+        	printf("Screen 1 address = %i\n", my_gpu_capture_info.screencapture[1].framebuf0_vaddr);
+        }
 
         if(r < 0)
         {
@@ -1863,7 +1946,10 @@ int main()
 
     // Call this function exactly here(?) -C (2022-08-20)
     // Yeah, I guess so. -C (2022-08-22)
-    initializeGraphics();
+    // Note: If timing is an issue, replacing this with a single inline function-call
+    // is a good solution. -C (2022-08-24)
+    //initializeGraphics();
+    gsp_gpu_handle = (u32)gspGetSessionHandle();
 
     // Hoping to obsolete the next two 'if' statements
     // When re-re-rewriting memory allocation... lol. -C (2022-08-10)
