@@ -360,6 +360,13 @@ void initializeGraphics()
 
 	// Funny enough, an svcSleepThread function call may be outright required...
 	// I'll keep this theory in mind.
+	yield();
+	yield();
+	yield();
+	yield();
+	yield();
+	yield();
+	//r = gspInit();
 
 	if(enable_debug_logging)
 	{
@@ -385,7 +392,7 @@ void initializeGraphics()
 		}
 
 		// See wiki for detailed docs. -C
-		if(0)
+		if(1)
 		{
 			printMsgWithTime(&"Attempting to call gspInit\n"[0]);
 			r = gspInit();
@@ -399,6 +406,7 @@ void initializeGraphics()
 
 
 		// IIRC, calling both of these either crashes or hangs on a black screen (depending on order). -C (2022-08-24)
+		// Maybe that conclusion is wrong.
 
 		if(1)
 		{
@@ -1948,8 +1956,7 @@ int main()
     // Yeah, I guess so. -C (2022-08-22)
     // Note: If timing is an issue, replacing this with a single inline function-call
     // is a good solution. -C (2022-08-24)
-    //initializeGraphics();
-    gsp_gpu_handle = (u32)gspGetSessionHandle();
+    initializeGraphics();
 
     // Hoping to obsolete the next two 'if' statements
     // When re-re-rewriting memory allocation... lol. -C (2022-08-10)
