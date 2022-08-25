@@ -1,8 +1,10 @@
 #include <3ds.h>
 
 /*
-    HorizonM - utility background process for the Horizon operating system
-    Copyright (C) 2017 MarcusD (https://github.com/MarcuzD)
+    CHmod - A utility background process for the Nintendo 3DS,
+    purpose-built for screen-streaming over WiFi. Name is subject to change.
+
+    Original HorizonM (HzMod) code is Copyright (C) 2017 Sono
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -75,6 +77,12 @@ extern "C"
     }\
 }
 
+int checkwifi();
+int pollsock(int,int,int);
+void CPPCrashHandler();
+void netfunc(void*);
+int main(); // So you can call main from main (:
+
 static int haznet = 0;
 int checkwifi()
 {
@@ -104,54 +112,60 @@ public:
     
     typedef struct
     {
-        u32 packetid : 8;
+        u32 packettype : 8;
         u32 size : 24;
         u8 data[0];
     } packet;
     
-    int sock;
-    u8* buf;
+    int socketid;
+    u8* bufferptr;
     int bufsize;
+    // recvsize is useless; is never read from.
     int recvsize;
     
-    bufsoc(int sock, int bufsize)
+    bufsoc(int passed_sock, int passed_bufsize)
     {
-        this->bufsize = bufsize;
-        buf = new u8[bufsize];
+        bufsize = passed_bufsize;
+        bufferptr = new u8[passed_bufsize];
         
         recvsize = 0;
-        this->sock = sock;
+        socketid = passed_sock;
     }
     
+    // Destructor
     ~bufsoc()
     {
+    	// If this socket buffer is already null,
+    	// don't attempt to delete it again.
         if(!this) return;
-        close(sock);
-        delete[] buf;
+        close(socketid);
+        delete[] bufferptr;
     }
     
     int avail()
     {
-        return pollsock(sock, POLLIN) == POLLIN;
+        return pollsock(socketid, POLLIN) == POLLIN;
     }
     
     int readbuf(int flags = 0)
     {
-        u32 hdr = 0;
-        int ret = recv(sock, &hdr, 4, flags);
+    	// Get header bytes
+        u32 header = 0;
+        int ret = recv(socketid, &header, 4, flags);
         if(ret < 0) return -errno;
         if(ret < 4) return -1;
-        *(u32*)buf = hdr;
+        *(u32*)bufferptr = header;
         
         packet* p = pack();
         
-        int mustwri = p->size;
+        // Copy the header and the size to the start of the buffer
+        int reads_remaining = p->size;
         int offs = 4;
-        while(mustwri)
+        while(reads_remaining)
         {
-            ret = recv(sock, buf + offs , mustwri, flags);
+            ret = recv(socketid, bufferptr + offs , reads_remaining, flags);
             if(ret <= 0) return -errno;
-            mustwri -= ret;
+            reads_remaining -= ret;
             offs += ret;
         }
         
@@ -159,6 +173,7 @@ public:
         return offs;
     }
     
+    // Unused function
     int wribuf_old(int flags = 0)
     {
         int mustwri = pack()->size + 4;
@@ -166,7 +181,7 @@ public:
         int ret = 0;
         while(mustwri)
         {
-            ret = send(sock, buf + offs , mustwri, flags);
+            ret = send(socketid, bufferptr + offs , mustwri, flags);
             if(ret < 0) return -errno;
             mustwri -= ret;
             offs += ret;
@@ -184,9 +199,9 @@ public:
         while(mustwri)
         {
             if(mustwri >> 12)
-                ret = send(sock, buf + offs , 0x1000, flags);
+                ret = send(socketid, bufferptr + offs , 0x1000, flags);
             else
-                ret = send(sock, buf + offs , mustwri, flags);
+                ret = send(socketid, bufferptr + offs , mustwri, flags);
             if(ret < 0) return -errno;
             mustwri -= ret;
             offs += ret;
@@ -197,7 +212,7 @@ public:
     
     packet* pack()
     {
-        return (packet*)buf;
+        return (packet*)bufferptr;
     }
     
     int errformat(char* c, ...)
@@ -217,10 +232,10 @@ public:
             return -1;
         }
         
-        //printf("Packet error %i: %s\n", p->packetid, p->data + 1);
+        //printf("Packet error %i: %s\n", p->packettype, p->data + 1);
         
-        p->data[0] = p->packetid;
-        p->packetid = 1;
+        p->data[0] = p->packettype;
+        p->packettype = 1;
         p->size = len + 2;
         
         return wribuf();
@@ -278,19 +293,24 @@ static u32 kDown = 0;
 static u32 kHeld = 0;
 static u32 kUp = 0;
 
+// GPU 'Capture Info' object.
+// Data about framebuffers from the GSP.
 static GSPGPU_CaptureInfo capin;
 
+// Whether or not this is running on an 'Old' 3DS?
 static int isold = 1;
 
 static Result ret = 0;
 static int cx = 0;
 static int cy = 0;
 
+// Related to screen capture. Dimensions and color format.
 static u32 offs[2] = {0, 0};
 static u32 limit[2] = {1, 1};
 static u32 stride[2] = {80, 80};
 static u32 format[2] = {0xF00FCACE, 0xF00FCACE};
 
+// Config Block
 static u8 cfgblk[0x100];
 
 static int sock = 0;
@@ -320,30 +340,40 @@ void netfunc(void* __dummy_arg__)
     
     int scr = 0;
     
-    if(isold);// screenbuf = (u32*)k->data;
-    else osSetSpeedupEnable(1);
+    if(isold)
+    {
+    	// Commented-out before I got here. -C
+    	// screenbuf = (u32*)k->data;
+    }
+    else
+    {
+    	osSetSpeedupEnable(1);
+    }
     
     k = soc->pack(); //Just In Case (tm)
     
-    PatStay(0xFF00);
+    PatStay(0x00FF00); // Notif LED = Green
     
     format[0] = 0xF00FCACE; //invalidate
     
     u32 procid = 0;
     Handle dmahand = 0;
+    // Note: in modern libctru, DmaConfig is its own object type.
     u8 dmaconf[0x18];
     memset(dmaconf, 0, sizeof(dmaconf));
-    dmaconf[0] = -1; //don't care
+    dmaconf[0] = -1; // -1 = Auto-assign to a free channel (Arm11: 3-7, Arm9:0-1)
     //dmaconf[2] = 4;
     
     //screenInit();
     
-    PatPulse(0x7F007F);
+    PatPulse(0x7F007F); // Notif LED = Medium Purple
     threadrunning = 1;
     
+    // Note: This is a compile-optimization trick.
+    // But it could be more elegant.
     do
     {
-        k->packetid = 2; //MODE
+        k->packettype = 2; //MODE
         k->size = 4 * 4;
         
         u32* kdata = (u32*)k->data;
@@ -356,6 +386,7 @@ void netfunc(void* __dummy_arg__)
     }
     while(0);
     
+    // Infinite loop unless it crashes or is halted by another application.
     while(threadrunning)
     {
         if(soc->avail())
@@ -369,6 +400,7 @@ void netfunc(void* __dummy_arg__)
             }
             
             puts("reading");
+            // Consider declaring 'cy' within this function instead of globally.
             cy = soc->readbuf();
             if(cy <= 0)
             {
@@ -379,24 +411,39 @@ void netfunc(void* __dummy_arg__)
             }
             else
             {
-                printf("#%i 0x%X | %i\n", k->packetid, k->size, cy);
+                printf("#%i 0x%X | %i\n", k->packettype, k->size, cy);
                 
+                // Unused label
                 reread:
-                switch(k->packetid)
+                switch(k->packettype)
                 {
                     case 0x00: //CONNECT
+                    	// In an emergency, just initialize ourselves anyway.
+                    	// We don't expect to ever receive this packet type in practice.
+                    	cfgblk[0] = 1;
+                    	break;
                     case 0x01: //ERROR
+                    	// Forcibly disconnected by the PC.
                         puts("forced dc");
                         delete soc;
                         soc = nullptr;
                         break;
                         
                     case 0x7E: //CFGBLK_IN
+                    	// TODO: This original code may have bugs. Consider refactoring.
+                    	// The first byte is the packet-type,
+                    	// Bytes 6-8 are the size of the data, in bytes(?)
+                    	// The rest of the bytes are perceived as data.
+                    	//
+                    	// DATA:
+                    	//  The first byte of data indicates the index we copy to / offset at which to start copying.
+                    	//  Skip three bytes for no reason :P
+                    	//  Copy <size> bytes.
                         memcpy(cfgblk + k->data[0], &k->data[4], min((u32)(0x100 - k->data[0]), (u32)(k->size - 4)));
                         break;
                         
                     default:
-                        printf("Invalid packet ID: %i\n", k->packetid);
+                        printf("Invalid packet ID: %i\n", k->packettype);
                         delete soc;
                         soc = nullptr;
                         break;
@@ -408,6 +455,8 @@ void netfunc(void* __dummy_arg__)
         
         if(!soc) break;
         
+        // If index 0 of the config block is non-zero (we are signaled by the PC to init)
+        // And this ImportDisplayCaptureInfo function doesn't error...
         if(cfgblk[0] && GSPGPU_ImportDisplayCaptureInfo(&capin) >= 0)
         {
             //test for changed framebuffers
@@ -418,14 +467,14 @@ void netfunc(void* __dummy_arg__)
                 capin.screencapture[1].format != format[1]\
             )
             {
-                PatStay(0xFFFF00);
+                PatStay(0xFFFF00); // Notif LED = Teal
                 
                 //fbuf[0] = (u8*)capin.screencapture[0].framebuf0_vaddr;
                 //fbuf[1] = (u8*)capin.screencapture[1].framebuf0_vaddr;
                 format[0] = capin.screencapture[0].format;
                 format[1] = capin.screencapture[1].format;
                 
-                k->packetid = 2; //MODE
+                k->packettype = 2; //MODE
                 k->size = 4 * 4;
                 
                 u32* kdata = (u32*)k->data;
@@ -436,7 +485,7 @@ void netfunc(void* __dummy_arg__)
                 kdata[3] = capin.screencapture[1].framebuf_widthbytesize;
                 soc->wribuf();
                 
-                k->packetid = 0xFF;
+                k->packettype = 0xFF;
                 k->size = sizeof(capin);
                 *(GSPGPU_CaptureInfo*)k->data = capin;
                 soc->wribuf();
@@ -464,6 +513,7 @@ void netfunc(void* __dummy_arg__)
                 }
                 else //use APT fuckery, auto-assume application as all retail applets use VRAM framebuffers
                 {
+                	// Notif LED = Flashing red and green
                     memset(&pat.r[0], 0xFF, 16);
                     memset(&pat.r[16], 0, 16);
                     memset(&pat.g[0], 0, 16);
@@ -480,6 +530,7 @@ void netfunc(void* __dummy_arg__)
                         loaded = false;
                         while(1)
                         {
+                        	// loaded = Registration Status(?) of the specified application.
                             if(APT_GetAppletInfo((NS_APPID)0x300, &progid, nullptr, &loaded, nullptr, nullptr) < 0) break;
                             if(loaded) break;
                             
@@ -491,15 +542,26 @@ void netfunc(void* __dummy_arg__)
                         if(NS_LaunchTitle(progid, 0, &procid) >= 0) break;
                     }
                     
-                    if(loaded);// svcOpenProcess(&prochand, procid);
-                    else format[0] = 0xF00FCACE; //invalidate
+                    if(loaded)
+                    {
+                    	// Commented-out before I got here. -C
+                    	// svcOpenProcess(&prochand, procid);
+                    }
+                    else
+                    {
+                    	format[0] = 0xF00FCACE; //invalidate
+                    }
                 }
                 
-                PatStay(0xFF00);
+                PatStay(0x00FF00); // Notif LED = Green
             }
             
             int loopcnt = 2;
             
+            // Note: We control how often this loop runs
+            // compared to how often the capture info is checked,
+            // by changing the loopcnt variable.
+            // By default it's 2, which means the ratio is actually 1:1
             while(--loopcnt)
             {
                 if(format[scr] == 0xF00FCACE)
@@ -520,14 +582,17 @@ void netfunc(void* __dummy_arg__)
                 
                 int imgsize = 0;
                 
-                if((format[scr] & 7) >> 1 || !cfgblk[3])
+                // If index 03 of config block is non-zero,
+                // or if the color format is not yet implemented in the JPEG code,
+                // Then force Targa.
+                if((format[scr] & 0b0111) >> 1 || !cfgblk[3])
                 {
                     init_tga_image(&img, (u8*)screenbuf, scrw, stride[scr], bits);
                     img.image_type = TGA_IMAGE_TYPE_BGR_RLE;
                     img.origin_y = (scr * 400) + (stride[scr] * offs[scr]);
                     tga_write_to_FILE(k->data, &img, &imgsize);
                     
-                    k->packetid = 3; //DATA (Targa)
+                    k->packettype = 3; //DATA (Targa)
                     k->size = imgsize;
                 }
                 else
@@ -536,10 +601,13 @@ void netfunc(void* __dummy_arg__)
                     u8* dstptr = &k->data[8];
                     if(!tjCompress2(jencode, (u8*)screenbuf, scrw, bsiz * scrw, stride[scr], format[scr] ? TJPF_RGB : TJPF_RGBX, &dstptr, (u32*)&imgsize, TJSAMP_420, cfgblk[3], TJFLAG_NOREALLOC | TJFLAG_FASTDCT))
                         k->size = imgsize + 8;
-                    k->packetid = 4; //DATA (JPEG)
+                    k->packettype = 4; //DATA (JPEG)
                 }
+
+                // Commented-out before I got here. -C
+                //
                 //k->size += 4;
-                
+                //
                 //svcStartInterProcessDma(&dmahand, 0xFFFF8001, screenbuf, prochand ? prochand : 0xFFFF8001, fbuf[0] + fboffs, siz, dmaconf);
                 //svcFlushProcessDataCache(prochand ? prochand : 0xFFFF8001, capin.screencapture[0].framebuf0_vaddr, capin.screencapture[0].framebuf_widthbytesize * 400);
                 //svcStartInterProcessDma(&dmahand, 0xFFFF8001, screenbuf, prochand ? prochand : 0xFFFF8001, (u8*)capin.screencapture[0].framebuf0_vaddr + fboffs, siz, dmaconf);
@@ -556,21 +624,33 @@ void netfunc(void* __dummy_arg__)
                 scrw = capin.screencapture[scr].framebuf_widthbytesize / bsiz;
                 bits = 4 << bsiz;
                 
-                if((format[scr] & 7) == 2) bits = 17;
-                if((format[scr] & 7) == 4) bits = 18;
                 
+
+                // Intentionally mis-reporting our color bit-depth to the PC client (!)
+
+                // Framebuffer Color Format = RGB565
+                if((format[scr] & 0b0111) == 2)
+                {
+                	bits = 17;
+                }
+                // Framebuffer Color Format = RGBA4
+                if((format[scr] & 0b0111) == 4)
+                {
+                	bits = 18;
+                }
+
                 Handle prochand = 0;
                 if(procid) if(svcOpenProcess(&prochand, procid) < 0) procid = 0;
                 
-                if\
-                (\
-                    svcStartInterProcessDma\
-                    (\
-                        &dmahand, 0xFFFF8001, screenbuf, prochand ? prochand : 0xFFFF8001,\
-                        (u8*)capin.screencapture[scr].framebuf0_vaddr + (siz * offs[scr]), siz, dmaconf\
-                    )\
-                    < 0 \
-                )
+
+                if( 0 > svcStartInterProcessDma(
+                        &dmahand, // Note: This handle is signaled when the DMA is finished.
+						0xFFFF8001, // Shortcut for: the handle of this process
+						screenbuf, // Screenbuffer pointer
+						prochand ? prochand : 0xFFFF8001, // 'Source Process Handle' ; if prochand = 0, shortcut to handle of this process
+                        (u8*)capin.screencapture[scr].framebuf0_vaddr + (siz * offs[scr]), // Source Address
+						siz, // Bytes to copy
+						dmaconf) ) // DMA Config / Flags
                 {
                     procid = 0;
                     format[scr] = 0xF00FCACE; //invalidate
@@ -582,7 +662,10 @@ void netfunc(void* __dummy_arg__)
                     prochand = 0;
                 }
                 
+                // If size is 0, don't send the packet.
                 if(k->size) soc->wribuf();
+
+                // Commented-out before I got here. -C
                 /*
                 k->packetid = 0xFF;
                 k->size = 4;
@@ -593,12 +676,14 @@ void netfunc(void* __dummy_arg__)
                 if(dbgo >= 0x600000) dbgo = 0;
                 */
                 
+                // Limit this thread to do other things? (On Old-3DS)
                 if(isold) svcSleepThread(5e6);
             }
         }
         else yield();
     }
     
+    // Notif LED = Flashing yellow and purple
     memset(&pat.r[0], 0xFF, 16);
     memset(&pat.g[0], 0xFF, 16);
     memset(&pat.b[0], 0x00, 16);
@@ -650,9 +735,10 @@ int main()
     mcuInit();
     nsInit();
     
+    // Isn't this already initialized to null?
     soc = nullptr;
     
-    f = fopen("/HzLog.log", "w");
+    f = fopen("/HzLog.log", "a");
     if(f != NULL)
     {
         devoptab_list[STD_OUT] = &devop_stdout;
@@ -671,35 +757,40 @@ int main()
     
     if(isold)
     {
+    	// On Old-3DS, capture the screen in 8 chunks
         limit[0] = 8;
         limit[1] = 8;
-        stride[0] = 50;
-        stride[1] = 40;
+        stride[0] = 50; // Screen / Framebuffer width (divided by 8)
+        stride[1] = 40; // Screen / Framebuffer width (divided by 8)
     }
     else
     {
         limit[0] = 1;
         limit[1] = 1;
-        stride[0] = 400;
-        stride[1] = 320;
+        stride[0] = 400; // Screen / Framebuffer width
+        stride[1] = 320; // Screen / Framebuffer width
     }
     
     
-    PatStay(0xFF);
+    PatStay(0x0000FF); // Notif LED = Red
     
+    // Initialize AC service, for Wifi stuff.
     acInit();
     
     do
     {
+    	// Socket buffer size, smaller on Old-3DS
         u32 siz = isold ? 0x10000 : 0x200000;
         ret = socInit((u32*)memalign(0x1000, siz), siz);
     }
     while(0);
+
     if(ret < 0) *(u32*)0x1000F0 = ret;//hangmacro();
     
     jencode = tjInitCompress();
     if(!jencode) *(u32*)0x1000F0 = 0xDEADDEAD;//hangmacro();
     
+    // Initialize communication with the GSP service, for GPU stuff
     gspInit();
     
     //gxInit();
@@ -709,6 +800,7 @@ int main()
     else
         screenbuf = (u32*)memalign(8, 400 * 240 * 4);
     
+    // If memalign returns null or 0
     if(!screenbuf)
     {
         makerave();
@@ -732,10 +824,11 @@ int main()
         sock = 0;
     }
     
+    // at boot, haznet is set to 0. so skip this on the first run through
     if(haznet && errno == EINVAL)
     {
         errno = 0;
-        PatStay(0xFFFF);
+        PatStay(0x00FFFF); // Notif LED = Yellow
         while(checkwifi()) yield();
     }
     
@@ -761,7 +854,7 @@ int main()
             hangmacro();
         }
         
-        //fcntl(sock, F_SETFL, fcntl(sock, F_GETFL, 0) | O_NONBLOCK);
+        //fcntl(socketid, F_SETFL, fcntl(socketid, F_GETFL, 0) | O_NONBLOCK);
         
         if(listen(sock, 1) < 0)
         {
@@ -776,8 +869,8 @@ int main()
     if(!isold) osSetSpeedupEnable(1);
     
     PatPulse(0xFF40FF);
-    if(haznet) PatStay(0xCCFF00);
-    else PatStay(0xFFFF);
+    if(haznet) PatStay(0xCCFF00); // Notif LED = 100% Green, 75% Blue
+    else PatStay(0x00FFFF); // Notif LED = Yellow
     
     while(1)
     {
@@ -788,7 +881,10 @@ int main()
         
         //printf("svcGetSystemTick: %016llX\n", svcGetSystemTick());
         
-        if(kDown) PatPulse(0xFF);
+        // If any buttons are pressed, make the Notif LED pulse red
+        // (Annoying and waste of CPU time. -C)
+        if(kDown) PatPulse(0x0000FF);
+
         if(kHeld == (KEY_SELECT | KEY_START)) break;
         
         if(!soc)
@@ -799,16 +895,17 @@ int main()
             }
             else if(pollsock(sock, POLLIN) == POLLIN)
             {
+            	// Client
                 int cli = accept(sock, (struct sockaddr*)&sai, &sizeof_sai);
                 if(cli < 0)
                 {
                     printf("Failed to accept client: (%i) %s\n", errno, strerror(errno));
                     if(errno == EINVAL) goto netreset;
-                    PatPulse(0xFF);
+                    PatPulse(0x0000FF); // Notif LED = Red
                 }
                 else
                 {
-                    PatPulse(0xFF00);
+                    PatPulse(0x00FF00); // Notif LED = Green
                     soc = new bufsoc(cli, isold ? 0xC000 : 0x70000);
                     k = soc->pack();
                     
@@ -823,6 +920,7 @@ int main()
                     
                     if(!netthread)
                     {
+                    	// Notif LED = Blinking Red
                         memset(&pat, 0, sizeof(pat));
                         memset(&pat.r[0], 0xFF, 16);
                         pat.ani = 0x102;
@@ -831,9 +929,11 @@ int main()
                         svcSleepThread(2e9);
                     }
                     
+                    //Could above and below if statements be combined? lol -H
                     
                     if(netthread)
                     {
+                    	// After threadrunning = 1, we continue
                         while(!threadrunning) yield();
                     }
                     else
@@ -853,11 +953,12 @@ int main()
         
         if(netthread && !threadrunning)
         {
-            //TODO todo?
+            //TODO: Is this code broken? Hasn't yet been changed. -C
             netthread = nullptr;
             goto reloop;
         }
         
+        // VRAM Corruption function :)
         if((kHeld & (KEY_ZL | KEY_ZR)) == (KEY_ZL | KEY_ZR))
         {
             u32* ptr = (u32*)0x1F000000;
@@ -870,7 +971,7 @@ int main()
     
     killswitch:
     
-    PatStay(0xFF0000);
+    PatStay(0xFF0000); // Notif LED = Blue
     
     if(netthread)
     {
@@ -906,5 +1007,8 @@ int main()
     
     mcuExit();
     
+    // new code consideration
+    // APT_PrepareToCloseApplication(false);
+
     return 0;
 }
