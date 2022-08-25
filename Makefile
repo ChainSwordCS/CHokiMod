@@ -26,14 +26,15 @@ include $(DEVKITARM)/3ds_rules
 #     - icon.png
 #     - <libctru folder>/default_icon.png
 #---------------------------------------------------------------------------------
-TARGET		    :=	$(notdir $(CURDIR))
-BUILD		    :=	build
+#TARGET         := $(notdir $(CURDIR))
+TARGET		    :=  CHmod
+BUILD		    :=	chmod-build
 SOURCES		    :=	soos
 DATA		    :=	data
 INCLUDES	    :=	inc
-APP_TITLE       :=  HorizonM
-APP_DESCRIPTION :=  Horizon Module
-APP_AUTHOR      :=  MarcusD
+APP_TITLE       :=  CHMod
+APP_DESCRIPTION :=  CH Module
+APP_AUTHOR      :=  Sono, ChainSwordCS
 APP_PRODUCT_CODE:=  CTR-N-AHZA
 APP_UNIQUE_ID   :=  0xCF00F
 
