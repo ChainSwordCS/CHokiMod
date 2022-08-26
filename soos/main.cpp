@@ -616,7 +616,17 @@ void netfunc(void* __dummy_arg__)
                 
                 if(++offs[scr] == limit[scr]) offs[scr] = 0;
                 
-                scr = !scr;
+                // TODO: I feel like I could do a much better job optimizing this,
+                // but I need to refactor a lot of code to do so. -C
+                if(cfgblk[0] == 01) // Top Screen Only
+                	scr = 0;
+                else if(cfgblk[0] == 02) // Bottom Screen Only
+                	scr = 1;
+                else if(cfgblk[0] == 03) // Both Screens
+                	scr = !scr;
+                //else if(cfgblk[0] == 04)
+                // Planning to add more complex functionality with prioritizing one
+                // screen over the other, like NTR. Maybe.
                 
                 siz = (capin.screencapture[scr].framebuf_widthbytesize * stride[scr]);
                 
