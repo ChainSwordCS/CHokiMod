@@ -2,15 +2,15 @@ BasicInfo:
   Title                   : $(APP_TITLE)
   ProductCode             : $(APP_PRODUCT_CODE)
   Logo                    : None # Nintendo / Licensed / Distributed / iQue / iQueForSystem
-  ContentType             : Application
+  ContentType             : Application # Likely required IIRC
 
 RomFs:
   RootPath: $(APP_ROMFS)
 
 TitleInfo:
-  Category                : Base
+  Category                : Base # Required; Don't change
   UniqueId                : $(APP_UNIQUE_ID)
-  Version                 : 2
+  Version                 : 2 # Changing this messes with the Title ID
 
 Option:
   UseOnSD                 : false # true if App is to be installed to SD
@@ -20,10 +20,10 @@ Option:
   EnableCompress          : false # Compresses where applicable (currently only exefs:/.code)
   
 AccessControlInfo:
-  CoreVersion                   : 2
+  CoreVersion                   : 2 # don't change
 
   # Exheader Format Version
-  DescVersion                   : 2
+  DescVersion                   : 2 # don't change
   
   # Minimum Required Kernel Version (below is for 11.0.0)
   ReleaseKernelMajor            : "02"
@@ -71,11 +71,11 @@ AccessControlInfo:
   # Process Settings
   MemoryType                    : Base # Application/System/Base
   SystemMode                    : 64MB # 64MB(Default)/96MB/80MB/72MB/32MB
-  IdealProcessor                : 1
-  AffinityMask                  : 15
-  Priority                      : 20
-  MaxCpu                        : 0x9E # Default
-  HandleTableSize               : 0x200
+  IdealProcessor                : 1 # Probably don't change
+  AffinityMask                  : 15 # (Don't change.) Shouldn't really be 15? 0 breaks, 1 breaks, 3 works...
+  Priority                      : 20 # (Don't change.) Was 20. Try 48 also. Default is 16
+  MaxCpu                        : 0x9E # (Don't change.) 0x9E is default. 0 = Let System Decide
+  HandleTableSize               : 0x200 # Default
   DisableDebug                  : false
   EnableForceDebug              : false
   CanWriteSharedPage            : true
@@ -85,7 +85,7 @@ AccessControlInfo:
   CanShareDeviceMemory          : true
   RunnableOnSleep               : true
   SpecialMemoryArrange          : false
-  ResourceLimitCategory         : Other
+  ResourceLimitCategory         : Other # Don't change?
 
   # New3DS Exclusive Process Settings
   SystemModeExt                 : 124MB # Legacy(Default)/124MB/178MB  Legacy:Use Old3DS SystemMode
@@ -97,9 +97,9 @@ AccessControlInfo:
   IORegisterMapping:
    - 1ff00000-1ff7ffff    # DSP memory
   MemoryMapping: 
-   - 1f000000-1f5fffff:rw # VRAM
+   - 1f000000-1f5fffff:rw # VRAM (Don't change probably)
 
-  # Accessible SVCs, <Name>:<ID>
+  # Accessible SVCs, <Name>:<ID>, https://www.3dbrew.org/wiki/Kernel_ABI
   SystemCallAccess: 
     ControlMemory: 1
     QueryMemory: 2
@@ -212,31 +212,32 @@ AccessControlInfo:
   # Service List
   # Maximum 34 services (32 if firmware is prior to 9.6.0)
   ServiceAccessControl:
-   - APT:S
-   - ac:u
+   - APT:S # APT Service, System level. Needed for snooping on other applications.
+   - ac:u # AC Services (Wifi); try ac:i for more permissions, but not needed and may break.
    - am:net
    - csnd:SND
    - dsp::DSP
-   - fs:USER
-   - gsp::Gpu
-   - hid:USER
-   - http:C
-   - ir:rst
-   - mcu::HWC
-   - ns:s
-   - ptm:sysm
-   - soc:U
-   - ssl:C
+   - fs:USER # Don't change
+   - gsp::Gpu # Don't change
+   - hid:USER # Don't change
+   - http:C # HTTP stuff. Don't change.
+   - ir:rst # Needed for New-3DS ZL,ZR, and C-Stick
+   - mcu::HWC # Used for the Notification LED
+   - ns:s # Don't change
+   - ptm:sysm # Used for CheckNew3DS and ConfigureNew3DSCPU (if those are used in the code)
+   - soc:U # Socket stuff. Try soc:P for Privileged, but not needed and may break.
+   - ssl:C # SSL stuff. Don't change.
 
 
 SystemControlInfo:
   SaveDataSize: 0KB # Change if the app uses savedata
-  RemasterVersion: 2
+  RemasterVersion: 2 # Don't change.
   StackSize: 0x8000
 
   # Modules that run services listed above should be included below
   # Maximum 48 dependencies
   # <module name>:<module titleid>
+  # Just... don't change these unless you actually add to the list above. -ChainSwordCS (2022-08-25)
   Dependency: 
     ac: 0x0004013000002402
     am: 0x0004013000001502

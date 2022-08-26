@@ -909,13 +909,26 @@ int main()
                     soc = new bufsoc(cli, isold ? 0xC000 : 0x70000);
                     k = soc->pack();
                     
+
+                    // Priority:
+                    // Range from 0x00 to 0x3F. Lower numbers mean higher priority.
+                    //
+                    // Processor ID:
+                    // -2 = Default (Don't bother using this)
+                    // -1 = All CPU cores(?)
+                    // 0 = Appcore and 1 = Syscore on Old-3DS
+                    // 2 and 3 are allowed on New-3DS (for Base processes)
+                    //
                     if(isold)
                     {
+                    	// Original values; priority = 0x21, CPU = 1
                         netthread = threadCreate(netfunc, nullptr, 0x2000, 0x21, 1, true);
                     }
                     else
                     {
-                        netthread = threadCreate(netfunc, nullptr, 0x4000, 8, 3, true);
+                    	// Original values; priority = 0x08, CPU = 3
+                    	// Setting priority around 0x10 (16) makes it stop slowing down Home Menu and games.
+                        netthread = threadCreate(netfunc, nullptr, 0x4000, 0x10, 2, true);
                     }
                     
                     if(!netthread)
