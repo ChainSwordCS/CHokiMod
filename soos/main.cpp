@@ -77,9 +77,15 @@ extern "C"
     }\
 }
 
+// Functions from original codebase.
 int checkwifi();
 int pollsock(int,int,int);
 void CPPCrashHandler();
+
+// Functions added by me, mostly.
+void lazyConvert16to32andInterlace(u32,u32);
+
+// More functions from original codebase.
 void netfunc(void*);
 int main(); // So you can call main from main (:
 
@@ -330,6 +336,137 @@ static u32* screenbuf = nullptr;
 static tga_image img;
 static tjhandle jencode = nullptr;
 
+// If this is 0, we are converting odd-numbered rows.
+// If this is 2, we are converting even-numbered rows.
+// ... long story. yes this is dumb
+static int interlace_px_offset = 0;
+
+inline u32 lazycvt_rgb5a1_getrgb(u32 p_offs)
+{
+	return( 0 );
+}
+
+inline void lazyconvert16to32_rgb5a1(u32 passedsiz)
+{
+	u32 rgba8pix;
+	u32 offs = 0;
+	//u8* u8scrbuf = (u8*)screenbuf;
+	while(offs + 3 < passedsiz)
+	{
+		rgba8pix = lazycvt_rgb5a1_getrgb(offs);
+	}
+
+	if(interlace_px_offset == 0)
+		interlace_px_offset = 2;
+	else
+		interlace_px_offset = 0;
+
+	return;
+}
+
+// Super lazy, proof-of-concept function for converting 16-bit color images to 24-bit.
+// (Note: This function focuses on speed and not having to reallocate anything.)
+// Converts to RGBA8 (hopefully) (TJPF_RGBX)
+//
+// As it is now, Alpha is not read and will always be totally nullified after this function.
+// Interpreting the resulting data as RGBA instead of RGBX could cause the
+// Alpha channel to be interpreted as 0.
+//
+// P.S. Sorry my code is dumb and bad and hard to read lol
+//
+// Note to self... What I actually kinda want to do is to modify the libturbojpeg code
+// to accept 16bpp input to the compressor, but that'd be a whole other challenge...
+//
+void lazyConvert16to32andInterlace(u32 flag, u32 passedsiz)
+{
+	// offs is used to track our progress through the loop.
+	u32 offs = 0;
+
+	// One-time reinterpret as an array of u8 objects
+	// u8scrbuf points to the exact same data (if my logic is sound)
+	u8* u8scrbuf = (u8*)screenbuf;
+	//u16* u16scrbuf = (u16*)screenbuf;
+
+	if(flag == 4) // RGBA4 -> RGBA8
+	{
+		while((offs + 3) < passedsiz) // This conditional should be good enough to catch errors...
+		{
+			// At compile-time, hopefully this will just be one register(?)
+			// i.e. this is hard to read, but I think working with u32 objects instead of u8s will save us CPU time(...?)
+
+			// NOTE: This specific While-loop is probably wrong.
+			// Off the top of my head, I don't remember which games
+			// use this color format so I can't test. -C
+
+			// derive red pixel
+			u32 rgba8pix = (u32)(u8scrbuf[(offs+interlace_px_offset)] & 0b11110000) << 24;
+			// derive green pixel
+			rgba8pix = rgba8pix + ( (u32)(u8scrbuf[(offs+interlace_px_offset)] & 0b00001111) << 20 );
+			// derive blue pixel
+			rgba8pix = rgba8pix + ( (u32)(u8scrbuf[(offs+1+interlace_px_offset)] & 0b11110000) << 8 );
+
+			screenbuf[(offs/4)] = rgba8pix;
+			offs = offs + 4;
+		}
+	}
+	else if(flag == 3) // RGB5A1 -> RGBA8
+	{
+		while((offs + 3) < passedsiz)
+		{
+			u8 r = ( u8scrbuf[offs + interlace_px_offset] & 0b11111000);
+			u8 g = ( u8scrbuf[offs + interlace_px_offset] & 0b00000111) << 5;
+			g = g +((u8scrbuf[offs+1+interlace_px_offset] & 0b11000000) >> 2);
+			u8 b = ( u8scrbuf[offs+1+interlace_px_offset] & 0b00111110) << 2;
+			screenbuf[(offs/4)] = r*0x1000000 + g*0x10000 + b*0x100;
+
+			// derive red pixel
+			//u32 rgba8pix = (u32)(u8scrbuf[(offs+interlace_px_offset)] & 0b11111000) << 24;
+			// derive green pixel
+			//rgba8pix = rgba8pix + ( (u32)(u16scrbuf[((offs+interlace_px_offset)/2)] & 0b0000011111000000) << 21 );
+			// derive blue pixel
+			//rgba8pix = rgba8pix + ( (u32)(u8scrbuf[(offs+1+interlace_px_offset)] & 0b00111110) << 10 );
+
+			//screenbuf[(offs/4)] = rgba8pix;
+			offs = offs + 4;
+		}
+	}
+	else if(flag == 2) // Supposed to be RGB565, actually might be otherwise...
+	{
+		while((offs + 3) < passedsiz)
+		{
+			u8 b = ( u8scrbuf[offs + interlace_px_offset] & 0b00011111) << 3;
+			u8 g = ( u8scrbuf[offs + interlace_px_offset] & 0b11100000) >> 3;
+			g = g +((u8scrbuf[offs+1+interlace_px_offset] & 0b00000111) << 5);
+			u8 r = ( u8scrbuf[offs+1+interlace_px_offset] & 0b11111000);
+			screenbuf[(offs/4)] = ((u32)r << 16) + ((u32)g << 8) + ((u32)b << 0);
+			// Something is backwards.
+			// 'r' may represent blue, and 'b' may represent red.
+			// I don't know. That's possible.
+
+			// derive red pixel
+			//u32 rgba8pix = (u32)(u8scrbuf[(offs+interlace_px_offset)] & 0b11111000) << 24;
+			// derive green pixel
+			//rgba8pix = rgba8pix + ( (u32)(u16scrbuf[((offs+interlace_px_offset)/2)] & 0b0000011111100000) << 21 );
+			// derive blue pixel
+			//rgba8pix = rgba8pix + ( (u32)(u8scrbuf[(offs+1+interlace_px_offset)] & 0b00011111) << 11 );
+
+			//screenbuf[(offs/4)] = rgba8pix;
+			offs = offs + 4;
+		}
+	}
+	else
+	{
+		// Do nothing; we expect to receive a valid flag.
+	}
+
+	// Next frame, do the other set of rows instead.
+	if(interlace_px_offset == 0)
+		interlace_px_offset = 2;
+	else
+		interlace_px_offset = 0;
+
+	return;
+}
 
 void netfunc(void* __dummy_arg__)
 {
@@ -572,6 +709,8 @@ void netfunc(void* __dummy_arg__)
                 
                 k->size = 0;
                 
+
+                //TODO: If this happens too soon, it cuts off the last 20-40% of the frame.
                 if(dmahand)
                 {
                     svcStopDma(dmahand);
@@ -582,10 +721,9 @@ void netfunc(void* __dummy_arg__)
                 
                 int imgsize = 0;
                 
-                // If index 03 of config block is non-zero,
-                // or if the color format is not yet implemented in the JPEG code,
+                // If index 03 of config block is zero or greater than 100 (100% is max valid jpeg quality)
                 // Then force Targa.
-                if((format[scr] & 0b0111) >> 1 || !cfgblk[3])
+                if(cfgblk[3] == 0 || cfgblk[3] > 100)
                 {
                     init_tga_image(&img, (u8*)screenbuf, scrw, stride[scr], bits);
                     img.image_type = TGA_IMAGE_TYPE_BGR_RLE;
@@ -595,13 +733,77 @@ void netfunc(void* __dummy_arg__)
                     k->packettype = 3; //DATA (Targa)
                     k->size = imgsize;
                 }
-                else
+                else // This is written profoundly stupid, courtesy of yours truly. I wouldn't have it any other way. -ChainSwordCS
                 {
-                    *(u32*)&k->data[0] = (scr * 400) + (stride[scr] * offs[scr]);
-                    u8* dstptr = &k->data[8];
-                    if(!tjCompress2(jencode, (u8*)screenbuf, scrw, bsiz * scrw, stride[scr], format[scr] ? TJPF_RGB : TJPF_RGBX, &dstptr, (u32*)&imgsize, TJSAMP_420, cfgblk[3], TJFLAG_NOREALLOC | TJFLAG_FASTDCT))
-                        k->size = imgsize + 8;
-                    k->packettype = 4; //DATA (JPEG)
+                	u32 f = format[scr] & 0b111;
+                	int tjpf = 0;
+                	//u32 newscrw;
+                	//int newbpp;
+                	// I don't know if this temp variable is required.
+                	// I don't know if using 'siz' produces correct results
+                	// or if it breaks... -C
+                	// TODO: Not this. Do anything but this. Optimize pls.
+                	u32 siz_2 = (capin.screencapture[scr].framebuf_widthbytesize * stride[scr]);
+
+                	if(f == 0) // RGBA8
+                	{
+                		tjpf = TJPF_RGBX;
+                		//bsiz = 4;
+                		//scrw = 240;
+                	}
+                	else if(f == 1) // RGB8
+                	{
+                		tjpf = TJPF_RGB;
+                		//bsiz = 3;
+                		//scrw = 240;
+                	}
+                	else if(f == 2) // RGB565
+                	{
+                		lazyConvert16to32andInterlace(2,siz_2);
+						tjpf = TJPF_RGBX;
+						bsiz = 4;
+						scrw = 120;
+                	}
+                	else if(f == 3) // RGB5A1
+                	{
+                		lazyConvert16to32andInterlace(3,siz_2);
+						tjpf = TJPF_RGBX;
+						bsiz = 4;
+						scrw = 120;
+                	}
+                	else if(f == 4) // RGBA4
+                	{
+                		lazyConvert16to32andInterlace(4,siz_2);
+                		tjpf = TJPF_RGBX;
+                		bsiz = 4;
+                		scrw = 120;
+                	}
+                	else
+                	{
+                		// Invalid format, should never happen, but put a failsafe here anyway.
+                		//
+                		// This failsafe is just taken from the 24-bit code. I don't know if that's the
+                		// safest or not, it's just a placeholder. -C
+                		tjpf = TJPF_RGB;
+                		//bsiz = bsiz;
+                		//scrw = 240;
+                	}
+
+
+                	*(u32*)&k->data[0] = (scr * 400) + (stride[scr] * offs[scr]);
+                	u8* dstptr = &k->data[8];
+
+                	// Original Line:
+                 // int r = tjCompress2(jencode, (u8*)screenbuf, scrw, bsiz * scrw, stride[scr], format[scr] ? TJPF_RGB : TJPF_RGBX, &dstptr, (u32*)&imgsize, TJSAMP_420, cfgblk[3], TJFLAG_NOREALLOC | TJFLAG_FASTDCT))
+
+                	// "width" is supposed to be 240 always,
+                	// unless of course we're doing interlacing shenanigans.
+
+                	// stride was always variable (different on Old-3DS vs New-3DS)
+                	// so I am not doing anything to that.
+                	if(!tjCompress2(jencode, (u8*)screenbuf, scrw, bsiz*scrw, stride[scr], tjpf, &dstptr, (u32*)&imgsize, TJSAMP_420, cfgblk[3], TJFLAG_NOREALLOC | TJFLAG_FASTDCT))
+                		k->size = imgsize + 8;
+                	k->packettype = 4; //DATA (JPEG)
                 }
 
                 // Commented-out before I got here. -C
@@ -639,12 +841,12 @@ void netfunc(void* __dummy_arg__)
                 // Intentionally mis-reporting our color bit-depth to the PC client (!)
 
                 // Framebuffer Color Format = RGB565
-                if((format[scr] & 0b0111) == 2)
+                if((format[scr] & 0b111) == 2)
                 {
                 	bits = 17;
                 }
                 // Framebuffer Color Format = RGBA4
-                if((format[scr] & 0b0111) == 4)
+                if((format[scr] & 0b111) == 4)
                 {
                 	bits = 18;
                 }
