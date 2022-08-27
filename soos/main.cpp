@@ -391,21 +391,22 @@ void lazyConvert16to32andInterlace(u32 flag, u32 passedsiz)
 	{
 		while((offs + 3) < passedsiz) // This conditional should be good enough to catch errors...
 		{
+			u8 b = ( u8scrbuf[offs + interlace_px_offset] & 0b11110000);
+			u8 g = ( u8scrbuf[offs+1+interlace_px_offset] & 0b00001111) << 4;
+			u8 r = ( u8scrbuf[offs+1+interlace_px_offset] & 0b11110000);
+			screenbuf[(offs/4)] = ((u32)r << 16) + ((u32)g << 8) + ((u32)b << 0);
+
 			// At compile-time, hopefully this will just be one register(?)
 			// i.e. this is hard to read, but I think working with u32 objects instead of u8s will save us CPU time(...?)
 
-			// NOTE: This specific While-loop is probably wrong.
-			// Off the top of my head, I don't remember which games
-			// use this color format so I can't test. -C
-
 			// derive red pixel
-			u32 rgba8pix = (u32)(u8scrbuf[(offs+interlace_px_offset)] & 0b11110000) << 24;
+			//u32 rgba8pix = (u32)(u8scrbuf[(offs+interlace_px_offset)] & 0b11110000) << 24;
 			// derive green pixel
-			rgba8pix = rgba8pix + ( (u32)(u8scrbuf[(offs+interlace_px_offset)] & 0b00001111) << 20 );
+			//rgba8pix = rgba8pix + ( (u32)(u8scrbuf[(offs+interlace_px_offset)] & 0b00001111) << 20 );
 			// derive blue pixel
-			rgba8pix = rgba8pix + ( (u32)(u8scrbuf[(offs+1+interlace_px_offset)] & 0b11110000) << 8 );
+			//rgba8pix = rgba8pix + ( (u32)(u8scrbuf[(offs+1+interlace_px_offset)] & 0b11110000) << 8 );
+			//screenbuf[(offs/4)] = rgba8pix;
 
-			screenbuf[(offs/4)] = rgba8pix;
 			offs = offs + 4;
 		}
 	}
@@ -413,11 +414,11 @@ void lazyConvert16to32andInterlace(u32 flag, u32 passedsiz)
 	{
 		while((offs + 3) < passedsiz)
 		{
-			u8 r = ( u8scrbuf[offs + interlace_px_offset] & 0b11111000);
-			u8 g = ( u8scrbuf[offs + interlace_px_offset] & 0b00000111) << 5;
-			g = g +((u8scrbuf[offs+1+interlace_px_offset] & 0b11000000) >> 2);
-			u8 b = ( u8scrbuf[offs+1+interlace_px_offset] & 0b00111110) << 2;
-			screenbuf[(offs/4)] = r*0x1000000 + g*0x10000 + b*0x100;
+			u8 b = ( u8scrbuf[offs + interlace_px_offset] & 0b00111110) << 2;
+			u8 g = ( u8scrbuf[offs + interlace_px_offset] & 0b11000000) >> 3;
+			g = g +((u8scrbuf[offs+1+interlace_px_offset] & 0b00000111) << 5);
+			u8 r = ( u8scrbuf[offs+1+interlace_px_offset] & 0b11111000);
+			screenbuf[(offs/4)] = ((u32)r << 16) + ((u32)g << 8) + ((u32)b << 0);
 
 			// derive red pixel
 			//u32 rgba8pix = (u32)(u8scrbuf[(offs+interlace_px_offset)] & 0b11111000) << 24;
@@ -425,8 +426,8 @@ void lazyConvert16to32andInterlace(u32 flag, u32 passedsiz)
 			//rgba8pix = rgba8pix + ( (u32)(u16scrbuf[((offs+interlace_px_offset)/2)] & 0b0000011111000000) << 21 );
 			// derive blue pixel
 			//rgba8pix = rgba8pix + ( (u32)(u8scrbuf[(offs+1+interlace_px_offset)] & 0b00111110) << 10 );
-
 			//screenbuf[(offs/4)] = rgba8pix;
+
 			offs = offs + 4;
 		}
 	}
@@ -439,9 +440,6 @@ void lazyConvert16to32andInterlace(u32 flag, u32 passedsiz)
 			g = g +((u8scrbuf[offs+1+interlace_px_offset] & 0b00000111) << 5);
 			u8 r = ( u8scrbuf[offs+1+interlace_px_offset] & 0b11111000);
 			screenbuf[(offs/4)] = ((u32)r << 16) + ((u32)g << 8) + ((u32)b << 0);
-			// Something is backwards.
-			// 'r' may represent blue, and 'b' may represent red.
-			// I don't know. That's possible.
 
 			// derive red pixel
 			//u32 rgba8pix = (u32)(u8scrbuf[(offs+interlace_px_offset)] & 0b11111000) << 24;
@@ -449,8 +447,8 @@ void lazyConvert16to32andInterlace(u32 flag, u32 passedsiz)
 			//rgba8pix = rgba8pix + ( (u32)(u16scrbuf[((offs+interlace_px_offset)/2)] & 0b0000011111100000) << 21 );
 			// derive blue pixel
 			//rgba8pix = rgba8pix + ( (u32)(u8scrbuf[(offs+1+interlace_px_offset)] & 0b00011111) << 11 );
-
 			//screenbuf[(offs/4)] = rgba8pix;
+
 			offs = offs + 4;
 		}
 	}
