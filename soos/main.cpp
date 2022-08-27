@@ -708,12 +708,15 @@ void netfunc(void* __dummy_arg__)
                 k->size = 0;
                 
 
-                //TODO: If this happens too soon, it cuts off the last 20-40% of the frame.
                 if(dmahand)
                 {
                     svcStopDma(dmahand);
                     svcCloseHandle(dmahand);
                     dmahand = 0;
+                    // Purpose is to clear the cached data, so we aren't accidentally processing and sending old framebuffer data.
+                    // On Old-3DS this isn't necessary because the cache is so small anyway.
+                    //
+                    // Note that removing this instruction causes strange behavior...
                     if(!isold) svcFlushProcessDataCache(0xFFFF8001, (u8*)screenbuf, capin.screencapture[scr].framebuf_widthbytesize * 400);
                 }
                 
@@ -872,6 +875,10 @@ void netfunc(void* __dummy_arg__)
                     prochand = 0;
                 }
                 
+                // Clear cache here?
+                // This doesn't solve anything unfortunately. -C
+                //if(!isold) svcFlushProcessDataCache(0xFFFF8001, (u8*)screenbuf, capin.screencapture[scr].framebuf_widthbytesize * 400);
+
                 // If size is 0, don't send the packet.
                 if(k->size) soc->wribuf();
 
