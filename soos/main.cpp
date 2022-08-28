@@ -112,14 +112,15 @@ int pollsock(int sock, int wat, int timeout = 0)
     return 0;
 }
 
+// Socket Buffer class
 class bufsoc
 {
 public:
     
     typedef struct
     {
-        u32 packettype : 8;
-        u32 size : 24;
+        //u32 packettype : 8;
+        //u32 size : 24;
         u8 data[0];
     } packet;
     
@@ -148,6 +149,43 @@ public:
         delete[] bufferptr;
     }
     
+    // TODO: consider making these functions 'inline'
+
+    u8 getPakType()
+    {
+    	return bufferptr[0];
+    }
+
+    u8 getPakSubtype()
+    {
+    	return bufferptr[1];
+    }
+
+    // Retrieve the packet size, derived from the byte array
+    u32 getPakSize()
+    {
+		return *( (u32*)(bufferptr+2) );
+    }
+
+    // Write to packet size, in the byte array
+    void setPakSize(u32 input)
+    {
+    	*( (u32*)(bufferptr+2) ) = input;
+    	return;
+    }
+
+    void setPakType(u8 input)
+    {
+    	bufferptr[0] = input;
+    	return;
+    }
+
+    void setPakSubtype(u8 input)
+    {
+    	bufferptr[1] = input;
+    	return;
+    }
+
     int avail()
     {
         return pollsock(socketid, POLLIN) == POLLIN;
@@ -155,59 +193,54 @@ public:
     
     int readbuf(int flags = 0)
     {
-    	// Get header bytes
-        u32 header = 0;
-        int ret = recv(socketid, &header, 4, flags);
+    	//packet* p = pack();
+        //u8 type = 0;
+        //u8 subtype = 0;
+
+        int ret = recv(socketid, &(bufferptr[0]), 2, flags);
+        if(ret < 0) return -errno;
+        if(ret < 2) return -1; // if it returned 0, we will now error out of this function
+
+        //Get the reported size from the packet data
+
+        ret = recv(socketid, &(bufferptr[2]), 4, flags);
         if(ret < 0) return -errno;
         if(ret < 4) return -1;
-        *(u32*)bufferptr = header;
+
+        u32 reads_remaining = getPakSize(); // "this->" ? maybe?
+        printf("incoming packet size = %i",reads_remaining);
         
-        packet* p = pack();
-        
-        // Copy the header and the size to the start of the buffer
-        int reads_remaining = p->size;
-        int offs = 4;
+        // Copy data to the buffer
+
+        u32 offs = 6; // Starting offset
         while(reads_remaining)
         {
-            ret = recv(socketid, bufferptr + offs , reads_remaining, flags);
+            ret = recv(socketid, &(bufferptr[offs]), reads_remaining, flags);
             if(ret <= 0) return -errno;
             reads_remaining -= ret;
             offs += ret;
         }
         
-        recvsize = offs;
-        return offs;
-    }
-    
-    // Unused function
-    int wribuf_old(int flags = 0)
-    {
-        int mustwri = pack()->size + 4;
-        int offs = 0;
-        int ret = 0;
-        while(mustwri)
-        {
-            ret = send(socketid, bufferptr + offs , mustwri, flags);
-            if(ret < 0) return -errno;
-            mustwri -= ret;
-            offs += ret;
-        }
-        
+        // We don't need to do this
+        //p->size = size_lol;
+        //recvsize = offs;
+
         return offs;
     }
     
     int wribuf(int flags = 0)
     {
-        int mustwri = pack()->size + 4;
-        int offs = 0;
+    	//u32 size = getPakSize();
+        int mustwri = getPakSize() + 6; // +4?
+        int offs = 0; // Start at 0, because we have to send the header.
         int ret = 0;
         
         while(mustwri)
         {
             if(mustwri >> 12)
-                ret = send(socketid, bufferptr + offs , 0x1000, flags);
+                ret = send(socketid, &(bufferptr[offs]), 0x1000, flags);
             else
-                ret = send(socketid, bufferptr + offs , mustwri, flags);
+                ret = send(socketid, &(bufferptr[offs]), mustwri, flags);
             if(ret < 0) return -errno;
             mustwri -= ret;
             offs += ret;
@@ -223,13 +256,17 @@ public:
     
     int errformat(char* c, ...)
     {
-        packet* p = pack();
+        //packet* p = pack();
         
         int len = 0;
         
         va_list args;
         va_start(args, c);
-        len = vsprintf((char*)p->data + 1, c, args);
+
+        // Is this line of code broken? I give up
+        //len = vsprintf((char*)p->data + 1, c, args);
+        len = vsprintf((char*)(bufferptr+6), c, args);
+
         va_end(args);
         
         if(len < 0)
@@ -239,10 +276,9 @@ public:
         }
         
         //printf("Packet error %i: %s\n", p->packettype, p->data + 1);
-        
-        p->data[0] = p->packettype;
-        p->packettype = 1;
-        p->size = len + 2;
+        setPakType(0xFF);
+        setPakSubtype(0x00);
+        setPakSize(len + 2); // Is the +2 necessary?
         
         return wribuf();
     }
@@ -338,7 +374,9 @@ static tjhandle jencode = nullptr;
 
 // If this is 0, we are converting odd-numbered rows.
 // If this is 2, we are converting even-numbered rows.
-// ... long story. yes this is dumb
+//
+// This variable is separate from the row index numbers.
+// Rows of pixels will generally be indexed starting at 1 and ending at 240 (or 120)
 static int interlace_px_offset = 0;
 
 inline u32 lazycvt_rgb5a1_getrgb(u32 p_offs)
@@ -508,10 +546,11 @@ void netfunc(void* __dummy_arg__)
     // But it could be more elegant.
     do
     {
-        k->packettype = 2; //MODE
-        k->size = 4 * 4;
+    	soc->setPakType(0x02);
+    	soc->setPakSubtype(0x00);
+    	soc->setPakSize(16); // or 4 * 4? Why were we ever calculating that?
         
-        u32* kdata = (u32*)k->data;
+        u32* kdata = (u32*)(soc->bufferptr+6);
         
         kdata[0] = 1;
         kdata[1] = 240 * 3;
@@ -534,7 +573,7 @@ void netfunc(void* __dummy_arg__)
                 break;
             }
             
-            puts("reading");
+            puts("Reading incoming packet...");
             // Consider declaring 'cy' within this function instead of globally.
             cy = soc->readbuf();
             if(cy <= 0)
@@ -546,24 +585,72 @@ void netfunc(void* __dummy_arg__)
             }
             else
             {
-                printf("#%i 0x%X | %i\n", k->packettype, k->size, cy);
+            	// TODO: Comment this out, lol.
+                //printf("Packet Received.\nType = %i\nSubtype = %i\nSize = %i\n readbuf return value = %i\n",soc->getPakType(),soc->getPakSubtype(),soc->getPakSize,cy);
                 
                 // Unused label
-                reread:
-                switch(k->packettype)
+                //reread:
+
+            	u8 i = soc->getPakSubtype();
+            	u8 j = soc->bufferptr[6];
+            	// Only used in one of these, but want to be declared up here.
+            	u32 k;
+            	u32 l;
+
+                switch(soc->getPakType())
                 {
-                    case 0x00: //CONNECT
-                    	// In an emergency, just initialize ourselves anyway.
-                    	// We don't expect to ever receive this packet type in practice.
-                    	cfgblk[0] = 1;
-                    	break;
-                    case 0x01: //ERROR
-                    	// Forcibly disconnected by the PC.
-                        puts("forced dc");
-                        delete soc;
-                        soc = nullptr;
-                        break;
+                	case 0x02: // Init (New CHmod / CHokiMod Packet Specification)
+                		cfgblk[0] = 1;
+                		// TODO: Maybe put sane defaults in here, or in the variable init code.
+                		break;
+
+                	case 0x03: // Disconnect (new packet spec)
+                		cfgblk[0] = 0;
+                		puts("forced dc");
+                		delete soc;
+                		soc = nullptr;
+                		break;
                         
+                	case 0x04: // Settings input (new packet spec)
+
+                		switch(i)
+                		{
+                			case 0x01: // JPEG Quality (1-100%)
+                				// Error-Checking
+                				if(j > 100)
+                					cfgblk[1] = 100;
+                				else if(j < 1)
+                					cfgblk[1] = 1;
+                				else
+                					cfgblk[1] = j;
+								break;
+
+                			case 0x02: // CPU Cap value (?)
+                				// I don't know what values are valid and what values aren't.
+                				cfgblk[2] = j;
+                				break;
+
+                			case 0x03: // Which Screen
+                				if(j < 1 || j > 3)
+                					cfgblk[3] = 1; // Default to top screen only
+                				else
+                					cfgblk[3] = j;
+                				break;
+
+                			case 0x04: // Image Format (JPEG or TGA?)
+                				if(j > 1)
+                					cfgblk[4] = 0;
+                				else
+                					cfgblk[4] = j;
+                				break;
+
+                			default:
+                				// Invalid subtype for "Settings" packet-type
+                				break;
+                		}
+                		break;
+
+                	// This case should generally stay unused in the future.
                     case 0x7E: //CFGBLK_IN
                     	// TODO: This original code may have bugs. Consider refactoring.
                     	// The first byte is the packet-type,
@@ -574,11 +661,30 @@ void netfunc(void* __dummy_arg__)
                     	//  The first byte of data indicates the index we copy to / offset at which to start copying.
                     	//  Skip three bytes for no reason :P
                     	//  Copy <size> bytes.
-                        memcpy(cfgblk + k->data[0], &k->data[4], min((u32)(0x100 - k->data[0]), (u32)(k->size - 4)));
+                        //memcpy(cfgblk + k->data[0], &k->data[4], min((u32)(0x100 - k->data[0]), (u32)(k->size - 4)));
                         break;
                         
+                    case 0xFF: // Debug info. Prints to log file, interpreting the Data as u8 char objects.
+                    	// Note: packet subtype is ignored, lol.
+
+                    	// Size
+                    	k = soc->getPakSize();
+                    	// Current offset
+                    	l = 0;
+
+                    	if(k > 255) // Error checking; arbitrary limit on text characters.
+                    		k = 255;
+
+                    	while(k > 0)
+                    	{
+                    		printf( (char*)(soc->bufferptr + 6) + l);
+                    		k--;
+                    		l++;
+                    	}
+                    	break;
+
                     default:
-                        printf("Invalid packet ID: %i\n", k->packettype);
+                        printf("Invalid packet ID: %i\n", soc->getPakType());
                         delete soc;
                         soc = nullptr;
                         break;
@@ -609,10 +715,11 @@ void netfunc(void* __dummy_arg__)
                 format[0] = capin.screencapture[0].format;
                 format[1] = capin.screencapture[1].format;
                 
-                k->packettype = 2; //MODE
-                k->size = 4 * 4;
+                soc->setPakType(02);
+                soc->setPakSubtype(00);
+                soc->setPakSize(16);
                 
-                u32* kdata = (u32*)k->data;
+                u32* kdata = (u32*)(soc->bufferptr + 6);
                 
                 kdata[0] = format[0];
                 kdata[1] = capin.screencapture[0].framebuf_widthbytesize;
@@ -620,9 +727,10 @@ void netfunc(void* __dummy_arg__)
                 kdata[3] = capin.screencapture[1].framebuf_widthbytesize;
                 soc->wribuf();
                 
-                k->packettype = 0xFF;
-                k->size = sizeof(capin);
-                *(GSPGPU_CaptureInfo*)k->data = capin;
+                soc->setPakType(0xFF);
+                soc->setPakSubtype(0x00);
+                soc->setPakSize(sizeof(capin));
+                *( (GSPGPU_CaptureInfo*)(kdata) ) = capin;
                 soc->wribuf();
                 
                 
@@ -705,7 +813,7 @@ void netfunc(void* __dummy_arg__)
                     continue;
                 }
                 
-                k->size = 0;
+                soc->setPakSize(0);
                 
 
                 if(dmahand)
@@ -722,21 +830,33 @@ void netfunc(void* __dummy_arg__)
                 
                 int imgsize = 0;
                 
+                u8* kdata = soc->bufferptr + 6; // Leaving this as-is should be just fine.
+
+                u8 subtype_aka_flags = 0;
+
                 // If index 03 of config block is zero or greater than 100 (100% is max valid jpeg quality)
                 // Then force Targa.
-                if(cfgblk[3] == 0 || cfgblk[3] > 100)
+                // TGA
+                if(cfgblk[4] == 01)
                 {
                     init_tga_image(&img, (u8*)screenbuf, scrw, stride[scr], bits);
                     img.image_type = TGA_IMAGE_TYPE_BGR_RLE;
                     img.origin_y = (scr * 400) + (stride[scr] * offs[scr]);
-                    tga_write_to_FILE(k->data, &img, &imgsize);
+                    tga_write_to_FILE(kdata, &img, &imgsize);
                     
-                    k->packettype = 3; //DATA (Targa)
-                    k->size = imgsize;
+                    subtype_aka_flags = 0b00001000 + (scr * 0b00010000) + (format[scr] & 0b111);
+
+                    soc->setPakType(01); //DATA (Targa)
+                    soc->setPakSubtype(subtype_aka_flags);
+                    soc->setPakSize(imgsize);
+
                 }
+                // JPEG
                 else // This is written profoundly stupid, courtesy of yours truly. I wouldn't have it any other way. -ChainSwordCS
                 {
                 	u32 f = format[scr] & 0b111;
+                	subtype_aka_flags = 0b00000000 + (scr * 0b00010000) + f;
+
                 	int tjpf = 0;
                 	//u32 newscrw;
                 	//int newbpp;
@@ -764,6 +884,7 @@ void netfunc(void* __dummy_arg__)
 						tjpf = TJPF_RGBX;
 						bsiz = 4;
 						scrw = 120;
+						subtype_aka_flags += 0b00100000 + (interlace_px_offset?0:0b01000000);
                 	}
                 	else if(f == 3) // RGB5A1
                 	{
@@ -771,6 +892,7 @@ void netfunc(void* __dummy_arg__)
 						tjpf = TJPF_RGBX;
 						bsiz = 4;
 						scrw = 120;
+						subtype_aka_flags += 0b00100000 + (interlace_px_offset?0:0b01000000);
                 	}
                 	else if(f == 4) // RGBA4
                 	{
@@ -778,6 +900,7 @@ void netfunc(void* __dummy_arg__)
                 		tjpf = TJPF_RGBX;
                 		bsiz = 4;
                 		scrw = 120;
+                		subtype_aka_flags += 0b00100000 + (interlace_px_offset?0:0b01000000);
                 	}
                 	else
                 	{
@@ -791,8 +914,9 @@ void netfunc(void* __dummy_arg__)
                 	}
 
 
-                	*(u32*)&k->data[0] = (scr * 400) + (stride[scr] * offs[scr]);
-                	u8* dstptr = &k->data[8];
+                	//*(u32*)&k->data[0] = (scr * 400) + (stride[scr] * offs[scr]);
+                	//u8* dstptr = &k->data[8];
+                	// destination pointer is "kdata" from now on
 
                 	// Original Line:
                  // int r = tjCompress2(jencode, (u8*)screenbuf, scrw, bsiz * scrw, stride[scr], format[scr] ? TJPF_RGB : TJPF_RGBX, &dstptr, (u32*)&imgsize, TJSAMP_420, cfgblk[3], TJFLAG_NOREALLOC | TJFLAG_FASTDCT))
@@ -802,9 +926,10 @@ void netfunc(void* __dummy_arg__)
 
                 	// stride was always variable (different on Old-3DS vs New-3DS)
                 	// so I am not doing anything to that.
-                	if(!tjCompress2(jencode, (u8*)screenbuf, scrw, bsiz*scrw, stride[scr], tjpf, &dstptr, (u32*)&imgsize, TJSAMP_420, cfgblk[3], TJFLAG_NOREALLOC | TJFLAG_FASTDCT))
-                		k->size = imgsize + 8;
-                	k->packettype = 4; //DATA (JPEG)
+                	if(!tjCompress2(jencode, (u8*)screenbuf, scrw, bsiz*scrw, stride[scr], tjpf, &kdata, (u32*)&imgsize, TJSAMP_420, cfgblk[1], TJFLAG_NOREALLOC | TJFLAG_FASTDCT))
+                		soc->setPakSize(imgsize);
+                	soc->setPakType(04); //DATA (JPEG)
+                	soc->setPakSubtype(subtype_aka_flags);
                 }
 
                 // Commented-out before I got here. -C
@@ -821,11 +946,11 @@ void netfunc(void* __dummy_arg__)
                 
                 // TODO: I feel like I could do a much better job optimizing this,
                 // but I need to refactor a lot of code to do so. -C
-                if(cfgblk[0] == 01) // Top Screen Only
+                if(cfgblk[3] == 01) // Top Screen Only
                 	scr = 0;
-                else if(cfgblk[0] == 02) // Bottom Screen Only
+                else if(cfgblk[3] == 02) // Bottom Screen Only
                 	scr = 1;
-                else if(cfgblk[0] == 03) // Both Screens
+                else if(cfgblk[3] == 03) // Both Screens
                 	scr = !scr;
                 //else if(cfgblk[0] == 04)
                 // Planning to add more complex functionality with prioritizing one
@@ -835,26 +960,33 @@ void netfunc(void* __dummy_arg__)
                 
                 bsiz = capin.screencapture[scr].framebuf_widthbytesize / 240;
                 scrw = capin.screencapture[scr].framebuf_widthbytesize / bsiz;
-                bits = 4 << bsiz;
+                bits = 4 << bsiz; // ?
                 
                 
 
                 // Intentionally mis-reporting our color bit-depth to the PC client (!)
 
                 // Framebuffer Color Format = RGB565
-                if((format[scr] & 0b111) == 2)
-                {
-                	bits = 17;
-                }
+                //if((format[scr] & 0b111) == 2)
+                //{
+                //	bits = 17;
+                //}
                 // Framebuffer Color Format = RGBA4
-                if((format[scr] & 0b111) == 4)
-                {
-                	bits = 18;
-                }
+                //if((format[scr] & 0b111) == 4)
+                //{
+                //	bits = 18;
+                //}
 
                 Handle prochand = 0;
                 if(procid) if(svcOpenProcess(&prochand, procid) < 0) procid = 0;
                 
+
+                // TODO: Future Plan: Rework this DMA function call;
+                // try to use special parameters for certain
+                // color formats and/or settings (like Interlaced, if requested)
+                //
+                // Note: I don't currently know enough to make those adjustments.
+                // Lots more testing and fine tuning is needed. -ChainSwordCS
 
                 if( 0 > svcStartInterProcessDma(
                         &dmahand, // Note: This handle is signaled when the DMA is finished.
@@ -880,7 +1012,8 @@ void netfunc(void* __dummy_arg__)
                 //if(!isold) svcFlushProcessDataCache(0xFFFF8001, (u8*)screenbuf, capin.screencapture[scr].framebuf_widthbytesize * 400);
 
                 // If size is 0, don't send the packet.
-                if(k->size) soc->wribuf();
+                if(soc->getPakSize())
+                	soc->wribuf();
 
                 // Commented-out before I got here. -C
                 /*
@@ -894,6 +1027,7 @@ void netfunc(void* __dummy_arg__)
                 */
                 
                 // Limit this thread to do other things? (On Old-3DS)
+                // TODO: Fine-tune Old-3DS performance. Maybe remove this outright.
                 if(isold) svcSleepThread(5e6);
             }
         }
