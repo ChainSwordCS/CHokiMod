@@ -193,23 +193,28 @@ public:
     
     int readbuf(int flags = 0)
     {
-    	//packet* p = pack();
-        //u8 type = 0;
-        //u8 subtype = 0;
+    	puts("attempting recv function call...");
+    	yield();
 
-        int ret = recv(socketid, &(bufferptr[0]), 2, flags);
+    	//packet* p = pack();
+
+        int ret = recv(socketid, bufferptr, 2, flags);
+
+        printf("incoming packet type = %i\npacket subtype = %i\nrecv function return value = %i\n",bufferptr[0],bufferptr[1],ret);
+
         if(ret < 0) return -errno;
         if(ret < 2) return -1; // if it returned 0, we will now error out of this function
 
         //Get the reported size from the packet data
 
         ret = recv(socketid, &(bufferptr[2]), 4, flags);
+
+        u32 reads_remaining = getPakSize(); // "this->" ? maybe?
+        printf("incoming packet size = %i\nrecv return value = %i\n",reads_remaining,ret);
+        
         if(ret < 0) return -errno;
         if(ret < 4) return -1;
 
-        u32 reads_remaining = getPakSize(); // "this->" ? maybe?
-        printf("incoming packet size = %i",reads_remaining);
-        
         // Copy data to the buffer
 
         u32 offs = 6; // Starting offset
@@ -523,7 +528,7 @@ void netfunc(void* __dummy_arg__)
     	osSetSpeedupEnable(1);
     }
     
-    k = soc->pack(); //Just In Case (tm)
+    //k = soc->pack(); //Just In Case (tm)
     
     PatStay(0x00FF00); // Notif LED = Green
     
@@ -1089,7 +1094,7 @@ int main()
     // Isn't this already initialized to null?
     soc = nullptr;
     
-    f = fopen("/HzLog.log", "a");
+    f = fopen("HzLog.log", "a");
     if(f != NULL)
     {
         devoptab_list[STD_OUT] = &devop_stdout;
@@ -1098,6 +1103,7 @@ int main()
 		setvbuf(stdout, nullptr, _IONBF, 0);
 		setvbuf(stderr, nullptr, _IONBF, 0);
     }
+    printf("Hello World? Does this work? lol\n");
     
     memset(&pat, 0, sizeof(pat));
     memset(&capin, 0, sizeof(capin));
