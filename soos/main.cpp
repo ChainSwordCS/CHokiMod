@@ -112,6 +112,8 @@ int pollsock(int sock, int wat, int timeout = 0)
     return 0;
 }
 
+const int bufsoc_pak_data_offset = 8; // After 8 bytes, the real data begins.
+
 // Socket Buffer class
 class bufsoc
 {
@@ -153,36 +155,36 @@ public:
 
     u8 getPakType()
     {
-    	return bufferptr[0];
+    	return bufferptr[2];
     }
 
     u8 getPakSubtype()
     {
-    	return bufferptr[1];
+    	return bufferptr[3];
     }
 
     // Retrieve the packet size, derived from the byte array
     u32 getPakSize()
     {
-		return *( (u32*)(bufferptr+2) );
+		return *( (u32*)(bufferptr+4) );
     }
 
     // Write to packet size, in the byte array
     void setPakSize(u32 input)
     {
-    	*( (u32*)(bufferptr+2) ) = input;
+    	*( (u32*)(bufferptr+4) ) = input;
     	return;
     }
 
     void setPakType(u8 input)
     {
-    	bufferptr[0] = input;
+    	bufferptr[2] = input;
     	return;
     }
 
     void setPakSubtype(u8 input)
     {
-    	bufferptr[1] = input;
+    	bufferptr[3] = input;
     	return;
     }
 
@@ -198,16 +200,16 @@ public:
 
     	//packet* p = pack();
 
-        int ret = recv(socketid, bufferptr, 2, flags);
+        int ret = recv(socketid, bufferptr+2, 2, flags);
 
-        printf("incoming packet type = %i\npacket subtype = %i\nrecv function return value = %i\n",bufferptr[0],bufferptr[1],ret);
+        printf("incoming packet type = %i\npacket subtype = %i\nrecv function return value = %i\n",bufferptr[2],bufferptr[3],ret);
 
         if(ret < 0) return -errno;
         if(ret < 2) return -1; // if it returned 0, we will now error out of this function
 
         //Get the reported size from the packet data
 
-        ret = recv(socketid, &(bufferptr[2]), 4, flags);
+        ret = recv(socketid, bufferptr+4, 4, flags);
 
         u32 reads_remaining = getPakSize(); // "this->" ? maybe?
         printf("incoming packet size = %i\nrecv return value = %i\n",reads_remaining,ret);
@@ -217,7 +219,7 @@ public:
 
         // Copy data to the buffer
 
-        u32 offs = 6; // Starting offset
+        u32 offs = bufsoc_pak_data_offset; // Starting offset
         while(reads_remaining)
         {
             ret = recv(socketid, &(bufferptr[offs]), reads_remaining, flags);
@@ -237,7 +239,7 @@ public:
     {
     	//u32 size = getPakSize();
         int mustwri = getPakSize() + 6; // +4?
-        int offs = 0; // Start at 0, because we have to send the header.
+        int offs = 2; // Start at 2, because we have to send the header.
         int ret = 0;
         
         while(mustwri)
@@ -270,7 +272,7 @@ public:
 
         // Is this line of code broken? I give up
         //len = vsprintf((char*)p->data + 1, c, args);
-        len = vsprintf((char*)(bufferptr+6), c, args);
+        len = vsprintf((char*)(bufferptr+8), c, args);
 
         va_end(args);
         
@@ -555,7 +557,7 @@ void netfunc(void* __dummy_arg__)
     	soc->setPakSubtype(0x00);
     	soc->setPakSize(16); // or 4 * 4? Why were we ever calculating that?
         
-        u32* kdata = (u32*)(soc->bufferptr+6);
+        u32* kdata = (u32*)(soc->bufferptr+bufsoc_pak_data_offset);
         
         kdata[0] = 1;
         kdata[1] = 240 * 3;
@@ -597,7 +599,7 @@ void netfunc(void* __dummy_arg__)
                 //reread:
 
             	u8 i = soc->getPakSubtype();
-            	u8 j = soc->bufferptr[6];
+            	u8 j = soc->bufferptr[bufsoc_pak_data_offset];
             	// Only used in one of these, but want to be declared up here.
             	u32 k;
             	u32 l;
@@ -682,7 +684,7 @@ void netfunc(void* __dummy_arg__)
 
                     	while(k > 0)
                     	{
-                    		printf( (char*)(soc->bufferptr + 6) + l);
+                    		printf( (char*)(soc->bufferptr + bufsoc_pak_data_offset) + l);
                     		k--;
                     		l++;
                     	}
@@ -724,7 +726,7 @@ void netfunc(void* __dummy_arg__)
                 soc->setPakSubtype(00);
                 soc->setPakSize(16);
                 
-                u32* kdata = (u32*)(soc->bufferptr + 6);
+                u32* kdata = (u32*)(soc->bufferptr + bufsoc_pak_data_offset);
                 
                 kdata[0] = format[0];
                 kdata[1] = capin.screencapture[0].framebuf_widthbytesize;
@@ -835,7 +837,7 @@ void netfunc(void* __dummy_arg__)
                 
                 int imgsize = 0;
                 
-                u8* kdata = soc->bufferptr + 6; // Leaving this as-is should be just fine.
+                u8* kdata = soc->bufferptr + bufsoc_pak_data_offset; // Leaving this as-is should be just fine.
 
                 u8 subtype_aka_flags = 0;
 
