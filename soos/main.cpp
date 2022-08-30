@@ -853,7 +853,7 @@ void netfunc(void* __dummy_arg__)
                     
                     subtype_aka_flags = 0b00001000 + (scr * 0b00010000) + (format[scr] & 0b111);
 
-                    soc->setPakType(01); //DATA (Targa)
+                    soc->setPakType(01); // Image
                     soc->setPakSubtype(subtype_aka_flags);
                     soc->setPakSize(imgsize);
 
@@ -935,7 +935,7 @@ void netfunc(void* __dummy_arg__)
                 	// so I am not doing anything to that.
                 	if(!tjCompress2(jencode, (u8*)screenbuf, scrw, bsiz*scrw, stride[scr], tjpf, &kdata, (u32*)&imgsize, TJSAMP_420, cfgblk[1], TJFLAG_NOREALLOC | TJFLAG_FASTDCT))
                 		soc->setPakSize(imgsize);
-                	soc->setPakType(04); //DATA (JPEG)
+                	soc->setPakType(01); //Image
                 	soc->setPakSubtype(subtype_aka_flags);
                 }
 
