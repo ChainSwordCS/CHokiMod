@@ -511,6 +511,34 @@ void lazyConvert16to32andInterlace(u32 flag, u32 passedsiz)
 	return;
 }
 
+static u32 pmAppHandle;
+
+// Based on (and slightly modified from) devkitpro/libctru source
+//
+// svcSetResourceLimitValues(Handle res_limit, LimitableResource* resource_type_list, s64* resource_list, u32 count)
+//
+inline int setCpuResourceLimit(u32 passed_cpu_time_limit)
+{
+	srvGetServiceHandle(&pmAppHandle, "pm:app"); // Does this work?
+
+	int ret = 0;
+	u32* cmdbuf = getThreadCommandBuffer();
+
+	cmdbuf[0] = IPC_MakeHeader(0xA,5,0); // 0x000A0140
+	cmdbuf[1] = 0;
+	cmdbuf[2] = 9; // RESLIMIT_CPUTIME (iirc)
+	cmdbuf[3] = passed_cpu_time_limit;
+	cmdbuf[4] = 0;
+	cmdbuf[5] = 0;
+
+	ret = svcSendSyncRequest(pmAppHandle);
+
+	if(ret < 0)
+		return ret;
+	else
+		return cmdbuf[1];
+}
+
 void netfunc(void* __dummy_arg__)
 {
     u32 siz = 0x80;
@@ -632,9 +660,32 @@ void netfunc(void* __dummy_arg__)
                 					cfgblk[1] = j;
 								break;
 
-                			case 0x02: // CPU Cap value (?)
-                				// I don't know what values are valid and what values aren't.
+                			case 0x02: // CPU Cap value / CPU Limit / App Resource Limit
+
+                				// Redundancy check
+                				if(j == cfgblk[2])
+                					break;
+
+                				// Maybe this is percentage of CPU time? (https://www.3dbrew.org/wiki/APT:SetApplicationCpuTimeLimit)
+                				// In which case, values can range from 5% to 89%
+                				// (The respective passed values are 5 and 89, respectively)
+                				// So I don't know if 0x7F (127) will work.
+                				//
+                				// Maybe I'm looking at two different things by accident.
+
+                				// Also, it may be required to set the 'reslimitdesc' in exheader a certain way (in cia.rsf)
+
+                				if(j > 0x7F)
+                					j = 0x7F;
+                				else if(j < 5)
+                					j = 5;
+
+                				// This code doesn't work, lol.
+                				// Functionality dummied out for now.
+                				//setCpuResourceLimit((u32)j);
+
                 				cfgblk[2] = j;
+
                 				break;
 
                 			case 0x03: // Which Screen
