@@ -569,8 +569,20 @@ void netfunc(void* __dummy_arg__)
     // Note: in modern libctru, DmaConfig is its own object type.
     u8 dmaconf[0x18];
     memset(dmaconf, 0, sizeof(dmaconf));
+
+    // https://www.3dbrew.org/wiki/Corelink_DMA_Engines
     dmaconf[0] = -1; // -1 = Auto-assign to a free channel (Arm11: 3-7, Arm9:0-1)
-    //dmaconf[2] = 4;
+    //dmaconf[1] = 0; // Endian swap size. 0 = None, 2 = 16-bit, 4 = 32-bit, 8 = 64-bit
+    //dmaconf[2] = 0b11000000; // Flags. Here, SRC_IS_RAM and DST_IS_RAM
+    //dmaconf[3] = 0; // Padding.
+
+    // Destination Config block
+    //dmaconf[4] is peripheral ID. FF for ram (it's forced to FF anyway)
+    //dmaconf[5] is Allowed Burst Sizes. Defaults to "1|2|4|8" (15). Also acceptable = 4, 8, "4|8" (12)
+    //dmaconf[6] and [7] are a u16 int, "gather_granule_size"
+    //dmaconf[8] and [9] are a u16 int, "gather_stride"
+    //dmaconf[10] and [11] are a u16 int, "scatter_granule_size"
+    //dmaconf[12] and [13] are a u16 int, "scatter_stride"
     
     //screenInit();
     
@@ -773,23 +785,49 @@ void netfunc(void* __dummy_arg__)
                 format[0] = capin.screencapture[0].format;
                 format[1] = capin.screencapture[1].format;
                 
-                soc->setPakType(02);
-                soc->setPakSubtype(00);
-                soc->setPakSize(16);
-                
-                u32* kdata = (u32*)(soc->bufferptr + bufsoc_pak_data_offset);
-                
-                kdata[0] = format[0];
-                kdata[1] = capin.screencapture[0].framebuf_widthbytesize;
-                kdata[2] = format[1];
-                kdata[3] = capin.screencapture[1].framebuf_widthbytesize;
-                soc->wribuf();
-                
                 soc->setPakType(0xFF);
-                soc->setPakSubtype(0x00);
-                soc->setPakSize(sizeof(capin));
-                *( (GSPGPU_CaptureInfo*)(kdata) ) = capin;
+                soc->setPakSubtype(02);
+                // Not proud of this. Just pretend it's not here lol
+                //"Hello world"
+                char ca[12] = {0x48,0x65,0x6C,0x6C,0x6F,0x20,0x77,0x6F,0x00,0x72,0x6C,0x64};
+                for(int i=0; i<13; ++i)
+                	((char*)soc->bufferptr + bufsoc_pak_data_offset)[i] = ca[i];
+                soc->setPakSize(12);
+
                 soc->wribuf();
+                
+                char cb[20] = {0x46,0x72,0x61,0x6D,0x65,0x62,0x75,0x66,0x66,0x65,0x72,0x20,0X73,0X74,0X72,0X69,0X64,0X65,0X20,0X20};
+				for(int i=0; i<21; ++i)
+					((char*)soc->bufferptr + bufsoc_pak_data_offset)[i] = cb[i];
+				soc->setPakSize(20);
+
+				soc->wribuf();
+
+                //u32* kdata = (u32*)(soc->bufferptr + bufsoc_pak_data_offset);
+                
+                // framebuf_widthbytesize = stride. distance between the start of two framebuffer rows.
+                // (must be a multiple of 8)
+                // so: the amount to add to the framebuffer pointer after displaying a scanline
+
+                soc->setPakSubtype(01);
+
+                // Both of these lines of code are interchangeable. They both always return
+                // 0x4672616D and I don't know why. ):
+                ((u32*)soc->bufferptr)[3] = capin.screencapture[scr].framebuf_widthbytesize;
+                //GSPGPU_ReadHWRegs(0x1EF00090, &((u32*)soc->bufferptr)[3],4);
+
+                soc->setPakSize(4);
+                soc->wribuf();
+                
+                //kdata[0] = format[0];
+                //kdata[1] = capin.screencapture[0].framebuf_widthbytesize;
+                //kdata[2] = format[1];
+                //kdata[3] = capin.screencapture[1].framebuf_widthbytesize;
+                //soc->wribuf();
+
+                //soc->setPakSize(sizeof(capin));
+                //*( (GSPGPU_CaptureInfo*)(kdata) ) = capin;
+                //soc->wribuf();
                 
                 
                 if(dmahand)
@@ -1038,6 +1076,7 @@ void netfunc(void* __dummy_arg__)
                 Handle prochand = 0;
                 if(procid) if(svcOpenProcess(&prochand, procid) < 0) procid = 0;
                 
+                // DMA Code!!!
 
                 // TODO: Future Plan: Rework this DMA function call;
                 // try to use special parameters for certain
@@ -1045,6 +1084,24 @@ void netfunc(void* __dummy_arg__)
                 //
                 // Note: I don't currently know enough to make those adjustments.
                 // Lots more testing and fine tuning is needed. -ChainSwordCS
+
+                int fmt = format[scr] & 0b0111;
+
+                switch(fmt)
+                {
+                case 00:
+                	break;
+                case 01:
+                	break;
+                case 02:
+                	break;
+                case 03:
+                	break;
+                case 04:
+                	break;
+                default: // Invalid color format
+                	break;
+                }
 
                 if( 0 > svcStartInterProcessDma(
                         &dmahand, // Note: This handle is signaled when the DMA is finished.
