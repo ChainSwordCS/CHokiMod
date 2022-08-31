@@ -937,6 +937,8 @@ void netfunc(void* __dummy_arg__)
 
                 u8 subtype_aka_flags = 0;
 
+                bool isInterlaced = cfgblk[5];
+
                 // If index 03 of config block is zero or greater than 100 (100% is max valid jpeg quality)
                 // Then force Targa.
                 // TGA
@@ -984,6 +986,7 @@ void netfunc(void* __dummy_arg__)
                 	else if(f == 2) // RGB565
                 	{
                 		lazyConvert16to32andInterlace(2,siz_2);
+                		isInterlaced = true;
 						tjpf = TJPF_RGBX;
 						bsiz = 4;
 						scrw = 120;
@@ -992,6 +995,7 @@ void netfunc(void* __dummy_arg__)
                 	else if(f == 3) // RGB5A1
                 	{
                 		lazyConvert16to32andInterlace(3,siz_2);
+                		isInterlaced = true;
 						tjpf = TJPF_RGBX;
 						bsiz = 4;
 						scrw = 120;
@@ -1000,6 +1004,7 @@ void netfunc(void* __dummy_arg__)
                 	else if(f == 4) // RGBA4
                 	{
                 		lazyConvert16to32andInterlace(4,siz_2);
+                		isInterlaced = true;
                 		tjpf = TJPF_RGBX;
                 		bsiz = 4;
                 		scrw = 120;
@@ -1101,26 +1106,57 @@ void netfunc(void* __dummy_arg__)
                 // Note: I don't currently know enough to make those adjustments.
                 // Lots more testing and fine tuning is needed. -ChainSwordCS
 
+                //TODO: Consider optimizing this better in the future too.
+
                 int fmt = format[scr] & 0b0111;
 
-                bool isInterlaced = cfgblk[5];
+                u32 bytestocopy = 0;
+                u8 burstsize = 0; // allowed_burst_sizes (source address)
+                u16 gatherstride = 0; // gather_stride (source address)
 
                 switch(fmt)
                 {
                 case 00: // RGBA8
+                	bytestocopy = siz;
                 	break;
+
                 case 01: // RGB8
+                	bytestocopy = siz;
                 	break;
+
                 case 02: // RGB565
+
+                	if(isInterlaced)
+                	{
+                		bytestocopy = siz;
+                		burstsize = 8; // 8 (?) (Thinking maybe this means grab two bytes, but IDK.)
+                		gatherstride = 4; // Hopefully this means we'll only be copying every other byte...
+                	}
+                	else
+                	{
+                		bytestocopy = siz;
+                	}
                 	break;
+
                 case 03: // RGB5A1
+                	bytestocopy = siz;
                 	break;
+
                 case 04: // RGBA4
+                	bytestocopy = siz;
                 	break;
+
                 default: // Invalid color format
+                	bytestocopy = siz;
                 	break;
                 }
 
+                // writing to Destination DmaSubConfig struct
+                *(dmaconf+5) = burstsize;
+                *((u16*)dmaconf+8) = gatherstride;
+                // writing to Source DmaSubConfig struct
+                *(dmaconf+15) = burstsize;
+                *((u16*)dmaconf+18) = gatherstride;
 
 
                 if( 0 > svcStartInterProcessDma(
@@ -1129,7 +1165,7 @@ void netfunc(void* __dummy_arg__)
 						screenbuf, // Screenbuffer pointer
 						prochand ? prochand : 0xFFFF8001, // 'Source Process Handle' ; if prochand = 0, shortcut to handle of this process
                         (u8*)capin.screencapture[scr].framebuf0_vaddr + (siz * offs[scr]), // Source Address
-						siz, // Bytes to copy
+						bytestocopy, // Bytes to copy
 						dmaconf) ) // DMA Config / Flags
                 {
                     procid = 0;
