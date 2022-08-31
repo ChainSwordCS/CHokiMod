@@ -714,6 +714,13 @@ void netfunc(void* __dummy_arg__)
                 					cfgblk[4] = j;
                 				break;
 
+                			case 0x05: // Request to use Interlacing (yes or no)
+                				if(j == 0)
+                					cfgblk[5] = 0;
+                				else
+                					cfgblk[5] = 1;
+                				break;
+
                 			default:
                 				// Invalid subtype for "Settings" packet-type
                 				break;
@@ -1020,6 +1027,13 @@ void netfunc(void* __dummy_arg__)
                 	// "width" is supposed to be 240 always,
                 	// unless of course we're doing interlacing shenanigans.
 
+                	// TODO: Important!
+                	// For some unknown reason, Mario Kart 7 requires the "width" (height)
+                	// to be 128 when interlaced. And possibly 256 or something similar
+                	// when not interlaced. No I don't know why.
+                	// But I would love to get to the bottom of it.
+                	// If I can't, I'll add a debug feature to force-override the number.
+
                 	// stride was always variable (different on Old-3DS vs New-3DS)
                 	// so I am not doing anything to that.
                 	if(!tjCompress2(jencode, (u8*)screenbuf, scrw, bsiz*scrw, stride[scr], tjpf, &kdata, (u32*)&imgsize, TJSAMP_420, cfgblk[1], TJFLAG_NOREALLOC | TJFLAG_FASTDCT))
@@ -1052,12 +1066,14 @@ void netfunc(void* __dummy_arg__)
                 // Planning to add more complex functionality with prioritizing one
                 // screen over the other, like NTR. Maybe.
                 
+                // Size of the entire frame (in bytes)
                 siz = (capin.screencapture[scr].framebuf_widthbytesize * stride[scr]);
-                
+                // Size of a single pixel in bytes(????)
                 bsiz = capin.screencapture[scr].framebuf_widthbytesize / 240;
+                // Screen "Width" (usually 240)
                 scrw = capin.screencapture[scr].framebuf_widthbytesize / bsiz;
+
                 bits = 4 << bsiz; // ?
-                
                 
 
                 // Intentionally mis-reporting our color bit-depth to the PC client (!)
@@ -1087,21 +1103,25 @@ void netfunc(void* __dummy_arg__)
 
                 int fmt = format[scr] & 0b0111;
 
+                bool isInterlaced = cfgblk[5];
+
                 switch(fmt)
                 {
-                case 00:
+                case 00: // RGBA8
                 	break;
-                case 01:
+                case 01: // RGB8
                 	break;
-                case 02:
+                case 02: // RGB565
                 	break;
-                case 03:
+                case 03: // RGB5A1
                 	break;
-                case 04:
+                case 04: // RGBA4
                 	break;
                 default: // Invalid color format
                 	break;
                 }
+
+
 
                 if( 0 > svcStartInterProcessDma(
                         &dmahand, // Note: This handle is signaled when the DMA is finished.
