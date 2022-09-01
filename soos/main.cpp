@@ -502,10 +502,10 @@ void lazyConvert16to32andInterlace(u32 flag, u32 passedsiz)
 
 void convert16to24andInterlace(u32 flag, u32 passedsiz)
 {
-	u32 offs = 0;
-	u32 offstwo = 0;
-	u32 pxnum = 0;
-	const u32 finalpxnum = 120*400; // TODO: This will break when bottom-screen is requested.
+	u32 offs_univ = 0;
+	const u32 ofumax = 120*400;
+
+	//const u32 buf2siz = 2*120*400;
 
 	u8* u8scrbuf = (u8*)screenbuf;
 
@@ -513,61 +513,76 @@ void convert16to24andInterlace(u32 flag, u32 passedsiz)
 	{
 		if(flag == 4) // RGBA4 -> RGB8
 		{
-			while(pxnum < finalpxnum)
+			while(offs_univ < ofumax) // (offs + 2) < passedsiz && (offstwo+1) < buf2siz )
 			{
-				u8 b = ( u8scrbuf[offs+0] & 0b11110000);
-				u8 g = ( u8scrbuf[offs+1] & 0b00001111) << 4;
-				u8 r = ( u8scrbuf[offs+1] & 0b11110000);
+				u32 deriveoffs1 = offs_univ*4;
 
-				pxarraytwo[offstwo] = u8scrbuf[offs+2];
+				u8 r = ( u8scrbuf[deriveoffs1+0] & 0b11110000);
+				u8 g = ( u8scrbuf[deriveoffs1+1] & 0b00001111) << 4;
+				u8 b = ( u8scrbuf[deriveoffs1+1] & 0b11110000);
 
-				u8scrbuf[offs] = r;
-				u8scrbuf[offs+1] = g;
-				u8scrbuf[offs+2] = b;
+				u32 deriveoffs2 = offs_univ*2;
 
-				offstwo = offstwo + 2;
-				offs = offs + 3;
-				pxnum++;
+				pxarraytwo[deriveoffs2+0] = u8scrbuf[deriveoffs1+2];
+				pxarraytwo[deriveoffs2+1] = u8scrbuf[deriveoffs1+3];
+
+				u32 deriveoffs3 = offs_univ*3;
+
+				u8scrbuf[deriveoffs3] = r;
+				u8scrbuf[deriveoffs3+1] = g;
+				u8scrbuf[deriveoffs3+2] = b;
+
+				offs_univ++;
 			}
 		}
 		else if(flag == 3) // RGB5A1 -> RGB8
 		{
-			while(pxnum < finalpxnum)
+			while(offs_univ < ofumax) // (offs + 2) < passedsiz && (offstwo+1) < buf2siz )
 			{
-				u8 b = ( u8scrbuf[offs+0] & 0b00111110) << 2;
-				u8 g = ( u8scrbuf[offs+0] & 0b11000000) >> 3;
-				g = g +((u8scrbuf[offs+1] & 0b00000111) << 5);
-				u8 r = ( u8scrbuf[offs+1] & 0b11111000);
+				u32 deriveoffs1 = offs_univ*4;
 
-				pxarraytwo[offstwo] = u8scrbuf[offs+2];
+				u8 r = ( u8scrbuf[deriveoffs1+0] & 0b00111110) << 2;
+				u8 g = ( u8scrbuf[deriveoffs1+0] & 0b11000000) >> 3;
+				g = g +((u8scrbuf[deriveoffs1+1] & 0b00000111) << 5);
+				u8 b = ( u8scrbuf[deriveoffs1+1] & 0b11111000);
 
-				u8scrbuf[offs] = r;
-				u8scrbuf[offs+1] = g;
-				u8scrbuf[offs+2] = b;
+				u32 deriveoffs2 = offs_univ*2;
 
-				offstwo = offstwo + 2;
-				offs = offs + 3;
-				pxnum++;
+				pxarraytwo[deriveoffs2+0] = u8scrbuf[deriveoffs1+2];
+				pxarraytwo[deriveoffs2+1] = u8scrbuf[deriveoffs1+3];
+
+				u32 deriveoffs3 = offs_univ*3;
+
+				u8scrbuf[deriveoffs3] = r;
+				u8scrbuf[deriveoffs3+1] = g;
+				u8scrbuf[deriveoffs3+2] = b;
+
+				offs_univ++;
 			}
 		}
 		else if(flag == 2) // RGB565 -> RGB8
 		{
-			while(pxnum < finalpxnum)
+			while(offs_univ < ofumax) // (offs + 2) < passedsiz && (offstwo+1) < buf2siz )
 			{
-				u8 b = ( u8scrbuf[offs+0] & 0b00011111) << 3;
-				u8 g = ( u8scrbuf[offs+0] & 0b11100000) >> 3;
-				g = g +((u8scrbuf[offs+1] & 0b00000111) << 5);
-				u8 r = ( u8scrbuf[offs+1] & 0b11111000);
+				u32 deriveoffs1 = offs_univ*4;
 
-				pxarraytwo[offstwo] = u8scrbuf[offs+2];
+				u8 r = ( u8scrbuf[deriveoffs1+0] & 0b00011111) << 3;
+				u8 g = ( u8scrbuf[deriveoffs1+0] & 0b11100000) >> 3;
+				g = g +((u8scrbuf[deriveoffs1+1] & 0b00000111) << 5);
+				u8 b = ( u8scrbuf[deriveoffs1+1] & 0b11111000);
 
-				u8scrbuf[offs] = r;
-				u8scrbuf[offs+1] = g;
-				u8scrbuf[offs+2] = b;
+				u32 deriveoffs2 = offs_univ*2;
 
-				offstwo = offstwo + 2;
-				offs = offs + 3;
-				pxnum++;
+				pxarraytwo[deriveoffs2+0] = u8scrbuf[deriveoffs1+2];
+				pxarraytwo[deriveoffs2+1] = u8scrbuf[deriveoffs1+3];
+
+				u32 deriveoffs3 = offs_univ*3;
+
+				u8scrbuf[deriveoffs3] = r;
+				u8scrbuf[deriveoffs3+1] = g;
+				u8scrbuf[deriveoffs3+2] = b;
+
+				offs_univ++;
 			}
 		}
 		else
@@ -582,55 +597,61 @@ void convert16to24andInterlace(u32 flag, u32 passedsiz)
 
 		if(flag == 4) // RGBA4 -> RGB8
 		{
-			while(pxnum < finalpxnum)
+			while(offs_univ < ofumax) // (offs + 2) < passedsiz && (offstwo+1) < buf2siz )
 			{
-				u8 b = ( pxarraytwo[offstwo+0] & 0b11110000);
-				u8 g = ( pxarraytwo[offstwo+0] & 0b00001111) << 4;
-				u8 r = ( pxarraytwo[offstwo+1] & 0b11110000);
+				u32 deriveoffs2 = offs_univ*2;
 
-				u8scrbuf[offs] = r;
-				u8scrbuf[offs+1] = g;
-				u8scrbuf[offs+2] = b;
+				u8 r = ( pxarraytwo[deriveoffs2+0] & 0b11110000);
+				u8 g = ( pxarraytwo[deriveoffs2+0] & 0b00001111) << 4;
+				u8 b = ( pxarraytwo[deriveoffs2+1] & 0b11110000);
 
-				offstwo = offstwo + 2;
-				offs = offs + 3;
-				pxnum++;
+				u32 deriveoffs3 = offs_univ*3;
+
+				u8scrbuf[deriveoffs3] = r;
+				u8scrbuf[deriveoffs3+1] = g;
+				u8scrbuf[deriveoffs3+2] = b;
+
+				offs_univ++;
 			}
 		}
 		else if(flag == 3) // RGB5A1 -> RGB8
 		{
-			while(pxnum < finalpxnum)
+			while(offs_univ < ofumax) // (offs + 2) < passedsiz && (offstwo+1) < buf2siz )
 			{
-				u8 b = ( pxarraytwo[offstwo+0] & 0b00111110) << 2;
-				u8 g = ( pxarraytwo[offstwo+0] & 0b11000000) >> 3;
-				g = g +((pxarraytwo[offstwo+1] & 0b00000111) << 5);
-				u8 r = ( pxarraytwo[offstwo+1] & 0b11111000);
+				u32 deriveoffs2 = offs_univ*2;
 
-				u8scrbuf[offs] = r;
-				u8scrbuf[offs+1] = g;
-				u8scrbuf[offs+2] = b;
+				u8 r = ( pxarraytwo[deriveoffs2+0] & 0b00111110) << 2;
+				u8 g = ( pxarraytwo[deriveoffs2+0] & 0b11000000) >> 3;
+				g = g +((pxarraytwo[deriveoffs2+1] & 0b00000111) << 5);
+				u8 b = ( pxarraytwo[deriveoffs2+1] & 0b11111000);
 
-				offstwo = offstwo + 2;
-				offs = offs + 3;
-				pxnum++;
+				u32 deriveoffs3 = offs_univ*3;
+
+				u8scrbuf[deriveoffs3] = r;
+				u8scrbuf[deriveoffs3+1] = g;
+				u8scrbuf[deriveoffs3+2] = b;
+
+				offs_univ++;
 			}
 		}
 		else if(flag == 2) // RGB565 -> RGB8
 		{
-			while(pxnum < finalpxnum)
+			while(offs_univ < ofumax) // (offs + 2) < passedsiz && (offstwo+1) < buf2siz )
 			{
-				u8 b = ( pxarraytwo[offstwo+0] & 0b00011111) << 3;
-				u8 g = ( pxarraytwo[offstwo+0] & 0b11100000) >> 3;
-				g = g +((pxarraytwo[offstwo+1] & 0b00000111) << 5);
-				u8 r = ( pxarraytwo[offstwo+1] & 0b11111000);
+				u32 deriveoffs2 = offs_univ*2;
 
-				u8scrbuf[offs] = r;
-				u8scrbuf[offs+1] = g;
-				u8scrbuf[offs+2] = b;
+				u8 r = ( pxarraytwo[deriveoffs2+0] & 0b00011111) << 3;
+				u8 g = ( pxarraytwo[deriveoffs2+0] & 0b11100000) >> 3;
+				g = g +((pxarraytwo[deriveoffs2+1] & 0b00000111) << 5);
+				u8 b = ( pxarraytwo[deriveoffs2+1] & 0b11111000);
 
-				offstwo = offstwo + 2;
-				offs = offs + 3;
-				pxnum++;
+				u32 deriveoffs3 = offs_univ*3;
+
+				u8scrbuf[deriveoffs3] = r;
+				u8scrbuf[deriveoffs3+1] = g;
+				u8scrbuf[deriveoffs3+2] = b;
+
+				offs_univ++;
 			}
 		}
 		else
