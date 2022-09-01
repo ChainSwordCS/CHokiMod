@@ -362,6 +362,8 @@ static u32 format[2] = {0xF00FCACE, 0xF00FCACE};
 // Config Block
 static u8 cfgblk[0x100];
 
+static bool isInterlaced = false;
+
 static int sock = 0;
 
 static struct sockaddr_in sai;
@@ -375,6 +377,9 @@ static Thread netthread = 0;
 static vu32 threadrunning = 0;
 
 static u32* screenbuf = nullptr;
+
+//static u32* scrbuf_two = nullptr;
+static u8 pxarraytwo[2*120*400];
 
 static tga_image img;
 static tjhandle jencode = nullptr;
@@ -465,18 +470,10 @@ void lazyConvert16to32andInterlace(u32 flag, u32 passedsiz)
 			u8 r = ( u8scrbuf[offs+1+interlace_px_offset] & 0b11111000);
 			screenbuf[(offs/4)] = ((u32)r << 16) + ((u32)g << 8) + ((u32)b << 0);
 
-			// derive red pixel
-			//u32 rgba8pix = (u32)(u8scrbuf[(offs+interlace_px_offset)] & 0b11111000) << 24;
-			// derive green pixel
-			//rgba8pix = rgba8pix + ( (u32)(u16scrbuf[((offs+interlace_px_offset)/2)] & 0b0000011111000000) << 21 );
-			// derive blue pixel
-			//rgba8pix = rgba8pix + ( (u32)(u8scrbuf[(offs+1+interlace_px_offset)] & 0b00111110) << 10 );
-			//screenbuf[(offs/4)] = rgba8pix;
-
 			offs = offs + 4;
 		}
 	}
-	else if(flag == 2) // Supposed to be RGB565, actually might be otherwise...
+	else if(flag == 2) // RGB565 -> RGBA8
 	{
 		while((offs + 3) < passedsiz)
 		{
@@ -485,14 +482,6 @@ void lazyConvert16to32andInterlace(u32 flag, u32 passedsiz)
 			g = g +((u8scrbuf[offs+1+interlace_px_offset] & 0b00000111) << 5);
 			u8 r = ( u8scrbuf[offs+1+interlace_px_offset] & 0b11111000);
 			screenbuf[(offs/4)] = ((u32)r << 16) + ((u32)g << 8) + ((u32)b << 0);
-
-			// derive red pixel
-			//u32 rgba8pix = (u32)(u8scrbuf[(offs+interlace_px_offset)] & 0b11111000) << 24;
-			// derive green pixel
-			//rgba8pix = rgba8pix + ( (u32)(u16scrbuf[((offs+interlace_px_offset)/2)] & 0b0000011111100000) << 21 );
-			// derive blue pixel
-			//rgba8pix = rgba8pix + ( (u32)(u8scrbuf[(offs+1+interlace_px_offset)] & 0b00011111) << 11 );
-			//screenbuf[(offs/4)] = rgba8pix;
 
 			offs = offs + 4;
 		}
@@ -507,6 +496,149 @@ void lazyConvert16to32andInterlace(u32 flag, u32 passedsiz)
 		interlace_px_offset = 2;
 	else
 		interlace_px_offset = 0;
+
+	return;
+}
+
+void convert16to24andInterlace(u32 flag, u32 passedsiz)
+{
+	u32 offs = 0;
+	u32 offstwo = 0;
+	u32 pxnum = 0;
+	const u32 finalpxnum = 120*400; // TODO: This will break when bottom-screen is requested.
+
+	u8* u8scrbuf = (u8*)screenbuf;
+
+	if(interlace_px_offset == 0)
+	{
+		if(flag == 4) // RGBA4 -> RGB8
+		{
+			while(pxnum < finalpxnum)
+			{
+				u8 b = ( u8scrbuf[offs+0] & 0b11110000);
+				u8 g = ( u8scrbuf[offs+1] & 0b00001111) << 4;
+				u8 r = ( u8scrbuf[offs+1] & 0b11110000);
+
+				pxarraytwo[offstwo] = u8scrbuf[offs+2];
+
+				u8scrbuf[offs] = r;
+				u8scrbuf[offs+1] = g;
+				u8scrbuf[offs+2] = b;
+
+				offstwo = offstwo + 2;
+				offs = offs + 3;
+				pxnum++;
+			}
+		}
+		else if(flag == 3) // RGB5A1 -> RGB8
+		{
+			while(pxnum < finalpxnum)
+			{
+				u8 b = ( u8scrbuf[offs+0] & 0b00111110) << 2;
+				u8 g = ( u8scrbuf[offs+0] & 0b11000000) >> 3;
+				g = g +((u8scrbuf[offs+1] & 0b00000111) << 5);
+				u8 r = ( u8scrbuf[offs+1] & 0b11111000);
+
+				pxarraytwo[offstwo] = u8scrbuf[offs+2];
+
+				u8scrbuf[offs] = r;
+				u8scrbuf[offs+1] = g;
+				u8scrbuf[offs+2] = b;
+
+				offstwo = offstwo + 2;
+				offs = offs + 3;
+				pxnum++;
+			}
+		}
+		else if(flag == 2) // RGB565 -> RGB8
+		{
+			while(pxnum < finalpxnum)
+			{
+				u8 b = ( u8scrbuf[offs+0] & 0b00011111) << 3;
+				u8 g = ( u8scrbuf[offs+0] & 0b11100000) >> 3;
+				g = g +((u8scrbuf[offs+1] & 0b00000111) << 5);
+				u8 r = ( u8scrbuf[offs+1] & 0b11111000);
+
+				pxarraytwo[offstwo] = u8scrbuf[offs+2];
+
+				u8scrbuf[offs] = r;
+				u8scrbuf[offs+1] = g;
+				u8scrbuf[offs+2] = b;
+
+				offstwo = offstwo + 2;
+				offs = offs + 3;
+				pxnum++;
+			}
+		}
+		else
+		{
+			// Do nothing; we expect to receive a valid flag.
+		}
+		interlace_px_offset = 2;
+	}
+	else
+	{
+		// Alternate rows. Complex style...
+
+		if(flag == 4) // RGBA4 -> RGB8
+		{
+			while(pxnum < finalpxnum)
+			{
+				u8 b = ( pxarraytwo[offstwo+0] & 0b11110000);
+				u8 g = ( pxarraytwo[offstwo+0] & 0b00001111) << 4;
+				u8 r = ( pxarraytwo[offstwo+1] & 0b11110000);
+
+				u8scrbuf[offs] = r;
+				u8scrbuf[offs+1] = g;
+				u8scrbuf[offs+2] = b;
+
+				offstwo = offstwo + 2;
+				offs = offs + 3;
+				pxnum++;
+			}
+		}
+		else if(flag == 3) // RGB5A1 -> RGB8
+		{
+			while(pxnum < finalpxnum)
+			{
+				u8 b = ( pxarraytwo[offstwo+0] & 0b00111110) << 2;
+				u8 g = ( pxarraytwo[offstwo+0] & 0b11000000) >> 3;
+				g = g +((pxarraytwo[offstwo+1] & 0b00000111) << 5);
+				u8 r = ( pxarraytwo[offstwo+1] & 0b11111000);
+
+				u8scrbuf[offs] = r;
+				u8scrbuf[offs+1] = g;
+				u8scrbuf[offs+2] = b;
+
+				offstwo = offstwo + 2;
+				offs = offs + 3;
+				pxnum++;
+			}
+		}
+		else if(flag == 2) // RGB565 -> RGB8
+		{
+			while(pxnum < finalpxnum)
+			{
+				u8 b = ( pxarraytwo[offstwo+0] & 0b00011111) << 3;
+				u8 g = ( pxarraytwo[offstwo+0] & 0b11100000) >> 3;
+				g = g +((pxarraytwo[offstwo+1] & 0b00000111) << 5);
+				u8 r = ( pxarraytwo[offstwo+1] & 0b11111000);
+
+				u8scrbuf[offs] = r;
+				u8scrbuf[offs+1] = g;
+				u8scrbuf[offs+2] = b;
+
+				offstwo = offstwo + 2;
+				offs = offs + 3;
+				pxnum++;
+			}
+		}
+		else
+		{
+			// Do nothing; we expect to receive a valid flag.
+		}
+		interlace_px_offset = 0;
+	}
 
 	return;
 }
@@ -902,6 +1034,7 @@ void netfunc(void* __dummy_arg__)
                 PatStay(0x00FF00); // Notif LED = Green
             }
             
+
             int loopcnt = 2;
             
             // Note: We control how often this loop runs
@@ -928,7 +1061,15 @@ void netfunc(void* __dummy_arg__)
                     // On Old-3DS this isn't necessary because the cache is so small anyway.
                     //
                     // Note that removing this instruction causes strange behavior...
-                    if(!isold) svcFlushProcessDataCache(0xFFFF8001, (u8*)screenbuf, capin.screencapture[scr].framebuf_widthbytesize * 400);
+                    if(!isold)
+                    {
+                    	svcFlushProcessDataCache(0xFFFF8001, (u8*)screenbuf, capin.screencapture[scr].framebuf_widthbytesize * 400);
+                    	if(isInterlaced)
+                    	{
+                    		// TODO: Consider commenting this in or out for testing.
+                    		//svcFlushProcessDataCache(0xFFFF8001, (u8*)scrbuf_two, 3*240*400);
+                    	}
+                    }
                 }
                 
                 int imgsize = 0;
@@ -937,13 +1078,10 @@ void netfunc(void* __dummy_arg__)
 
                 u8 subtype_aka_flags = 0;
 
-                bool isInterlaced = cfgblk[5];
-
-                // If index 03 of config block is zero or greater than 100 (100% is max valid jpeg quality)
-                // Then force Targa.
                 // TGA
                 if(cfgblk[4] == 01)
                 {
+                	// Note: interlacing not yet implemented here.
                     init_tga_image(&img, (u8*)screenbuf, scrw, stride[scr], bits);
                     img.image_type = TGA_IMAGE_TYPE_BGR_RLE;
                     img.origin_y = (scr * 400) + (stride[scr] * offs[scr]);
@@ -976,37 +1114,72 @@ void netfunc(void* __dummy_arg__)
                 		tjpf = TJPF_RGBX;
                 		//bsiz = 4;
                 		//scrw = 240;
+                		//selectedscreenbuf = screenbuf;
                 	}
                 	else if(f == 1) // RGB8
                 	{
                 		tjpf = TJPF_RGB;
                 		//bsiz = 3;
                 		//scrw = 240;
+                		// Interlace functionality is not implemented,
+                		// force-use our first framebuffer.
+                		//selectedscreenbuf = screenbuf;
                 	}
                 	else if(f == 2) // RGB565
                 	{
-                		lazyConvert16to32andInterlace(2,siz_2);
+                		//lazyConvert16to32andInterlace(2,siz_2);
+                		if(isold)
+						{
+							lazyConvert16to32andInterlace(2,siz_2);
+							tjpf = TJPF_RGBX;
+							bsiz = 4;
+						}
+						else
+						{
+							convert16to24andInterlace(2,siz_2);
+							tjpf = TJPF_RGB;
+							bsiz = 3;
+						}
                 		isInterlaced = true;
-						tjpf = TJPF_RGBX;
-						bsiz = 4;
 						scrw = 120;
 						subtype_aka_flags += 0b00100000 + (interlace_px_offset?0:0b01000000);
                 	}
                 	else if(f == 3) // RGB5A1
                 	{
-                		lazyConvert16to32andInterlace(3,siz_2);
+                		//lazyConvert16to32andInterlace(3,siz_2);
+                		if(isold)
+                		{
+                			lazyConvert16to32andInterlace(3,siz_2);
+							tjpf = TJPF_RGBX;
+							bsiz = 4;
+                		}
+                		else
+                		{
+                			convert16to24andInterlace(3,siz_2);
+                			tjpf = TJPF_RGB;
+                			bsiz = 3;
+                		}
                 		isInterlaced = true;
-						tjpf = TJPF_RGBX;
-						bsiz = 4;
 						scrw = 120;
 						subtype_aka_flags += 0b00100000 + (interlace_px_offset?0:0b01000000);
                 	}
                 	else if(f == 4) // RGBA4
                 	{
-                		lazyConvert16to32andInterlace(4,siz_2);
+                		//lazyConvert16to32andInterlace(4,siz_2);
+                		if(isold)
+                		{
+                			// We are tight on RAM. Does the old method work better?
+                			lazyConvert16to32andInterlace(4,siz_2);
+                			tjpf = TJPF_RGBX;
+                    		bsiz = 4;
+                		}
+                		else
+                		{
+                			convert16to24andInterlace(4,siz_2);
+                			tjpf = TJPF_RGB;
+                    		bsiz = 3;
+                		}
                 		isInterlaced = true;
-                		tjpf = TJPF_RGBX;
-                		bsiz = 4;
                 		scrw = 120;
                 		subtype_aka_flags += 0b00100000 + (interlace_px_offset?0:0b01000000);
                 	}
@@ -1072,6 +1245,7 @@ void netfunc(void* __dummy_arg__)
                 // screen over the other, like NTR. Maybe.
                 
                 // Size of the entire frame (in bytes)
+                // TODO: Does this even return a correct value? Even remotely?
                 siz = (capin.screencapture[scr].framebuf_widthbytesize * stride[scr]);
                 // Size of a single pixel in bytes(????)
                 bsiz = capin.screencapture[scr].framebuf_widthbytesize / 240;
@@ -1108,69 +1282,36 @@ void netfunc(void* __dummy_arg__)
 
                 //TODO: Consider optimizing this better in the future too.
 
-                int fmt = format[scr] & 0b0111;
+                //int fmt = format[scr] & 0b0111;
 
-                u32 bytestocopy = 0;
-                u8 burstsize = 0; // allowed_burst_sizes (source address)
-                u16 gatherstride = 0; // gather_stride (source address)
-
-                switch(fmt)
+                if(!isold && isInterlaced && interlace_px_offset == 2)
                 {
-                case 00: // RGBA8
-                	bytestocopy = siz;
-                	break;
-
-                case 01: // RGB8
-                	bytestocopy = siz;
-                	break;
-
-                case 02: // RGB565
-
-                	if(isInterlaced)
+                	// Don't do the DMA lol.
+                }
+                else
+                {
+                	u32 srcprochand = prochand ? prochand : 0xFFFF8001;
+                	u8* srcaddr = (u8*)capin.screencapture[scr].framebuf0_vaddr + (siz * offs[scr]);
+                	int r = svcStartInterProcessDma(&dmahand,0xFFFF8001,screenbuf,srcprochand,srcaddr,siz,dmaconf);
+                	if(r < 0)
                 	{
-                		bytestocopy = siz;
-                		burstsize = 8; // 8 (?) (Thinking maybe this means grab two bytes, but IDK.)
-                		gatherstride = 4; // Hopefully this means we'll only be copying every other byte...
+                		procid = 0;
+						format[scr] = 0xF00FCACE; //invalidate
                 	}
-                	else
-                	{
-                		bytestocopy = siz;
-                	}
-                	break;
-
-                case 03: // RGB5A1
-                	bytestocopy = siz;
-                	break;
-
-                case 04: // RGBA4
-                	bytestocopy = siz;
-                	break;
-
-                default: // Invalid color format
-                	bytestocopy = siz;
-                	break;
                 }
 
-                // writing to Destination DmaSubConfig struct
-                *(dmaconf+5) = burstsize;
-                *((u16*)dmaconf+8) = gatherstride;
-                // writing to Source DmaSubConfig struct
-                *(dmaconf+15) = burstsize;
-                *((u16*)dmaconf+18) = gatherstride;
-
-
-                if( 0 > svcStartInterProcessDma(
-                        &dmahand, // Note: This handle is signaled when the DMA is finished.
-						0xFFFF8001, // Shortcut for: the handle of this process
-						screenbuf, // Screenbuffer pointer
-						prochand ? prochand : 0xFFFF8001, // 'Source Process Handle' ; if prochand = 0, shortcut to handle of this process
-                        (u8*)capin.screencapture[scr].framebuf0_vaddr + (siz * offs[scr]), // Source Address
-						bytestocopy, // Bytes to copy
-						dmaconf) ) // DMA Config / Flags
-                {
-                    procid = 0;
-                    format[scr] = 0xF00FCACE; //invalidate
-                }
+                //if( 0 > svcStartInterProcessDma(
+                //		&dmahand, // Note: This handle is signaled when the DMA is finished.
+				//		0xFFFF8001, // Shortcut for: the handle of this process
+				//		screenbuf, // Screenbuffer pointer
+				//		prochand ? prochand : 0xFFFF8001, // 'Source Process Handle' ; if prochand = 0, shortcut to handle of this process
+                //		(u8*)capin.screencapture[scr].framebuf0_vaddr + (siz * offs[scr]), // Source Address
+				//		bytestocopy, // Bytes to copy
+				//		dmaconf) ) // DMA Config / Flags
+                //{
+                //    procid = 0;
+                //    format[scr] = 0xF00FCACE; //invalidate
+                //}
                 
                 if(prochand)
                 {
@@ -1277,7 +1418,6 @@ int main()
     
     isold = APPMEMTYPE <= 5;
     
-    
     if(isold)
     {
     	// On Old-3DS, capture the screen in 8 chunks
@@ -1319,9 +1459,16 @@ int main()
     //gxInit();
     
     if(isold)
+    {
         screenbuf = (u32*)memalign(8, 50 * 240 * 4);
+    }
     else
+    {
         screenbuf = (u32*)memalign(8, 400 * 240 * 4);
+        //scrbuf_two = (u32*)memalign(8, 400 * 120 * 3); too large...
+        //u8 pxarr2data[2*120*400];
+        //pxarraytwo = pxarr2data;
+    }
     
     // If memalign returns null or 0
     if(!screenbuf)
