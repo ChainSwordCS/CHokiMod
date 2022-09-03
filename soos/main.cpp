@@ -82,9 +82,27 @@ int checkwifi();
 int pollsock(int,int,int);
 void CPPCrashHandler();
 
-// Functions added by me, mostly.
-void lazyConvert16to32andInterlace(u32,u32);
-void convert16to24andInterlace(u32,u32);
+
+// Image Processing Functions added by me
+void lazyConvert16to32andInterlace(u32,u32); // Finished, works. Destructive implementation
+void convert16to24andInterlace(u32,u32); // Finished, works. Clean implementation (but needs refactor for o3DS)
+void fastConvert16to32andInterlace2_rgb565(u32); // Unfinished, broken colors. (Destructive implementation)
+void convert16to24_rgb5a1(u32); // Finished, works.
+void convert16to24_rgb565(u32); // Finished, works.
+void convert16to24_rgba4(u32); // Finished, works.
+void dummyinterlace24(u32,u32); // Very unfinished, broken, do not use.
+
+// Other big functions added by me
+inline int setCpuResourceLimit(u32); // Unfinished, doesn't work IIRC.
+
+// Helper functions, added by me.
+inline void cvt1632i_row1_rgb565(u32); // Unfinished
+inline void cvt1632i_row2_rgb565(u32); // Unfinished
+inline void cvt1624_help1(u32,u8**,u8**);
+inline void cvt1624_help2_forrgba4(u8*,u8*);
+inline void cvt1624_help2_forrgb5a1(u8*,u8*);
+inline void cvt1624_help2_forrgb565(u8*,u8*);
+
 
 // More functions from original codebase.
 void netfunc(void*);
@@ -642,6 +660,56 @@ void convert16to24andInterlace(u32 flag, u32 passedsiz)
 	return;
 }
 
+// Unreadable code alert
+inline void cvt1632i_row1_rgb565(u32 offs)
+{
+	u32* u32ptr = screenbuf + offs;
+	u32 temppx = u32ptr[offs];
+	// Blue
+	u32ptr[offs] = temppx & 0xF8000000;
+	// Green
+	u32ptr[offs]+=(temppx & 0x07E00000 >> 3);
+	// Red
+	u32ptr[offs]+=(temppx & 0x001F0000 >> 5);
+}
+
+inline void cvt1632i_row2_rgb565(u32 offs)
+{
+	u32* u32ptr = screenbuf + offs;
+	u32 temppx = u32ptr[offs];
+	// Blue
+	u32ptr[offs] = temppx & 0x0000F800 << 16;
+	// Green
+	u32ptr[offs]+=(temppx & 0x000007E0 << 13);
+	// Red
+	u32ptr[offs]+=(temppx & 0x0000001F << 11);
+}
+
+// Unfinished, colors are broken. Currently not faster.
+// (The bottleneck may be elsewhere right now. -C 2022-09-03)
+void fastConvert16to32andInterlace2_rgb565(u32 scrbufwidth)
+{
+	u32 offs;
+	u32 offsmax = 120*scrbufwidth;
+
+	if(interlace_px_offset == 0)
+	{
+		while(offs < offsmax)
+		{
+			cvt1632i_row1_rgb565(offs);
+			offs++;
+		}
+	}
+	else
+	{
+		while(offs < offsmax)
+		{
+			cvt1632i_row2_rgb565(offs);
+			offs++;
+		}
+	}
+}
+
 // Helper function 1
 inline void cvt1624_help1(u32 mywidth, u8** endof24bimg, u8** endof16bimg)
 {
@@ -729,171 +797,6 @@ void convert16to24_rgba4(u32 scrbfwidth)
 		buf16 -= 2;
 		buf24 -= 3;
 	}
-}
-
-// Progressive (i.e. not Interlaced)
-void convert16to24(u32 flag, u32 passedsiz)
-{
-	u32 offs_univ = 0;
-	const u32 ofumax = 120*400;
-
-	//const u32 buf2siz = 2*120*400;
-
-	u8* u8scrbuf = (u8*)screenbuf;
-
-	if(interlace_px_offset == 0)
-	{
-		if(flag == 4) // RGBA4 -> RGB8
-		{
-			while(offs_univ < ofumax) // (offs + 2) < passedsiz && (offstwo+1) < buf2siz )
-			{
-				u32 deriveoffs1 = offs_univ*4;
-
-				u8 r = ( u8scrbuf[deriveoffs1+0] & 0b11110000);
-				u8 g = ( u8scrbuf[deriveoffs1+1] & 0b00001111) << 4;
-				u8 b = ( u8scrbuf[deriveoffs1+1] & 0b11110000);
-
-				u32 deriveoffs2 = offs_univ*2;
-
-				pxarraytwo[deriveoffs2+0] = u8scrbuf[deriveoffs1+2];
-				pxarraytwo[deriveoffs2+1] = u8scrbuf[deriveoffs1+3];
-
-				u32 deriveoffs3 = offs_univ*3;
-
-				u8scrbuf[deriveoffs3] = r;
-				u8scrbuf[deriveoffs3+1] = g;
-				u8scrbuf[deriveoffs3+2] = b;
-
-				offs_univ++;
-			}
-		}
-		else if(flag == 3) // RGB5A1 -> RGB8
-		{
-			while(offs_univ < ofumax) // (offs + 2) < passedsiz && (offstwo+1) < buf2siz )
-			{
-				u32 deriveoffs1 = offs_univ*4;
-
-				u8 r = ( u8scrbuf[deriveoffs1+0] & 0b00111110) << 2;
-				u8 g = ( u8scrbuf[deriveoffs1+0] & 0b11000000) >> 3;
-				g = g +((u8scrbuf[deriveoffs1+1] & 0b00000111) << 5);
-				u8 b = ( u8scrbuf[deriveoffs1+1] & 0b11111000);
-
-				u32 deriveoffs2 = offs_univ*2;
-
-				pxarraytwo[deriveoffs2+0] = u8scrbuf[deriveoffs1+2];
-				pxarraytwo[deriveoffs2+1] = u8scrbuf[deriveoffs1+3];
-
-				u32 deriveoffs3 = offs_univ*3;
-
-				u8scrbuf[deriveoffs3] = r;
-				u8scrbuf[deriveoffs3+1] = g;
-				u8scrbuf[deriveoffs3+2] = b;
-
-				offs_univ++;
-			}
-		}
-		else if(flag == 2) // RGB565 -> RGB8
-		{
-			while(offs_univ < ofumax) // (offs + 2) < passedsiz && (offstwo+1) < buf2siz )
-			{
-				u32 deriveoffs1 = offs_univ*4;
-
-				u8 r = ( u8scrbuf[deriveoffs1+0] & 0b00011111) << 3;
-				u8 g = ( u8scrbuf[deriveoffs1+0] & 0b11100000) >> 3;
-				g = g +((u8scrbuf[deriveoffs1+1] & 0b00000111) << 5);
-				u8 b = ( u8scrbuf[deriveoffs1+1] & 0b11111000);
-
-				u32 deriveoffs2 = offs_univ*2;
-
-				pxarraytwo[deriveoffs2+0] = u8scrbuf[deriveoffs1+2];
-				pxarraytwo[deriveoffs2+1] = u8scrbuf[deriveoffs1+3];
-
-				u32 deriveoffs3 = offs_univ*3;
-
-				u8scrbuf[deriveoffs3] = r;
-				u8scrbuf[deriveoffs3+1] = g;
-				u8scrbuf[deriveoffs3+2] = b;
-
-				offs_univ++;
-			}
-		}
-		else
-		{
-			// Do nothing; we expect to receive a valid flag.
-		}
-		interlace_px_offset = 2;
-	}
-	else
-	{
-		// Alternate rows. Complex style...
-
-		if(flag == 4) // RGBA4 -> RGB8
-		{
-			while(offs_univ < ofumax) // (offs + 2) < passedsiz && (offstwo+1) < buf2siz )
-			{
-				u32 deriveoffs2 = offs_univ*2;
-
-				u8 r = ( pxarraytwo[deriveoffs2+0] & 0b11110000);
-				u8 g = ( pxarraytwo[deriveoffs2+0] & 0b00001111) << 4;
-				u8 b = ( pxarraytwo[deriveoffs2+1] & 0b11110000);
-
-				u32 deriveoffs3 = offs_univ*3;
-
-				u8scrbuf[deriveoffs3] = r;
-				u8scrbuf[deriveoffs3+1] = g;
-				u8scrbuf[deriveoffs3+2] = b;
-
-				offs_univ++;
-			}
-		}
-		else if(flag == 3) // RGB5A1 -> RGB8
-		{
-			while(offs_univ < ofumax) // (offs + 2) < passedsiz && (offstwo+1) < buf2siz )
-			{
-				u32 deriveoffs2 = offs_univ*2;
-
-				u8 r = ( pxarraytwo[deriveoffs2+0] & 0b00111110) << 2;
-				u8 g = ( pxarraytwo[deriveoffs2+0] & 0b11000000) >> 3;
-				g = g +((pxarraytwo[deriveoffs2+1] & 0b00000111) << 5);
-				u8 b = ( pxarraytwo[deriveoffs2+1] & 0b11111000);
-
-				u32 deriveoffs3 = offs_univ*3;
-
-				u8scrbuf[deriveoffs3] = r;
-				u8scrbuf[deriveoffs3+1] = g;
-				u8scrbuf[deriveoffs3+2] = b;
-
-				offs_univ++;
-			}
-		}
-		else if(flag == 2) // RGB565 -> RGB8
-		{
-			while(offs_univ < ofumax) // (offs + 2) < passedsiz && (offstwo+1) < buf2siz )
-			{
-				u32 deriveoffs2 = offs_univ*2;
-
-				u8 r = ( pxarraytwo[deriveoffs2+0] & 0b00011111) << 3;
-				u8 g = ( pxarraytwo[deriveoffs2+0] & 0b11100000) >> 3;
-				g = g +((pxarraytwo[deriveoffs2+1] & 0b00000111) << 5);
-				u8 b = ( pxarraytwo[deriveoffs2+1] & 0b11111000);
-
-				u32 deriveoffs3 = offs_univ*3;
-
-				u8scrbuf[deriveoffs3] = r;
-				u8scrbuf[deriveoffs3+1] = g;
-				u8scrbuf[deriveoffs3+2] = b;
-
-				offs_univ++;
-			}
-		}
-		else
-		{
-			// Do nothing; we expect to receive a valid flag.
-		}
-		interlace_px_offset = 0;
-	}
-
-	return;
 }
 
 void dummyinterlace24(u32 passedsiz, u32 scrbfwidth) // UNFINISHED
@@ -1098,12 +1001,6 @@ void netfunc(void* __dummy_arg__)
             }
             else
             {
-            	// TODO: Comment this out, lol.
-                //printf("Packet Received.\nType = %i\nSubtype = %i\nSize = %i\n readbuf return value = %i\n",soc->getPakType(),soc->getPakSubtype(),soc->getPakSize,cy);
-                
-                // Unused label
-                //reread:
-
             	u8 i = soc->getPakSubtype();
             	u8 j = soc->bufferptr[bufsoc_pak_data_offset];
             	// Only used in one of these, but want to be declared up here.
@@ -1463,6 +1360,7 @@ void netfunc(void* __dummy_arg__)
                 		{
                 			if(isold)
                 			{
+                				//fastConvert16to32andInterlace2_rgb565(stride[scr]);
                 				lazyConvert16to32andInterlace(2,siz_2);
 								tjpf = TJPF_RGBX;
 								bsiz = 4;
@@ -1484,8 +1382,6 @@ void netfunc(void* __dummy_arg__)
                 			bsiz = 3;
                 			isInterlaced = false;
                 			scrw = 240;
-
-
                 		}
 
                 	}
