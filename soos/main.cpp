@@ -84,6 +84,7 @@ void CPPCrashHandler();
 
 // Functions added by me, mostly.
 void lazyConvert16to32andInterlace(u32,u32);
+void convert16to24andInterlace(u32,u32);
 
 // More functions from original codebase.
 void netfunc(void*);
@@ -501,6 +502,303 @@ void lazyConvert16to32andInterlace(u32 flag, u32 passedsiz)
 }
 
 void convert16to24andInterlace(u32 flag, u32 passedsiz)
+{
+	u32 offs_univ = 0;
+	const u32 ofumax = 120*400;
+
+	//const u32 buf2siz = 2*120*400;
+
+	u8* u8scrbuf = (u8*)screenbuf;
+
+	if(interlace_px_offset == 0)
+	{
+		if(flag == 4) // RGBA4 -> RGB8
+		{
+			while(offs_univ < ofumax) // (offs + 2) < passedsiz && (offstwo+1) < buf2siz )
+			{
+				u32 deriveoffs1 = offs_univ*4;
+
+				u8 r = ( u8scrbuf[deriveoffs1+0] & 0b11110000);
+				u8 g = ( u8scrbuf[deriveoffs1+1] & 0b00001111) << 4;
+				u8 b = ( u8scrbuf[deriveoffs1+1] & 0b11110000);
+
+				u32 deriveoffs2 = offs_univ*2;
+
+				pxarraytwo[deriveoffs2+0] = u8scrbuf[deriveoffs1+2];
+				pxarraytwo[deriveoffs2+1] = u8scrbuf[deriveoffs1+3];
+
+				u32 deriveoffs3 = offs_univ*3;
+
+				u8scrbuf[deriveoffs3] = r;
+				u8scrbuf[deriveoffs3+1] = g;
+				u8scrbuf[deriveoffs3+2] = b;
+
+				offs_univ++;
+			}
+		}
+		else if(flag == 3) // RGB5A1 -> RGB8
+		{
+			while(offs_univ < ofumax) // (offs + 2) < passedsiz && (offstwo+1) < buf2siz )
+			{
+				u32 deriveoffs1 = offs_univ*4;
+
+				u8 r = ( u8scrbuf[deriveoffs1+0] & 0b00111110) << 2;
+				u8 g = ( u8scrbuf[deriveoffs1+0] & 0b11000000) >> 3;
+				g = g +((u8scrbuf[deriveoffs1+1] & 0b00000111) << 5);
+				u8 b = ( u8scrbuf[deriveoffs1+1] & 0b11111000);
+
+				u32 deriveoffs2 = offs_univ*2;
+
+				pxarraytwo[deriveoffs2+0] = u8scrbuf[deriveoffs1+2];
+				pxarraytwo[deriveoffs2+1] = u8scrbuf[deriveoffs1+3];
+
+				u32 deriveoffs3 = offs_univ*3;
+
+				u8scrbuf[deriveoffs3] = r;
+				u8scrbuf[deriveoffs3+1] = g;
+				u8scrbuf[deriveoffs3+2] = b;
+
+				offs_univ++;
+			}
+		}
+		else if(flag == 2) // RGB565 -> RGB8
+		{
+			while(offs_univ < ofumax) // (offs + 2) < passedsiz && (offstwo+1) < buf2siz )
+			{
+				u32 deriveoffs1 = offs_univ*4;
+
+				u8 r = ( u8scrbuf[deriveoffs1+0] & 0b00011111) << 3;
+				u8 g = ( u8scrbuf[deriveoffs1+0] & 0b11100000) >> 3;
+				g = g +((u8scrbuf[deriveoffs1+1] & 0b00000111) << 5);
+				u8 b = ( u8scrbuf[deriveoffs1+1] & 0b11111000);
+
+				u32 deriveoffs2 = offs_univ*2;
+
+				pxarraytwo[deriveoffs2+0] = u8scrbuf[deriveoffs1+2];
+				pxarraytwo[deriveoffs2+1] = u8scrbuf[deriveoffs1+3];
+
+				u32 deriveoffs3 = offs_univ*3;
+
+				u8scrbuf[deriveoffs3] = r;
+				u8scrbuf[deriveoffs3+1] = g;
+				u8scrbuf[deriveoffs3+2] = b;
+
+				offs_univ++;
+			}
+		}
+		else
+		{
+			// Do nothing; we expect to receive a valid flag.
+		}
+		interlace_px_offset = 2;
+	}
+	else
+	{
+		// Alternate rows. Complex style...
+
+		if(flag == 4) // RGBA4 -> RGB8
+		{
+			while(offs_univ < ofumax) // (offs + 2) < passedsiz && (offstwo+1) < buf2siz )
+			{
+				u32 deriveoffs2 = offs_univ*2;
+
+				u8 r = ( pxarraytwo[deriveoffs2+0] & 0b11110000);
+				u8 g = ( pxarraytwo[deriveoffs2+0] & 0b00001111) << 4;
+				u8 b = ( pxarraytwo[deriveoffs2+1] & 0b11110000);
+
+				u32 deriveoffs3 = offs_univ*3;
+
+				u8scrbuf[deriveoffs3] = r;
+				u8scrbuf[deriveoffs3+1] = g;
+				u8scrbuf[deriveoffs3+2] = b;
+
+				offs_univ++;
+			}
+		}
+		else if(flag == 3) // RGB5A1 -> RGB8
+		{
+			while(offs_univ < ofumax) // (offs + 2) < passedsiz && (offstwo+1) < buf2siz )
+			{
+				u32 deriveoffs2 = offs_univ*2;
+
+				u8 r = ( pxarraytwo[deriveoffs2+0] & 0b00111110) << 2;
+				u8 g = ( pxarraytwo[deriveoffs2+0] & 0b11000000) >> 3;
+				g = g +((pxarraytwo[deriveoffs2+1] & 0b00000111) << 5);
+				u8 b = ( pxarraytwo[deriveoffs2+1] & 0b11111000);
+
+				u32 deriveoffs3 = offs_univ*3;
+
+				u8scrbuf[deriveoffs3] = r;
+				u8scrbuf[deriveoffs3+1] = g;
+				u8scrbuf[deriveoffs3+2] = b;
+
+				offs_univ++;
+			}
+		}
+		else if(flag == 2) // RGB565 -> RGB8
+		{
+			while(offs_univ < ofumax) // (offs + 2) < passedsiz && (offstwo+1) < buf2siz )
+			{
+				u32 deriveoffs2 = offs_univ*2;
+
+				u8 r = ( pxarraytwo[deriveoffs2+0] & 0b00011111) << 3;
+				u8 g = ( pxarraytwo[deriveoffs2+0] & 0b11100000) >> 3;
+				g = g +((pxarraytwo[deriveoffs2+1] & 0b00000111) << 5);
+				u8 b = ( pxarraytwo[deriveoffs2+1] & 0b11111000);
+
+				u32 deriveoffs3 = offs_univ*3;
+
+				u8scrbuf[deriveoffs3] = r;
+				u8scrbuf[deriveoffs3+1] = g;
+				u8scrbuf[deriveoffs3+2] = b;
+
+				offs_univ++;
+			}
+		}
+		else
+		{
+			// Do nothing; we expect to receive a valid flag.
+		}
+		interlace_px_offset = 0;
+	}
+
+	return;
+}
+
+// Helper function 1
+inline void cvt1624_help1(u32 mywidth, u8** endof24bimg, u8** endof16bimg, u32* sparebuffersiz)
+{
+	*endof24bimg = (u8*)screenbuf + (240*mywidth*3) - 1;
+	*endof16bimg = (u8*)screenbuf + (240*mywidth*2) - 1;
+
+	*sparebuffersiz = (mywidth*240*4) - (mywidth*240*3);
+}
+
+inline void cvt1624_help2_forrgba4(u32* myaddr1, u32* myaddr2)
+{
+	u8 r = *( (u8*)myaddr1+0 ) & 0b11110000;
+	u8 g =(*( (u8*)myaddr1+0 ) & 0b00001111) << 4;
+	u8 b = *( (u8*)myaddr1+1 ) & 0b11110000;
+
+	*( (u8*)myaddr2+0 ) = r;
+	*( (u8*)myaddr2+1 ) = g;
+	*( (u8*)myaddr2+2 ) = b;
+}
+
+inline void cvt1624_help2_forrgb5a1(u8* myaddr1, u8* myaddr2)
+{
+	//u8 r = ( u8scrbuf[deriveoffs1+0] & 0b00111110) << 2;
+	//u8 g = ( u8scrbuf[deriveoffs1+0] & 0b11000000) >> 3;
+	//g = g +((u8scrbuf[deriveoffs1+1] & 0b00000111) << 5);
+	//u8 b = ( u8scrbuf[deriveoffs1+1] & 0b11111000);
+
+	u8 r =(myaddr1[0] & 0b00111100) << 2;
+	u8 g =(myaddr1[0] & 0b11000000) >> 3;
+	   g =(myaddr1[1] & 0b00000111) << 5;
+	u8 b =myaddr1[1] & 0b11111000;
+
+	myaddr2[0] = r;
+	myaddr2[1] = g;
+	myaddr2[2] = b;
+}
+
+inline void cvt1624_help3(u8* copyto, u8* copyfrom)
+{
+	copyto[0] = copyfrom[0];
+	copyto[1] = copyfrom[1];
+}
+
+// second argument "scr_width" should be 320 or 400,
+// depending on which screen we have a capture of!
+//
+// Actually, on Old-3DS, this is required to be like the Stride of the screen... so like 50.
+void convert16to24_rgb5a1(u32 passedsiz, u32 scrbfwidth) // UNFINISHED
+{
+	//u8* u8scrbuf = (u8*)screenbuf;
+	//u32 offs_univ = 0;
+	//u32 ofumax = 240*scrbfwidth;
+
+	u32 offs2 = 0;
+
+	// Used as a spare buffer.
+	// This is critical on Old-3DS,
+	// (This is only used when we have a 32bpp image,
+	// so it's free memory otherwise! :)
+	//
+	// Buffer starts at refaddr_endof24bimg + 1
+	u32 sparebuffersiz;
+
+	u8* refaddr_endof24bimg;
+	u8* refaddr_endof16bimg;
+	cvt1624_help1(scrbfwidth, &refaddr_endof24bimg, &refaddr_endof16bimg, &sparebuffersiz);
+
+	// Address to read from, the first of two bytes of
+	// the very last pixel of the 16bpp image.
+	u8* addr1 = refaddr_endof16bimg - 1;
+	// Address to write to, the first of three bytes of
+	// the very last pixel of the 24bpp image.
+	u8* addr2 = refaddr_endof24bimg - 2;
+
+	//u32* addr3 = 0;
+
+	u8* addr4 = 0;
+
+	u32 pixelsdrawn = 0;
+	u32 maxpix = scrbfwidth * 240;
+
+	// this While-loop is only Part 1.
+	// When these two addresses are too close together,
+	// we move on to Part 2.
+	while(addr1 + 1 < addr2 && addr1 >= (u8*)screenbuf)
+	{
+		cvt1624_help2_forrgb5a1(addr1,addr2);
+
+		// Increment and decrement
+		pixelsdrawn++;
+		addr1 -= 2;
+		addr2 -= 3;
+	}
+
+	// Big Part 2
+	while(false)//(pixelsdrawn <= maxpix)
+	{
+		offs2 = 0;
+		addr4 = refaddr_endof24bimg + 1;
+
+		// Copy from 16bpp framebuffer to spare buffer
+		while(addr1 >= (u8*)screenbuf && pixelsdrawn < maxpix && addr4 <= (refaddr_endof24bimg+sparebuffersiz))
+		{
+			cvt1624_help3(addr4,addr1);
+
+			addr1 -= 2;
+			addr4 += 2;
+		}
+
+		if(addr1 < (u8*)screenbuf)
+			addr1 = (u8*)screenbuf;
+
+		offs2 = 0;
+		addr4 = refaddr_endof24bimg + 1;
+
+		// Copy from spare buffer to 24bpp framebuffer
+		while(addr1 <= addr2 && offs2 + 1 < sparebuffersiz && pixelsdrawn < maxpix)
+		{
+			cvt1624_help2_forrgb5a1((u8*)addr4,(u8*)addr2);
+			// Increment
+			addr2 -= 3;
+			offs2 += 2;
+			addr4 += 2;
+			pixelsdrawn++;
+		}
+
+		// Loop back on Part 2 (:
+	}
+
+	// return;
+}
+
+// Progressive (i.e. not Interlaced)
+void convert16to24(u32 flag, u32 passedsiz) // UNFINISHED
 {
 	u32 offs_univ = 0;
 	const u32 ofumax = 120*400;
@@ -1167,22 +1465,34 @@ void netfunc(void* __dummy_arg__)
                 	}
                 	else if(f == 3) // RGB5A1
                 	{
-                		//lazyConvert16to32andInterlace(3,siz_2);
-                		if(isold)
+                		if(cfgblk[5] == 1) // Interlace time (:
                 		{
-                			lazyConvert16to32andInterlace(3,siz_2);
-							tjpf = TJPF_RGBX;
-							bsiz = 4;
+							//lazyConvert16to32andInterlace(3,siz_2);
+							if(isold)
+							{
+								lazyConvert16to32andInterlace(3,siz_2);
+								tjpf = TJPF_RGBX;
+								bsiz = 4;
+							}
+							else
+							{
+								convert16to24andInterlace(3,siz_2);
+								tjpf = TJPF_RGB;
+								bsiz = 3;
+							}
+							isInterlaced = true; // Remove this, was previously used to force-enable
+							scrw = 120;
+							subtype_aka_flags += 0b00100000 + (interlace_px_offset?0:0b01000000);
                 		}
-                		else
+                		else // Progressive mode
                 		{
-                			convert16to24andInterlace(3,siz_2);
-                			tjpf = TJPF_RGB;
-                			bsiz = 3;
+							convert16to24_rgb5a1(siz_2,stride[scr]);
+
+							tjpf = TJPF_RGB;
+							bsiz = 3;
+							isInterlaced = false; // Will be unneeded later
+							scrw = 240;
                 		}
-                		isInterlaced = true;
-						scrw = 120;
-						subtype_aka_flags += 0b00100000 + (interlace_px_offset?0:0b01000000);
                 	}
                 	else if(f == 4) // RGBA4
                 	{
