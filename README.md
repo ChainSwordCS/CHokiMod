@@ -1,23 +1,23 @@
-﻿# CHmod
+﻿# ChirunoMod
 
 A continuation of HzMod, built for Chokistream.
 
-A utility background process for the Nintendo 3DS, purpose-built for screen-streaming over WiFi. Name is subject to change
+A utility background process for the Nintendo 3DS, purpose-built for screen-streaming over WiFi.
 
-`CHmod` is licensed under the `GNU GPLv3` license. See the [License](#license) section of this file for details, and see the file `LICENSE` for more details including the full terms of the license.
+`ChirunoMod` is licensed under the `GNU GPLv3` license. See the [License](#license) section of this file for details, and see the file `LICENSE` for more details including the full terms of the license.
 
 ## Current features
-* screen streaming from 3DS using HorizonScreen
+* screen streaming from 3DS to PC using the Chokistream client
 * VRAM corruptor (hold `ZL`+`ZR`)
 
 ## Getting started
 
-Please note, the PC HorizonScreen application in this repository is old and obsolete. We recommend using [ChokiStream](https://github.com/Eiim/Chokistream), but it may also work with Snickerstream and/or other old versions of HorizonScreen.
+Please note, the PC HorizonScreen application in this repository is old and obsolete. We recommend using [ChokiStream](https://github.com/Eiim/Chokistream), but it may also work with Snickerstream and/or other old versions of HorizonScreen (but most likely will not work, unfortunately).
 
 > //TODO the rest of the readme
 
 ## Credits
-- ### CHmod Credits
+- ### ChirunoMod Credits
   - ChainSwordCS - C++ and C programming, code comments
   - savvychipmunk57 - C++ and C programming, code comments, assistance with C++/C logic and syntax.
   - bol0gna - c++ and C programming, code comments, assistance with C++/C logic and syntax.
@@ -41,7 +41,7 @@ Please note, the PC HorizonScreen application in this repository is old and obso
 
 ## Build Instructions
 
-If you'd like to grab a nightly build, a CIA file that's updated nearly every commit is in the root directory of this repository. (CHmod.cia)
+If you'd like to grab a nightly build, a CIA file that's updated nearly every commit is in the root directory of this repository. (ChirunoMod.cia)
 
 I generally wouldn't recommend setting up a build environment unless you are contributing code to the project, etc.
 
@@ -62,7 +62,7 @@ Note: This branch (the current Main branch) needs to be compiled with legacy lib
 # License
 
 Copyright (c) 2022 ChainSwordCS (https://chainswordcs.com), (chainswordcs@gmail.com)<br>
-`CHmod` is licensed under the `GNU GPLv3` license. See `LICENSE` for details.
+`ChirunoMod` is licensed under the `GNU GPLv3` license. See `LICENSE` for details.
 
 `HzMod` code and project are licensed under `GNU GPLv3` license.<br>
 `HzMod` code and project are Copyright (c) 2017 Sono (https://github.com/SonoSooS), (https://gbatemp.net/members/sono.373734/).<br>
