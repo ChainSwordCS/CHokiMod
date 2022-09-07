@@ -910,14 +910,17 @@ inline int setCpuResourceLimit(u32 passed_cpu_time_limit)
 		return cmdbuf[1];
 }
 
+void waitforDMAtoFinish(u32 dmahand)
+{
+	return;
+}
+
 void netfunc(void* __dummy_arg__)
 {
 	osTickCounterStart(&tick_ctr_1);
-	u64 ticks_count_1 = 0;
 
-	s64 tickcnt_processframe = 0;
-	s64 tickcnt_before1 = 0;
-	s64 tickcnt_after1 = 0;
+	double timems_processframe = 0;
+	double timems_writetosocbuf = 0;
 
     u32 siz = 0x80;
     u32 bsiz = 1;
@@ -1145,43 +1148,30 @@ void netfunc(void* __dummy_arg__)
         
         if(!soc) break;
         
-        if(tickcnt_processframe != 0)
-        {
-        	// Send a debug message as plaintext
 
+        if(timems_processframe != 0)
+        {
         	soc->setPakType(0xFF);
         	soc->setPakSubtype(03);
-
-        	//const char* a = "Hello world?";
-        	//const char* a = "Time spent compressing this frame (in ticks):";
-        	//const char* a = "Time spent compressing this frame (in ticks); ";
-        	char a[128 + sizeof(char)];
-        	sprintf(a,"Time compressing this frame (ticks): %li",tickcnt_processframe);
-
-
-        	u32 c = 128+sizeof(char); // 45;
-
+        	char a[128+sizeof(char)];
+        	u32 c = sprintf(a,"Time compressing this frame (ms): %g",timems_processframe);
         	for(u32 i=0; i<c; i++)
         		((char*)soc->bufferptr + bufsoc_pak_data_offset)[i] = a[i];
         	soc->setPakSize(c);
         	soc->wribuf();
-
-        	// Send actual numbers
-        	// (Note, we may have issues with endianness)
-
-        	//soc->setPakSubtype(01);
-
-        	//char b[64 + sizeof(char)]; // Limit to 64 digits (never happening)
-        	//sprintf(b,"%li",tickcnt_processframe);
-
-        	//for(u32 j=0; j<8; j++)
-        		//((char*)soc->bufferptr + bufsoc_pak_data_offset)[i] = b[j];
-        		//(soc->bufferptr + bufsoc_pak_data_offset)[i] = ((u8*)&tickcnt_processframe)[j];
-
-        	//soc->setPakSize(8);
-        	//soc->setPakSize(c + sizeof(b));
-        	//soc->wribuf();
         }
+        if(timems_writetosocbuf != 0)
+		{
+			soc->setPakType(0xFF);
+			soc->setPakSubtype(03);
+			char a[128+sizeof(char)];
+			u32 c = sprintf(a,"Time taken to write to socket buffer in WRAM (ms): %g",timems_writetosocbuf);
+			for(u32 i=0; i<c; i++)
+				((char*)soc->bufferptr + bufsoc_pak_data_offset)[i] = a[i];
+			soc->setPakSize(c);
+			soc->wribuf();
+		}
+
 
         // If index 0 of the config block is non-zero (we are signaled by the PC to init)
         // And this ImportDisplayCaptureInfo function doesn't error...
@@ -1321,11 +1311,7 @@ void netfunc(void* __dummy_arg__)
             // By default it's 2, which means the ratio is actually 1:1
             while(--loopcnt)
             {
-            	//osTickCounterUpdate(&tick_ctr_1);
-            	//tickcnt_before1 = svcGetSystemTick();
-
-            	mcuReadRegister(0x3D,&tickcnt_before1,8);
-            	//MCUHWC_ReadRegister(0x3D,&tickcnt_before1,8);
+            	osTickCounterUpdate(&tick_ctr_1);
 
                 if(format[scr] == 0xF00FCACE)
                 {
@@ -1534,13 +1520,8 @@ void netfunc(void* __dummy_arg__)
                 	soc->setPakSubtype(subtype_aka_flags);
                 }
 
-                //osTickCounterUpdate(&tick_ctr_1);
-                //ticks_count_1 = tick_ctr_1.elapsed; // Doesn't work lol
-                //ticks_count_1 = osTickCounterRead(&tick_ctr_1);
-                //tickcnt_after1 = svcGetSystemTick();
-                mcuReadRegister(0x3D,&tickcnt_after1,8);
-
-                tickcnt_processframe = tickcnt_after1 - tickcnt_before1;
+                osTickCounterUpdate(&tick_ctr_1);
+                timems_processframe = osTickCounterRead(&tick_ctr_1);
 
                 // Commented-out before I got here. -C
                 //
@@ -1647,7 +1628,12 @@ void netfunc(void* __dummy_arg__)
 
                 // If size is 0, don't send the packet.
                 if(soc->getPakSize())
+                {
+                	osTickCounterUpdate(&tick_ctr_1);
                 	soc->wribuf();
+                	osTickCounterUpdate(&tick_ctr_1);
+					timems_writetosocbuf = osTickCounterRead(&tick_ctr_1);
+                }
 
                 // Commented-out before I got here. -C
                 /*
