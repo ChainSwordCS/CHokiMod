@@ -381,7 +381,14 @@ static u32 format[2] = {0xF00FCACE, 0xF00FCACE};
 // Config Block
 static u8 cfgblk[0x100];
 
-static bool isInterlaced = false;
+// Set to 1 to force Interlaced
+// Set to -1 to force Non-Interlaced
+// Set to 0 to not force anything
+//
+// This is only listened to by a few select bits of code
+// Intended for when either Interlaced or Progressive mode
+// is not yet implemented for a given color format.
+static int forceInterlaced = 0;
 
 static int sock = 0;
 
@@ -938,14 +945,13 @@ void waitforDMAtoFinish(void* __dummy_arg__)
 	{
 		osTickCounterUpdate(&tick_ctr_2_dma);
 		timems_dmaasync = osTickCounterRead(&tick_ctr_2_dma);
-		dmafallbehind = 0;
 	}
 
 	dmastatusthreadrunning = 0;
 	return;
 }
 
-void sendDebugFrametimeStats(double ms_processframe, double ms_writesocbuf, double* ms_dma)
+void sendDebugFrametimeStats(double ms_compress, double ms_writesocbuf, double* ms_dma, double ms_convert)
 {
 	const u32 charbuflimit = 100 + sizeof(char);
 	char str1[charbuflimit];
@@ -953,7 +959,8 @@ void sendDebugFrametimeStats(double ms_processframe, double ms_writesocbuf, doub
 	char str3[charbuflimit];
 	char str4[charbuflimit];
 
-	sprintf(str1,"Image compression took %g ms\n",ms_processframe);
+	sprintf(str4,"Image format conversion / interlacing took %g ms\n",ms_convert);
+	sprintf(str1,"Image compression took %g ms\n",ms_compress);
 	sprintf(str2,"Copying to Socket Buffer (in WRAM) took %g ms\n",ms_writesocbuf);
 
 	if(*ms_dma == 0)
@@ -965,7 +972,8 @@ void sendDebugFrametimeStats(double ms_processframe, double ms_writesocbuf, doub
 	{
 		double ms_dma_localtemp = *ms_dma;
 		*ms_dma = 0;
-		sprintf(str3,"DMA copy from framebuffer to ChirunoMod WRAM took %g ms (%i frames behind)\n",ms_dma_localtemp,dmafallbehind);
+		sprintf(str3,"DMA copy from framebuffer to ChirunoMod WRAM took %g ms (measurement is %i frames behind)\n",ms_dma_localtemp,dmafallbehind);
+		dmafallbehind = 0;
 	}
 
 	soc->setPakType(0xFF);
@@ -973,7 +981,7 @@ void sendDebugFrametimeStats(double ms_processframe, double ms_writesocbuf, doub
 
 	char finalstr[500+sizeof(char)];
 
-	u32 strsiz = sprintf(finalstr,"%s%s%s",str1,str2,str3);
+	u32 strsiz = sprintf(finalstr,"%s%s%s%s",str4,str1,str2,str3);
 
 	strsiz--;
 
@@ -994,6 +1002,7 @@ void netfunc(void* __dummy_arg__)
 
 	double timems_processframe = 0;
 	double timems_writetosocbuf = 0;
+	double timems_formatconvert = 0;
 
     u32 siz = 0x80;
     u32 bsiz = 1;
@@ -1221,7 +1230,7 @@ void netfunc(void* __dummy_arg__)
         
         if(!soc) break;
         
-        sendDebugFrametimeStats(timems_processframe, timems_writetosocbuf, &timems_dmaasync);
+        sendDebugFrametimeStats(timems_processframe,timems_writetosocbuf,&timems_dmaasync,timems_formatconvert);
 
         // If index 0 of the config block is non-zero (we are signaled by the PC to init)
         // And this ImportDisplayCaptureInfo function doesn't error...
@@ -1361,8 +1370,6 @@ void netfunc(void* __dummy_arg__)
             // By default it's 2, which means the ratio is actually 1:1
             while(--loopcnt)
             {
-            	osTickCounterUpdate(&tick_ctr_1);
-
                 if(format[scr] == 0xF00FCACE)
                 {
                     scr = !scr;
@@ -1384,10 +1391,11 @@ void netfunc(void* __dummy_arg__)
                     if(!isold)
                     {
                     	svcFlushProcessDataCache(0xFFFF8001, (u8*)screenbuf, capin.screencapture[scr].framebuf_widthbytesize * 400);
-                    	if(isInterlaced)
+
+                    	if(cfgblk[5] == 1) // If Interlacing requested
                     	{
-                    		// TODO: Consider commenting this in or out for testing.
                     		//svcFlushProcessDataCache(0xFFFF8001, (u8*)scrbuf_two, 3*240*400);
+                    		//svcFlushProcessDataCache(0xFFFF8001, pxarraytwo, 2*120*400);
                     	}
                     }
                 }
@@ -1398,21 +1406,29 @@ void netfunc(void* __dummy_arg__)
 
                 u8 subtype_aka_flags = 0;
 
+
+
                 // TGA
                 if(cfgblk[4] == 01)
                 {
+                	timems_formatconvert = 0;
+                	osTickCounterUpdate(&tick_ctr_1);
+
                 	// Note: interlacing not yet implemented here.
                     init_tga_image(&img, (u8*)screenbuf, scrw, stride[scr], bits);
                     img.image_type = TGA_IMAGE_TYPE_BGR_RLE;
                     img.origin_y = (scr * 400) + (stride[scr] * offs[scr]);
                     tga_write_to_FILE(kdata, &img, &imgsize);
                     
-                    subtype_aka_flags = 0b00001000 + (scr * 0b00010000) + (format[scr] & 0b111);
 
+                    osTickCounterUpdate(&tick_ctr_1);
+                    timems_processframe = osTickCounterRead(&tick_ctr_1);
+
+
+                    subtype_aka_flags = 0b00001000 + (scr * 0b00010000) + (format[scr] & 0b111);
                     soc->setPakType(01); // Image
                     soc->setPakSubtype(subtype_aka_flags);
                     soc->setPakSize(imgsize);
-
                 }
                 // JPEG
                 else // This is written profoundly stupid, courtesy of yours truly. I wouldn't have it any other way. -ChainSwordCS
@@ -1421,30 +1437,33 @@ void netfunc(void* __dummy_arg__)
                 	subtype_aka_flags = 0b00000000 + (scr * 0b00010000) + f;
 
                 	int tjpf = 0;
-                	//u32 newscrw;
-                	//int newbpp;
+
                 	// I don't know if this temp variable is required.
                 	// I don't know if using 'siz' produces correct results
                 	// or if it breaks... -C
                 	// TODO: Not this. Do anything but this. Optimize pls.
                 	u32 siz_2 = (capin.screencapture[scr].framebuf_widthbytesize * stride[scr]);
 
+                	osTickCounterUpdate(&tick_ctr_1);
+
                 	if(f == 0) // RGBA8
                 	{
+                		forceInterlaced = -1; // Function not yet implemented
                 		tjpf = TJPF_RGBX;
                 		//bsiz = 4;
                 		//scrw = 240;
-                		//selectedscreenbuf = screenbuf;
                 	}
                 	else if(f == 1) // RGB8
                 	{
+                		forceInterlaced = -1; // Function not yet implemented
                 		tjpf = TJPF_RGB;
                 		//bsiz = 3;
                 		//scrw = 240;
-                		// Interlace functionality is not implemented,
                 	}
                 	else if(f == 2) // RGB565
                 	{
+                		forceInterlaced = 0;
+
                 		if(cfgblk[5] == 1)
                 		{
                 			if(isold)
@@ -1460,7 +1479,6 @@ void netfunc(void* __dummy_arg__)
 								tjpf = TJPF_RGB;
 								bsiz = 3;
                 			}
-                			isInterlaced = true;
 							scrw = 120;
 							subtype_aka_flags += 0b00100000 + (interlace_px_offset?0:0b01000000);
                 		}
@@ -1469,13 +1487,14 @@ void netfunc(void* __dummy_arg__)
                 			convert16to24_rgb565(stride[scr]);
                 			tjpf = TJPF_RGB;
                 			bsiz = 3;
-                			isInterlaced = false;
                 			scrw = 240;
                 		}
 
                 	}
                 	else if(f == 3) // RGB5A1
                 	{
+                		forceInterlaced = 0;
+
                 		if(cfgblk[5] == 1) // Interlace time (:
                 		{
 							if(isold)
@@ -1490,7 +1509,6 @@ void netfunc(void* __dummy_arg__)
 								tjpf = TJPF_RGB;
 								bsiz = 3;
 							}
-							isInterlaced = true; // Remove this, was previously used to force-enable
 							scrw = 120;
 							subtype_aka_flags += 0b00100000 + (interlace_px_offset?0:0b01000000);
                 		}
@@ -1499,12 +1517,13 @@ void netfunc(void* __dummy_arg__)
 							convert16to24_rgb5a1(stride[scr]);
 							tjpf = TJPF_RGB;
 							bsiz = 3;
-							isInterlaced = false; // Will be unneeded later
 							scrw = 240;
                 		}
                 	}
                 	else if(f == 4) // RGBA4
                 	{
+                		forceInterlaced = 0;
+
                 		if(cfgblk[5] == 1)
                 		{
 							if(isold)
@@ -1520,7 +1539,6 @@ void netfunc(void* __dummy_arg__)
 								tjpf = TJPF_RGB;
 								bsiz = 3;
 							}
-							isInterlaced = true;
 							scrw = 120;
 							subtype_aka_flags += 0b00100000 + (interlace_px_offset?0:0b01000000);
                 		}
@@ -1529,7 +1547,6 @@ void netfunc(void* __dummy_arg__)
                 			convert16to24_rgba4(stride[scr]);
                 			tjpf = TJPF_RGB;
 							bsiz = 3;
-							isInterlaced = false;
 							scrw = 240;
                 		}
                 	}
@@ -1542,8 +1559,11 @@ void netfunc(void* __dummy_arg__)
                 		tjpf = TJPF_RGB;
                 		//bsiz = bsiz;
                 		//scrw = 240;
+                		forceInterlaced = -1; // Trying to interlace an unknown format would not go well.
                 	}
 
+                    osTickCounterUpdate(&tick_ctr_1);
+                    timems_formatconvert = osTickCounterRead(&tick_ctr_1);
 
                 	//*(u32*)&k->data[0] = (scr * 400) + (stride[scr] * offs[scr]);
                 	//u8* dstptr = &k->data[8];
@@ -1565,13 +1585,19 @@ void netfunc(void* __dummy_arg__)
                 	// stride was always variable (different on Old-3DS vs New-3DS)
                 	// so I am not doing anything to that.
                 	if(!tjCompress2(jencode, (u8*)screenbuf, scrw, bsiz*scrw, stride[scr], tjpf, &kdata, (u32*)&imgsize, TJSAMP_420, cfgblk[1], TJFLAG_NOREALLOC | TJFLAG_FASTDCT))
+                	{
+                        osTickCounterUpdate(&tick_ctr_1);
+                        timems_processframe = osTickCounterRead(&tick_ctr_1);
                 		soc->setPakSize(imgsize);
+                	}
+                	else
+                	{
+                		timems_processframe = 0;
+                	}
+
                 	soc->setPakType(01); //Image
                 	soc->setPakSubtype(subtype_aka_flags);
                 }
-
-                osTickCounterUpdate(&tick_ctr_1);
-                timems_processframe = osTickCounterRead(&tick_ctr_1);
 
                 // Commented-out before I got here. -C
                 //
@@ -1583,6 +1609,8 @@ void netfunc(void* __dummy_arg__)
                 //screenDMA(&dmahand, screenbuf, 0x600000 + fboffs, siz, dmaconf);
                 //screenDMA(&dmahand, screenbuf, dbgo, siz, dmaconf);
                 
+                // Current progress through one complete frame
+                // (Only applicable to Old-3DS)
                 if(++offs[scr] == limit[scr]) offs[scr] = 0;
                 
                 // TODO: I feel like I could do a much better job optimizing this,
@@ -1597,6 +1625,7 @@ void netfunc(void* __dummy_arg__)
                 // Planning to add more complex functionality with prioritizing one
                 // screen over the other, like NTR. Maybe.
                 
+                // TODO: This code will be redundant in the future, if not already.
                 // Size of the entire frame (in bytes)
                 // TODO: Does this even return a correct value? Even remotely?
                 siz = (capin.screencapture[scr].framebuf_widthbytesize * stride[scr]);
@@ -1637,9 +1666,10 @@ void netfunc(void* __dummy_arg__)
 
                 //int fmt = format[scr] & 0b0111;
 
-                if(!isold && isInterlaced && interlace_px_offset == 2)
+                if(forceInterlaced != -1 && cfgblk[5] == 1 && interlace_px_offset != 0)
                 {
                 	// Don't do the DMA lol.
+
                 }
                 else
                 {
