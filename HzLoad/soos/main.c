@@ -45,13 +45,14 @@ int main()
     nsInit();
     
 #ifndef _HIMEM
-    //NS_TerminateProcessTID(0x000401300CF00F02ULL); // shutdown HzMod
-    //NS_TerminateProcessTID(0x000401300CF00F09ULL); // ChirunoMod too
-    
+    NS_TerminateProcessTID(0x000401300CF00F02ULL); // shutdown HzMod
+    NS_TerminateProcessTID(0x000401300CF00F09ULL); // ChirunoMod too
+#endif
+
     hidScanInput();
-    
     u32 r = hidKeysHeld();
 
+#ifndef _HIMEM
     if(r & KEY_X) // Do this thing and don't boot
     {
         if(mcuInit() >= 0)

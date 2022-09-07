@@ -26,25 +26,25 @@ include $(DEVKITARM)/3ds_rules
 #     - icon.png
 #     - <libctru folder>/default_icon.png
 #---------------------------------------------------------------------------------
-TARGET		    :=	$(notdir $(CURDIR))
+TARGET		    :=	ChLoad
 BUILD		    :=	build
 SOURCES		    :=	soos
 DATA		    :=	data
 INCLUDES	    :=	inc
-APP_TITLE       :=  HzLoad
-APP_DESCRIPTION :=  HorizonModule Loader
-APP_AUTHOR      :=  MarcusD
-APP_PRODUCT_CODE:=  CTR-N-AHLA
-APP_UNIQUE_ID   :=  0xCFAAF
+APP_TITLE       :=  ChLoad
+APP_DESCRIPTION :=  ChirunoMod + HzMod Loader
+APP_AUTHOR      :=  Sono, ChainSwordCS
+APP_PRODUCT_CODE:=  CTR-N-ACLA
+APP_UNIQUE_ID   :=  0xCFA9F
 ICON            :=  assets/logo.png
 BANNER          :=  assets/banner.png
 
 ifneq ($(strip $(HIMEM)),)
-TARGET		    :=	$(notdir $(CURDIR))_HIMEM
+TARGET		    :=	ChLoad_HIMEM
 BUILD		    :=	build_HIMEM
-APP_TITLE       :=  HzHiLoad
-APP_DESCRIPTION :=  HorizonM HIMEM Loader
-APP_UNIQUE_ID   :=  0xDFAAF
+APP_TITLE       :=  ChHiLoad
+APP_DESCRIPTION :=  ChirunoMod + HzMod HIMEM Loader
+APP_UNIQUE_ID   :=  0xDFA9F
 ICON            :=  assets/logo_HIMEM.png
 BANNER          :=  assets/banner_HIMEM.png
 endif
