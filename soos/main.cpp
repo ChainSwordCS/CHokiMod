@@ -404,6 +404,7 @@ static tga_image img;
 static tjhandle jencode = nullptr;
 
 static TickCounter tick_ctr_1;
+static TickCounter tick_ctr_2_dma;
 
 // If this is 0, we are converting odd-numbered rows.
 // If this is 2, we are converting even-numbered rows.
@@ -910,14 +911,86 @@ inline int setCpuResourceLimit(u32 passed_cpu_time_limit)
 		return cmdbuf[1];
 }
 
-void waitforDMAtoFinish(u32 dmahand)
+double timems_dmaasync = 0;
+u32 dmastatusthreadrunning = 0;
+u32 dmafallbehind = 0;
+Handle dmahand = 0;
+
+void waitforDMAtoFinish(void* __dummy_arg__)
 {
+	// Don't have more than one thread running this
+	// function at a time. Don't want to accidentally
+	// overload and slow the 3DS.
+	dmastatusthreadrunning = 1;
+
+	int r1 = 0;
+
+	//while(r1 != 4)// DMASTATE_DONE)
+	//{
+		//svcSleepThread(1e7); // 10 ms
+		//r2 = svcGetDmaState(&r1,dmahand);
+	//}
+
+
+	r1 = svcWaitSynchronization(dmahand,500000); // keep trying and waiting for half a second
+
+	if(r1 >= 0)
+	{
+		osTickCounterUpdate(&tick_ctr_2_dma);
+		timems_dmaasync = osTickCounterRead(&tick_ctr_2_dma);
+		dmafallbehind = 0;
+	}
+
+	dmastatusthreadrunning = 0;
+	return;
+}
+
+void sendDebugFrametimeStats(double ms_processframe, double ms_writesocbuf, double* ms_dma)
+{
+	const u32 charbuflimit = 100 + sizeof(char);
+	char str1[charbuflimit];
+	char str2[charbuflimit];
+	char str3[charbuflimit];
+	char str4[charbuflimit];
+
+	sprintf(str1,"Image compression took %g ms\n",ms_processframe);
+	sprintf(str2,"Copying to Socket Buffer (in WRAM) took %g ms\n",ms_writesocbuf);
+
+	if(*ms_dma == 0)
+	{
+		sprintf(str3,"DMA not yet finished\n");
+		dmafallbehind++;
+	}
+	else
+	{
+		double ms_dma_localtemp = *ms_dma;
+		*ms_dma = 0;
+		sprintf(str3,"DMA copy from framebuffer to ChirunoMod WRAM took %g ms (%i frames behind)\n",ms_dma_localtemp,dmafallbehind);
+	}
+
+	soc->setPakType(0xFF);
+	soc->setPakSubtype(03);
+
+	char finalstr[500+sizeof(char)];
+
+	u32 strsiz = sprintf(finalstr,"%s%s%s",str1,str2,str3);
+
+	strsiz--;
+
+	for(u32 i=0; i<strsiz; i++)
+	{
+		((char*)soc->bufferptr + bufsoc_pak_data_offset)[i] = finalstr[i];
+	}
+
+	soc->setPakSize(strsiz);
+	soc->wribuf();
 	return;
 }
 
 void netfunc(void* __dummy_arg__)
 {
 	osTickCounterStart(&tick_ctr_1);
+	osTickCounterStart(&tick_ctr_2_dma);
 
 	double timems_processframe = 0;
 	double timems_writetosocbuf = 0;
@@ -946,7 +1019,7 @@ void netfunc(void* __dummy_arg__)
     format[0] = 0xF00FCACE; //invalidate
     
     u32 procid = 0;
-    Handle dmahand = 0;
+
     // Note: in modern libctru, DmaConfig is its own object type.
     u8 dmaconf[0x18];
     memset(dmaconf, 0, sizeof(dmaconf));
@@ -1148,30 +1221,7 @@ void netfunc(void* __dummy_arg__)
         
         if(!soc) break;
         
-
-        if(timems_processframe != 0)
-        {
-        	soc->setPakType(0xFF);
-        	soc->setPakSubtype(03);
-        	char a[128+sizeof(char)];
-        	u32 c = sprintf(a,"Time compressing this frame (ms): %g",timems_processframe);
-        	for(u32 i=0; i<c; i++)
-        		((char*)soc->bufferptr + bufsoc_pak_data_offset)[i] = a[i];
-        	soc->setPakSize(c);
-        	soc->wribuf();
-        }
-        if(timems_writetosocbuf != 0)
-		{
-			soc->setPakType(0xFF);
-			soc->setPakSubtype(03);
-			char a[128+sizeof(char)];
-			u32 c = sprintf(a,"Time taken to write to socket buffer in WRAM (ms): %g",timems_writetosocbuf);
-			for(u32 i=0; i<c; i++)
-				((char*)soc->bufferptr + bufsoc_pak_data_offset)[i] = a[i];
-			soc->setPakSize(c);
-			soc->wribuf();
-		}
-
+        sendDebugFrametimeStats(timems_processframe, timems_writetosocbuf, &timems_dmaasync);
 
         // If index 0 of the config block is non-zero (we are signaled by the PC to init)
         // And this ImportDisplayCaptureInfo function doesn't error...
@@ -1595,11 +1645,21 @@ void netfunc(void* __dummy_arg__)
                 {
                 	u32 srcprochand = prochand ? prochand : 0xFFFF8001;
                 	u8* srcaddr = (u8*)capin.screencapture[scr].framebuf0_vaddr + (siz * offs[scr]);
+
+                	osTickCounterUpdate(&tick_ctr_2_dma);
                 	int r = svcStartInterProcessDma(&dmahand,0xFFFF8001,screenbuf,srcprochand,srcaddr,siz,dmaconf);
+
                 	if(r < 0)
                 	{
                 		procid = 0;
 						format[scr] = 0xF00FCACE; //invalidate
+                	}
+                	else
+                	{
+                		if(dmastatusthreadrunning == 0)
+                		{
+                			threadCreate(waitforDMAtoFinish, nullptr, 0x4000, 0x10, 1, true);
+                		}
                 	}
                 }
 
