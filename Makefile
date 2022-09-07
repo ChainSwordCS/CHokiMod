@@ -27,16 +27,16 @@ include $(DEVKITARM)/3ds_rules
 #     - <libctru folder>/default_icon.png
 #---------------------------------------------------------------------------------
 #TARGET         := $(notdir $(CURDIR))
-TARGET		    :=  CHmod
-BUILD		    :=	chmod-build
+TARGET		    :=  ChirunoMod
+BUILD		    :=	chirunomod-build
 SOURCES		    :=	soos
 DATA		    :=	data
 INCLUDES	    :=	inc
-APP_TITLE       :=  CHMod
-APP_DESCRIPTION :=  CH Module
+APP_TITLE       :=  ChirunoMod
+APP_DESCRIPTION :=  Chiruno Sys Module
 APP_AUTHOR      :=  Sono, ChainSwordCS
-APP_PRODUCT_CODE:=  CTR-N-AHZA
-APP_UNIQUE_ID   :=  0xCF00F
+APP_PRODUCT_CODE:=  CTR-N-ACHA
+APP_UNIQUE_ID   :=  0xCF009
 
 APP_TITLE       :=  $(shell echo "$(APP_TITLE)" | cut -c1-128)
 APP_DESCRIPTION :=  $(shell echo "$(APP_DESCRIPTION)" | cut -c1-256)

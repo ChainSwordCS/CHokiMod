@@ -1,4 +1,6 @@
 #include <3ds.h>
+#include <string.h>
+#include <stdio.h>
 
 #ifndef _HIMEM
 Handle mcuHandle = 0;
@@ -43,11 +45,14 @@ int main()
     nsInit();
     
 #ifndef _HIMEM
-    NS_TerminateProcessTID(0x000401300CF00F02ULL);
+    //NS_TerminateProcessTID(0x000401300CF00F02ULL); // shutdown HzMod
+    //NS_TerminateProcessTID(0x000401300CF00F09ULL); // ChirunoMod too
     
     hidScanInput();
     
-    if(hidKeysHeld() & (KEY_X | KEY_B))
+    u32 r = hidKeysHeld();
+
+    if(r & KEY_X) // Do this thing and don't boot
     {
         if(mcuInit() >= 0)
         {
@@ -62,7 +67,17 @@ int main()
 #endif
     {
         u32 pid;
-        Result ret = NS_LaunchTitle(0x000401300CF00F02ULL, 0, &pid);
+        Result ret;
+
+    	if(r & KEY_Y) // Boot legacy HzMod (original Title ID of course)
+    	{
+    		ret = NS_LaunchTitle(0x000401300CF00F02ULL, 0, &pid);
+    	}
+    	else // Otherwise, continue to boot my fork, ChirunoMod
+    	{
+    		ret = NS_LaunchTitle(0x000401300CF00902ULL, 0, &pid);
+    	}
+
         if(ret < 0)
         {
             gfxInitDefault();
