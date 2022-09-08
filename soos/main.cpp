@@ -94,6 +94,8 @@ void dummyinterlace24(u32,u32); // Very unfinished, broken, do not use.
 
 // Other big functions added by me
 inline int setCpuResourceLimit(u32); // Unfinished, doesn't work IIRC.
+void waitforDMAtoFinish(void*); // Don't use this. This is only used by a separate thread, started from within netfunc.
+void sendDebugFrametimeStats(double,double,double*,double); // It works, and I'm still adding to it.
 
 // Helper functions, added by me.
 inline void cvt1632i_row1_rgb565(u32); // Unfinished
@@ -1021,8 +1023,6 @@ void netfunc(void* __dummy_arg__)
     	osSetSpeedupEnable(1);
     }
     
-    //k = soc->pack(); //Just In Case (tm)
-    
     PatStay(0x00FF00); // Notif LED = Green
     
     format[0] = 0xF00FCACE; //invalidate
@@ -1183,20 +1183,6 @@ void netfunc(void* __dummy_arg__)
                 				break;
                 		}
                 		break;
-
-                	// This case should generally stay unused in the future.
-                    case 0x7E: //CFGBLK_IN
-                    	// TODO: This original code may have bugs. Consider refactoring.
-                    	// The first byte is the packet-type,
-                    	// Bytes 6-8 are the size of the data, in bytes(?)
-                    	// The rest of the bytes are perceived as data.
-                    	//
-                    	// DATA:
-                    	//  The first byte of data indicates the index we copy to / offset at which to start copying.
-                    	//  Skip three bytes for no reason :P
-                    	//  Copy <size> bytes.
-                        //memcpy(cfgblk + k->data[0], &k->data[4], min((u32)(0x100 - k->data[0]), (u32)(k->size - 4)));
-                        break;
                         
                     case 0xFF: // Debug info. Prints to log file, interpreting the Data as u8 char objects.
                     	// Note: packet subtype is ignored, lol.
