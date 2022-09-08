@@ -110,6 +110,10 @@ inline void cvt1624_help2_forrgb565(u8*,u8*);
 void netfunc(void*);
 int main(); // So you can call main from main (:
 
+// Debug flag for testing; use experimental UDP instead of TCP.
+// Defined at compile-time, for now.
+const bool debug_useUDP = true;
+
 static int haznet = 0;
 int checkwifi()
 {
@@ -1085,8 +1089,9 @@ void netfunc(void* __dummy_arg__)
             
             puts("Reading incoming packet...");
             // Consider declaring 'cy' within this function instead of globally.
-            cy = soc->readbuf();
-            if(cy <= 0)
+            int r;
+            r = soc->readbuf();
+            if(r <= 0)
             {
                 printf("Failed to recvbuf: (%i) %s\n", errno, strerror(errno));
                 delete soc;
@@ -1380,7 +1385,7 @@ void netfunc(void* __dummy_arg__)
 
                     	if(cfgblk[5] == 1) // If Interlacing requested
                     	{
-                    		//svcFlushProcessDataCache(0xFFFF8001, (u8*)scrbuf_two, 3*240*400);
+                    		// Note, I'm not sure if this will be required or not. -C
                     		//svcFlushProcessDataCache(0xFFFF8001, pxarraytwo, 2*120*400);
                     	}
                     }
@@ -1888,14 +1893,30 @@ int main()
     
     if(checkwifi())
     {
-        cy = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
-        if(cy <= 0)
+    	int r;
+
+
+    	if(debug_useUDP)
+    	{
+    		// UDP (May not work!)
+
+        	// For third argument, 0 is fine as there's only one form of datagram service(?)
+    		// But also, if IPPROTO_UDP is fine, I may stick with that.
+
+        	r = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    	}
+    	else
+    	{
+    		r = socket(AF_INET, SOCK_STREAM, IPPROTO_IP); // TCP (This works; don't change it.)
+    	}
+
+        if(r <= 0)
         {
             printf("socket error: (%i) %s\n", errno, strerror(errno));
             hangmacro();
         }
         
-        sock = cy;
+        sock = r;
         
         struct sockaddr_in sao;
         sao.sin_family = AF_INET;
@@ -1910,10 +1931,13 @@ int main()
         
         //fcntl(socketid, F_SETFL, fcntl(socketid, F_GETFL, 0) | O_NONBLOCK);
         
-        if(listen(sock, 1) < 0)
+        if(!debug_useUDP) // TCP-only code block
         {
-            printf("listen error: (%i) %s\n", errno, strerror(errno));
-            hangmacro();
+			if(listen(sock, 1) < 0)
+			{
+				printf("listen error: (%i) %s\n", errno, strerror(errno));
+				hangmacro();
+			}
         }
     }
     
