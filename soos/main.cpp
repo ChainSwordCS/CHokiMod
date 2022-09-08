@@ -112,7 +112,7 @@ int main(); // So you can call main from main (:
 
 // Debug flag for testing; use experimental UDP instead of TCP.
 // Defined at compile-time, for now.
-const bool debug_useUDP = true;
+const bool debug_useUDP = false;
 
 static int haznet = 0;
 int checkwifi()
@@ -281,6 +281,41 @@ public:
         return offs;
     }
     
+    // Flags don't matter with UDP.
+    // Pass the address of the "server" (client; PC; we are the server)
+    // (Is this variable "sai" in most cases? I'll have to check)
+    int wribuf_udp(struct sockaddr_in myservaddr)
+    {
+    	u32 mustwri = getPakSize() + 6; // +8 in near future
+    	int offs = 2; // May start elsewhere in near future, not sure.
+    	int ret = 0;
+
+    	while(mustwri)
+    	{
+    		u32 wri_now;
+    		if(mustwri > 0x1000)
+    		{
+    			wri_now = 0x1000;
+    		}
+    		else
+    		{
+    			wri_now = mustwri;
+    		}
+
+    		// get host by name here (maybe) (unfinished)
+
+    		ret = sendto(socketid, &(bufferptr[offs]), wri_now, 0, (struct sockaddr *)&myservaddr, sizeof(myservaddr));
+
+    		if(ret < 0)
+    			return -errno;
+
+    		mustwri -= ret;
+    		offs += ret;
+    	}
+
+    	return offs;
+    }
+
     packet* pack()
     {
         return (packet*)bufferptr;
