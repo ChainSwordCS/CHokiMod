@@ -410,8 +410,6 @@ static GSPGPU_CaptureInfo capin;
 static int isold = 1;
 
 static Result ret = 0;
-static int cx = 0;
-static int cy = 0;
 
 // Related to screen capture. Dimensions and color format.
 static u32 offs[2] = {0, 0};
@@ -750,6 +748,7 @@ void fastConvert16to32andInterlace2_rgb565(u32 scrbufwidth)
 			cvt1632i_row1_rgb565(offs);
 			offs++;
 		}
+		interlace_px_offset = 2;
 	}
 	else
 	{
@@ -758,6 +757,7 @@ void fastConvert16to32andInterlace2_rgb565(u32 scrbufwidth)
 			cvt1632i_row2_rgb565(offs);
 			offs++;
 		}
+		interlace_px_offset = 0;
 	}
 }
 
@@ -804,10 +804,8 @@ inline void cvt1624_help2_forrgb565(u8* myaddr1, u8* myaddr2)
 	myaddr2[2] = b;
 }
 
-// second argument "scr_width" should be 320 or 400,
-// depending on which screen we have a capture of!
-//
-// Actually, on Old-3DS, this is required to be like the Stride of the screen... so like 50.
+// This is Progressive! (Not Interlaced)
+// Also, this works on Old-3DS.
 void convert16to24_rgb5a1(u32 scrbfwidth)
 {
 	u8* buf16; // Copy FROM here, starting at the end of the 16bpp buffer
@@ -822,6 +820,8 @@ void convert16to24_rgb5a1(u32 scrbfwidth)
 	}
 }
 
+// Progressive (Not Interlaced)
+// Works on Old-3DS
 void convert16to24_rgb565(u32 scrbfwidth)
 {
 	u8* buf16;
@@ -836,6 +836,8 @@ void convert16to24_rgb565(u32 scrbfwidth)
 	}
 }
 
+// Progressive (Not Interlaced)
+// Works on Old-3DS
 void convert16to24_rgba4(u32 scrbfwidth)
 {
 	u8* buf16;
@@ -1052,6 +1054,8 @@ void netfunc(void* __dummy_arg__)
     
     int scr = 0;
     
+    bool doDMA = true;
+
     if(isold)
     {
     	// Commented-out before I got here. -C
@@ -1432,8 +1436,6 @@ void netfunc(void* __dummy_arg__)
 
                 u8 subtype_aka_flags = 0;
 
-
-
                 // TGA
                 if(cfgblk[4] == 01)
                 {
@@ -1455,6 +1457,8 @@ void netfunc(void* __dummy_arg__)
                     soc->setPakType(01); // Image
                     soc->setPakSubtype(subtype_aka_flags);
                     soc->setPakSize(imgsize);
+
+                    doDMA = true;
                 }
                 // JPEG
                 else // This is written profoundly stupid, courtesy of yours truly. I wouldn't have it any other way. -ChainSwordCS
@@ -1478,6 +1482,7 @@ void netfunc(void* __dummy_arg__)
                 		tjpf = TJPF_RGBX;
                 		//bsiz = 4;
                 		//scrw = 240;
+                		doDMA = true;
                 	}
                 	else if(f == 1) // RGB8
                 	{
@@ -1485,6 +1490,7 @@ void netfunc(void* __dummy_arg__)
                 		tjpf = TJPF_RGB;
                 		//bsiz = 3;
                 		//scrw = 240;
+                		doDMA = true;
                 	}
                 	else if(f == 2) // RGB565
                 	{
@@ -1494,16 +1500,23 @@ void netfunc(void* __dummy_arg__)
                 		{
                 			if(isold)
                 			{
+                				// Both Fast and Lazy want DMA to be refreshed every frame.
                 				//fastConvert16to32andInterlace2_rgb565(stride[scr]);
                 				lazyConvert16to32andInterlace(2,siz_2);
 								tjpf = TJPF_RGBX;
 								bsiz = 4;
+								doDMA = true;
                 			}
                 			else
                 			{
                 				convert16to24andInterlace(2,siz_2);
 								tjpf = TJPF_RGB;
 								bsiz = 3;
+
+								if(interlace_px_offset != 0)
+									doDMA = false;
+								else
+									doDMA = true;
                 			}
 							scrw = 120;
 							subtype_aka_flags += 0b00100000 + (interlace_px_offset?0:0b01000000);
@@ -1514,6 +1527,7 @@ void netfunc(void* __dummy_arg__)
                 			tjpf = TJPF_RGB;
                 			bsiz = 3;
                 			scrw = 240;
+                			doDMA = true;
                 		}
 
                 	}
@@ -1528,12 +1542,18 @@ void netfunc(void* __dummy_arg__)
 								lazyConvert16to32andInterlace(3,siz_2);
 								tjpf = TJPF_RGBX;
 								bsiz = 4;
+								doDMA = true;
 							}
 							else
 							{
 								convert16to24andInterlace(3,siz_2);
 								tjpf = TJPF_RGB;
 								bsiz = 3;
+
+								if(interlace_px_offset != 0)
+									doDMA = false;
+								else
+									doDMA = true;
 							}
 							scrw = 120;
 							subtype_aka_flags += 0b00100000 + (interlace_px_offset?0:0b01000000);
@@ -1544,6 +1564,7 @@ void netfunc(void* __dummy_arg__)
 							tjpf = TJPF_RGB;
 							bsiz = 3;
 							scrw = 240;
+							doDMA = false;
                 		}
                 	}
                 	else if(f == 4) // RGBA4
@@ -1558,12 +1579,18 @@ void netfunc(void* __dummy_arg__)
 								lazyConvert16to32andInterlace(4,siz_2);
 								tjpf = TJPF_RGBX;
 								bsiz = 4;
+								doDMA = true;
 							}
 							else
 							{
 								convert16to24andInterlace(4,siz_2);
 								tjpf = TJPF_RGB;
 								bsiz = 3;
+
+								if(interlace_px_offset != 0)
+									doDMA = false;
+								else
+									doDMA = true;
 							}
 							scrw = 120;
 							subtype_aka_flags += 0b00100000 + (interlace_px_offset?0:0b01000000);
@@ -1574,6 +1601,7 @@ void netfunc(void* __dummy_arg__)
                 			tjpf = TJPF_RGB;
 							bsiz = 3;
 							scrw = 240;
+							doDMA = true;
                 		}
                 	}
                 	else
@@ -1586,6 +1614,7 @@ void netfunc(void* __dummy_arg__)
                 		//bsiz = bsiz;
                 		//scrw = 240;
                 		forceInterlaced = -1; // Trying to interlace an unknown format would not go well.
+                		doDMA = true;
                 	}
 
                     osTickCounterUpdate(&tick_ctr_1);
@@ -1692,12 +1721,8 @@ void netfunc(void* __dummy_arg__)
 
                 //int fmt = format[scr] & 0b0111;
 
-                if(forceInterlaced != -1 && cfgblk[5] == 1 && interlace_px_offset != 0)
-                {
-                	// Don't do the DMA lol.
 
-                }
-                else
+                if(doDMA)
                 {
                 	u32 srcprochand = prochand ? prochand : 0xFFFF8001;
                 	u8* srcaddr = (u8*)capin.screencapture[scr].framebuf0_vaddr + (siz * offs[scr]);
