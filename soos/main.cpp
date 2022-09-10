@@ -232,26 +232,14 @@ public:
     int readbuf(int flags = 0)
     {
     	puts("attempting recv function call...");
-    	yield();
-
-    	//packet* p = pack();
-
-        int ret = recv(socketid, bufferptr, 4, flags);
-
+        int ret = recv(socketid, bufferptr, 8, flags);
         printf("incoming packet type = %i\nsubtype1 = %i\nsubtype2 = %i\nrecv function return value = %i\n",bufferptr[0],bufferptr[1],bufferptr[2],ret);
 
         if(ret < 0) return -errno;
-        if(ret < 4) return -1; // if it returned 0, we will now error out of this function
+        if(ret < 8) return -1;
 
-        //Get the reported size from the packet data
-
-        ret = recv(socketid, bufferptr+4, 4, flags);
-
-        u32 reads_remaining = getPakSize(); // "this->" ? maybe?
+        u32 reads_remaining = getPakSize();
         printf("incoming packet size = %i\nrecv return value = %i\n",reads_remaining,ret);
-        
-        if(ret < 0) return -errno;
-        if(ret < 4) return -1;
 
         // Copy data to the buffer
 
@@ -263,10 +251,6 @@ public:
             reads_remaining -= ret;
             offs += ret;
         }
-        
-        // We don't need to do this
-        //p->size = size_lol;
-        //recvsize = offs;
 
         return offs;
     }
@@ -342,7 +326,7 @@ public:
 
         // Is this line of code broken? I give up
         //len = vsprintf((char*)p->data + 1, c, args);
-        len = vsprintf((char*)(bufferptr+8), c, args);
+        len = vsprintf((char*)(bufferptr+bufsoc_pak_data_offset), c, args);
 
         va_end(args);
         
@@ -355,7 +339,7 @@ public:
         //printf("Packet error %i: %s\n", p->packettype, p->data + 1);
         setPakType(0xFF);
         setPakSubtype(0x00);
-        setPakSize(len + 2); // Is the +2 necessary?
+        setPakSize(len + 8); // Is the +2 necessary?
         
         return wribuf();
     }
@@ -452,9 +436,7 @@ static Thread netthread = 0;
 static vu32 threadrunning = 0;
 
 static u32* screenbuf = nullptr;
-
-//static u32* scrbuf_two = nullptr;
-static u8 pxarraytwo[2*120*400];
+static u8* pxarraytwo = nullptr;
 
 static tga_image img;
 static tjhandle jencode = nullptr;
@@ -1251,7 +1233,7 @@ void netfunc(void* __dummy_arg__)
 
                     	while(k > 0)
                     	{
-                    		printf( (char*)(soc->bufferptr + bufsoc_pak_data_offset) + l);
+                    		printf( (char*)(soc->bufferptr + bufsoc_pak_data_offset) );
                     		k--;
                     		l++;
                     	}
@@ -1319,7 +1301,7 @@ void netfunc(void* __dummy_arg__)
 
                 // Both of these lines of code are interchangeable. They both always return
                 // 0x4672616D and I don't know why. ):
-                ((u32*)soc->bufferptr)[3] = capin.screencapture[scr].framebuf_widthbytesize;
+                *((u32*)(soc->bufferptr+bufsoc_pak_data_offset)) = capin.screencapture[scr].framebuf_widthbytesize;
                 //GSPGPU_ReadHWRegs(0x1EF00090, &((u32*)soc->bufferptr)[3],4);
 
                 soc->setPakSize(4);
@@ -1663,23 +1645,11 @@ void netfunc(void* __dummy_arg__)
                 	soc->setPakType(01); //Image
                 	soc->setPakSubtype(subtype_aka_flags);
                 }
-
-                // Commented-out before I got here. -C
-                //
-                //k->size += 4;
-                //
-                //svcStartInterProcessDma(&dmahand, 0xFFFF8001, screenbuf, prochand ? prochand : 0xFFFF8001, fbuf[0] + fboffs, siz, dmaconf);
-                //svcFlushProcessDataCache(prochand ? prochand : 0xFFFF8001, capin.screencapture[0].framebuf0_vaddr, capin.screencapture[0].framebuf_widthbytesize * 400);
-                //svcStartInterProcessDma(&dmahand, 0xFFFF8001, screenbuf, prochand ? prochand : 0xFFFF8001, (u8*)capin.screencapture[0].framebuf0_vaddr + fboffs, siz, dmaconf);
-                //screenDMA(&dmahand, screenbuf, 0x600000 + fboffs, siz, dmaconf);
-                //screenDMA(&dmahand, screenbuf, dbgo, siz, dmaconf);
                 
                 // Current progress through one complete frame
                 // (Only applicable to Old-3DS)
                 if(++offs[scr] == limit[scr]) offs[scr] = 0;
                 
-                // TODO: I feel like I could do a much better job optimizing this,
-                // but I need to refactor a lot of code to do so. -C
                 if(cfgblk[3] == 01) // Top Screen Only
                 	scr = 0;
                 else if(cfgblk[3] == 02) // Bottom Screen Only
@@ -1700,20 +1670,6 @@ void netfunc(void* __dummy_arg__)
                 scrw = capin.screencapture[scr].framebuf_widthbytesize / bsiz;
 
                 bits = 4 << bsiz; // ?
-                
-
-                // Intentionally mis-reporting our color bit-depth to the PC client (!)
-
-                // Framebuffer Color Format = RGB565
-                //if((format[scr] & 0b111) == 2)
-                //{
-                //	bits = 17;
-                //}
-                // Framebuffer Color Format = RGBA4
-                //if((format[scr] & 0b111) == 4)
-                //{
-                //	bits = 18;
-                //}
 
                 Handle prochand = 0;
                 if(procid) if(svcOpenProcess(&prochand, procid) < 0) procid = 0;
@@ -1726,11 +1682,6 @@ void netfunc(void* __dummy_arg__)
                 //
                 // Note: I don't currently know enough to make those adjustments.
                 // Lots more testing and fine tuning is needed. -ChainSwordCS
-
-                //TODO: Consider optimizing this better in the future too.
-
-                //int fmt = format[scr] & 0b0111;
-
 
                 if(doDMA)
                 {
@@ -1753,19 +1704,6 @@ void netfunc(void* __dummy_arg__)
                 		}
                 	}
                 }
-
-                //if( 0 > svcStartInterProcessDma(
-                //		&dmahand, // Note: This handle is signaled when the DMA is finished.
-				//		0xFFFF8001, // Shortcut for: the handle of this process
-				//		screenbuf, // Screenbuffer pointer
-				//		prochand ? prochand : 0xFFFF8001, // 'Source Process Handle' ; if prochand = 0, shortcut to handle of this process
-                //		(u8*)capin.screencapture[scr].framebuf0_vaddr + (siz * offs[scr]), // Source Address
-				//		bytestocopy, // Bytes to copy
-				//		dmaconf) ) // DMA Config / Flags
-                //{
-                //    procid = 0;
-                //    format[scr] = 0xF00FCACE; //invalidate
-                //}
                 
                 if(prochand)
                 {
@@ -1785,17 +1723,6 @@ void netfunc(void* __dummy_arg__)
                 	osTickCounterUpdate(&tick_ctr_1);
 					timems_writetosocbuf = osTickCounterRead(&tick_ctr_1);
                 }
-
-                // Commented-out before I got here. -C
-                /*
-                k->packetid = 0xFF;
-                k->size = 4;
-                *(u32*)k->data = dbgo;
-                soc->wribuf();
-                
-                dbgo += 240 * 3;
-                if(dbgo >= 0x600000) dbgo = 0;
-                */
                 
                 // Limit this thread to do other things? (On Old-3DS)
                 // TODO: Fine-tune Old-3DS performance. Maybe remove this outright.
@@ -1826,9 +1753,6 @@ void netfunc(void* __dummy_arg__)
         svcStopDma(dmahand);
         svcCloseHandle(dmahand);
     }
-    
-    //if(prochand) svcCloseHandle(prochand);
-    //screenExit();
     
     threadrunning = 0;
 }
@@ -1907,15 +1831,13 @@ int main()
     }
     while(0);
 
-    if(ret < 0) *(u32*)0x1000F0 = ret;//hangmacro();
+    if(ret < 0) *(u32*)0x1000F0 = ret;
     
     jencode = tjInitCompress();
-    if(!jencode) *(u32*)0x1000F0 = 0xDEADDEAD;//hangmacro();
+    if(!jencode) *(u32*)0x1000F0 = 0xDEADDEAD;
     
     // Initialize communication with the GSP service, for GPU stuff
     gspInit();
-    
-    //gxInit();
     
     if(isold)
     {
@@ -1924,9 +1846,8 @@ int main()
     else
     {
         screenbuf = (u32*)memalign(8, 400 * 240 * 4);
-        //scrbuf_two = (u32*)memalign(8, 400 * 120 * 3); too large...
-        //u8 pxarr2data[2*120*400];
-        //pxarraytwo = pxarr2data;
+        // Note, pxarraytwo may be fully unnecessary in the future.
+        pxarraytwo = (u8*)memalign(8, 400 * 120 * 4);
     }
     
     // If memalign returns null or 0
@@ -1999,8 +1920,6 @@ int main()
             hangmacro();
         }
         
-        //fcntl(socketid, F_SETFL, fcntl(socketid, F_GETFL, 0) | O_NONBLOCK);
-        
         if(!debug_useUDP) // TCP-only code block
         {
 			if(listen(sock, 1) < 0)
@@ -2026,8 +1945,6 @@ int main()
         kDown = hidKeysDown();
         kHeld = hidKeysHeld();
         kUp = hidKeysUp();
-        
-        //printf("svcGetSystemTick: %016llX\n", svcGetSystemTick());
         
         // If any buttons are pressed, make the Notif LED pulse red
         // (Annoying and waste of CPU time. -C)
@@ -2091,6 +2008,7 @@ int main()
                     }
                     
                     //Could above and below if statements be combined? lol -H
+                    //No, we wait a little while to see if netthread is still not running or if it was just slow starting up. -C
                     
                     if(netthread)
                     {
@@ -2114,7 +2032,6 @@ int main()
         
         if(netthread && !threadrunning)
         {
-            //TODO: Is this code broken? Hasn't yet been changed. -C
             netthread = nullptr;
             goto reloop;
         }
@@ -2149,8 +2066,6 @@ int main()
     SOCU_ShutdownSockets();
     
     socExit();
-    
-    //gxExit();
     
     gspExit();
     
