@@ -180,12 +180,17 @@ public:
 
     u8 getPakType()
     {
-    	return bufferptr[2];
+    	return bufferptr[0];
     }
 
     u8 getPakSubtype()
     {
-    	return bufferptr[3];
+    	return bufferptr[1];
+    }
+
+    u8 getPakSubtype2()
+    {
+    	return bufferptr[2];
     }
 
     // Retrieve the packet size, derived from the byte array
@@ -203,13 +208,19 @@ public:
 
     void setPakType(u8 input)
     {
-    	bufferptr[2] = input;
+    	bufferptr[0] = input;
     	return;
     }
 
     void setPakSubtype(u8 input)
     {
-    	bufferptr[3] = input;
+    	bufferptr[1] = input;
+    	return;
+    }
+
+    void setPakSubtype2(u8 input)
+    {
+    	bufferptr[2] = input;
     	return;
     }
 
@@ -225,12 +236,12 @@ public:
 
     	//packet* p = pack();
 
-        int ret = recv(socketid, bufferptr+2, 2, flags);
+        int ret = recv(socketid, bufferptr, 4, flags);
 
-        printf("incoming packet type = %i\npacket subtype = %i\nrecv function return value = %i\n",bufferptr[2],bufferptr[3],ret);
+        printf("incoming packet type = %i\nsubtype1 = %i\nsubtype2 = %i\nrecv function return value = %i\n",bufferptr[0],bufferptr[1],bufferptr[2],ret);
 
         if(ret < 0) return -errno;
-        if(ret < 2) return -1; // if it returned 0, we will now error out of this function
+        if(ret < 4) return -1; // if it returned 0, we will now error out of this function
 
         //Get the reported size from the packet data
 
@@ -262,9 +273,8 @@ public:
     
     int wribuf(int flags = 0)
     {
-    	//u32 size = getPakSize();
-        int mustwri = getPakSize() + 6; // +4?
-        int offs = 2; // Start at 2, because we have to send the header.
+        u32 mustwri = getPakSize() + 8;
+        int offs = 0;
         int ret = 0;
         
         while(mustwri)
@@ -286,8 +296,8 @@ public:
     // (Is this variable "sai" in most cases? I'll have to check)
     int wribuf_udp(struct sockaddr_in myservaddr)
     {
-    	u32 mustwri = getPakSize() + 6; // +8 in near future
-    	int offs = 2; // May start elsewhere in near future, not sure.
+    	u32 mustwri = getPakSize() + 8;
+    	int offs = 0;
     	int ret = 0;
 
     	while(mustwri)
