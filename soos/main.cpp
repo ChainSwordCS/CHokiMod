@@ -240,7 +240,7 @@ public:
 
         u32 reads_remaining = getPakSize();
         printf("incoming packet size = %i\nrecv return value = %i\n",reads_remaining,ret);
-
+        
         // Copy data to the buffer
 
         u32 offs = bufsoc_pak_data_offset; // Starting offset
@@ -251,7 +251,7 @@ public:
             reads_remaining -= ret;
             offs += ret;
         }
-
+        
         return offs;
     }
     
@@ -339,7 +339,7 @@ public:
         //printf("Packet error %i: %s\n", p->packettype, p->data + 1);
         setPakType(0xFF);
         setPakSubtype(0x00);
-        setPakSize(len + 8); // Is the +2 necessary?
+        setPakSize(len); // Is "len + 2" necessary?
         
         return wribuf();
     }
@@ -436,7 +436,10 @@ static Thread netthread = 0;
 static vu32 threadrunning = 0;
 
 static u32* screenbuf = nullptr;
-static u8* pxarraytwo = nullptr;
+// This line of code, instead of the one after it, might be required?
+// The latter seems to break DMA time stat reporting code??? How?????
+static u8 pxarraytwo[2*120*400];
+//static u8* pxarraytwo = nullptr;
 
 static tga_image img;
 static tjhandle jencode = nullptr;
@@ -988,7 +991,7 @@ void waitforDMAtoFinish(void* __dummy_arg__)
 
 void sendDebugFrametimeStats(double ms_compress, double ms_writesocbuf, double* ms_dma, double ms_convert)
 {
-	const u32 charbuflimit = 100 + sizeof(char);
+	const u32 charbuflimit = 100 + sizeof(char); // ? I don't even know what this means but whatever.
 	char str1[charbuflimit];
 	char str2[charbuflimit];
 	char str3[charbuflimit];
@@ -1066,7 +1069,7 @@ void netfunc(void* __dummy_arg__)
 
     // Note: in modern libctru, DmaConfig is its own object type.
     u8 dmaconf[0x18];
-    memset(dmaconf, 0, sizeof(dmaconf));
+    memset(dmaconf, 0, 0x18);
 
     // https://www.3dbrew.org/wiki/Corelink_DMA_Engines
     dmaconf[0] = -1; // -1 = Auto-assign to a free channel (Arm11: 3-7, Arm9:0-1)
@@ -1233,7 +1236,7 @@ void netfunc(void* __dummy_arg__)
 
                     	while(k > 0)
                     	{
-                    		printf( (char*)(soc->bufferptr + bufsoc_pak_data_offset) );
+                    		printf((char*)(soc->bufferptr + bufsoc_pak_data_offset));
                     		k--;
                     		l++;
                     	}
@@ -1302,6 +1305,7 @@ void netfunc(void* __dummy_arg__)
                 // Both of these lines of code are interchangeable. They both always return
                 // 0x4672616D and I don't know why. ):
                 *((u32*)(soc->bufferptr+bufsoc_pak_data_offset)) = capin.screencapture[scr].framebuf_widthbytesize;
+                //((u32*)soc->bufferptr)[3] = capin.screencapture[scr].framebuf_widthbytesize;
                 //GSPGPU_ReadHWRegs(0x1EF00090, &((u32*)soc->bufferptr)[3],4);
 
                 soc->setPakSize(4);
@@ -1645,7 +1649,7 @@ void netfunc(void* __dummy_arg__)
                 	soc->setPakType(01); //Image
                 	soc->setPakSubtype(subtype_aka_flags);
                 }
-                
+
                 // Current progress through one complete frame
                 // (Only applicable to Old-3DS)
                 if(++offs[scr] == limit[scr]) offs[scr] = 0;
@@ -1670,7 +1674,7 @@ void netfunc(void* __dummy_arg__)
                 scrw = capin.screencapture[scr].framebuf_widthbytesize / bsiz;
 
                 bits = 4 << bsiz; // ?
-
+                
                 Handle prochand = 0;
                 if(procid) if(svcOpenProcess(&prochand, procid) < 0) procid = 0;
                 
@@ -1723,7 +1727,7 @@ void netfunc(void* __dummy_arg__)
                 	osTickCounterUpdate(&tick_ctr_1);
 					timems_writetosocbuf = osTickCounterRead(&tick_ctr_1);
                 }
-                
+
                 // Limit this thread to do other things? (On Old-3DS)
                 // TODO: Fine-tune Old-3DS performance. Maybe remove this outright.
                 if(isold) svcSleepThread(5e6);
@@ -1842,12 +1846,14 @@ int main()
     if(isold)
     {
         screenbuf = (u32*)memalign(8, 50 * 240 * 4);
+        //pxarraytwo = (u8*)memalign(8, 8); // Sane default / placeholder, I hope.
     }
     else
     {
         screenbuf = (u32*)memalign(8, 400 * 240 * 4);
+        // Note 2: Allocating memory for this variable *here* seems to break DMA time stat reporting, for some reason.
         // Note, pxarraytwo may be fully unnecessary in the future.
-        pxarraytwo = (u8*)memalign(8, 400 * 120 * 4);
+        //pxarraytwo = (u8*)memalign(8, 400 * 120 * 4);
     }
     
     // If memalign returns null or 0
@@ -2007,8 +2013,9 @@ int main()
                         svcSleepThread(2e9);
                     }
                     
-                    //Could above and below if statements be combined? lol -H
-                    //No, we wait a little while to see if netthread is still not running or if it was just slow starting up. -C
+                    // Could above and below if statements be combined? lol -H
+                    // No, we wait a little while to see if netthread is still
+                    // not running or if it was just slow starting up. -C
                     
                     if(netthread)
                     {
