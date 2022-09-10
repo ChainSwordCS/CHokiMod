@@ -1,4 +1,5 @@
 #include <3ds.h>
+#include <3ds/gpu/gx.h>
 
 /*
     ChirunoMod - A utility background process for the Nintendo 3DS,
@@ -42,6 +43,7 @@ extern "C"
 #include "miscdef.h"
 //#include "service/screen.h"
 #include "service/mcu.h"
+#include "service/gx.h"
 #include "misc/pattern.h"
 
 #include "tga/targa.h"
@@ -1072,19 +1074,29 @@ void netfunc(void* __dummy_arg__)
     memset(dmaconf, 0, 0x18);
 
     // https://www.3dbrew.org/wiki/Corelink_DMA_Engines
+    // https://github.com/devkitPro/libctru/blob/master/libctru/include/3ds/svc.h
+    //
     dmaconf[0] = -1; // -1 = Auto-assign to a free channel (Arm11: 3-7, Arm9:0-1)
-    //dmaconf[1] = 0; // Endian swap size. 0 = None, 2 = 16-bit, 4 = 32-bit, 8 = 64-bit
-    //dmaconf[2] = 0b11000000; // Flags. Here, SRC_IS_RAM and DST_IS_RAM
+    dmaconf[1] = 0; // Endian swap size. 0 = None, 2 = 16-bit, 4 = 32-bit, 8 = 64-bit
+    dmaconf[2] = 0b11000000; // Flags. DMACFG_USE_SRC_CONFIG and DMACFG_USE_DST_CONFIG
     //dmaconf[3] = 0; // Padding.
 
     // Destination Config block
-    //dmaconf[4] is peripheral ID. FF for ram (it's forced to FF anyway)
-    //dmaconf[5] is Allowed Burst Sizes. Defaults to "1|2|4|8" (15). Also acceptable = 4, 8, "4|8" (12)
-    //dmaconf[6] and [7] are a u16 int, "gather_granule_size"
-    //dmaconf[8] and [9] are a u16 int, "gather_stride"
-    //dmaconf[10] and [11] are a u16 int, "scatter_granule_size"
-    //dmaconf[12] and [13] are a u16 int, "scatter_stride"
+    dmaconf[4] = 0xFF; // peripheral ID. FF for ram (it's forced to FF anyway)
+    dmaconf[5] = 8|4|2|1; // Allowed Alignments. Defaults to "1|2|4|8" (15). Also acceptable = 4, 8, "4|8" (12)
+    *(u16*)(dmaconf+6) = 3;// Not exactly known...
+    *(u16*)(dmaconf+8) = 3; // Not exactly known...
+    *(u16*)(dmaconf+10) = 6; // Number of bytes transferred at once(?)
+    *(u16*)(dmaconf+12) = 6; // Number of bytes transferred at once(?) (or Stride)
     
+    // Source Config block
+    dmaconf[14] = 0xFF; // Peripheral ID
+    dmaconf[15] = 8|4|2|1; // Allowed Alignments (!)
+    *(u16*)(dmaconf+16) = 0x0003;//x80; // burstSize? (Number of bytes transferred in a burst loop. Can be 0, in which case the max allowed alignment is used as a unit.)
+    *(u16*)(dmaconf+18) = 0x0003;//x80; // burstStride? (Burst loop stride, can be <= 0.
+    *(u16*)(dmaconf+20) = 6; // transferSize? (Number of bytes transferred in a "transfer" loop, which is made of burst loops.)
+    *(u16*)(dmaconf+22) = 6; // transferStride? ("Transfer" loop stride, can be <= 0.)
+
     //screenInit();
     
     PatPulse(0x7F007F); // Notif LED = Medium Purple
@@ -1692,8 +1704,15 @@ void netfunc(void* __dummy_arg__)
                 	u32 srcprochand = prochand ? prochand : 0xFFFF8001;
                 	u8* srcaddr = (u8*)capin.screencapture[scr].framebuf0_vaddr + (siz * offs[scr]);
 
+                	//u8 fm = format[scr] & 0b0111;
+                	//u8 formatsbyte = (fm << 4) + fm; //0b01110111;
+
+                	//u8 gputransferflag[4] = {0b00100000,formatsbyte,0,0};
+
                 	osTickCounterUpdate(&tick_ctr_2_dma);
-                	int r = svcStartInterProcessDma(&dmahand,0xFFFF8001,screenbuf,srcprochand,srcaddr,siz,dmaconf);
+                	int r = svcStartInterProcessDma(&dmahand,0xFFFF8001,screenbuf,srcprochand,srcaddr,siz/2,dmaconf);
+
+                	//int r = GX_DisplayTransfer((u32*)srcaddr,(240 << 16) + 400,(u32*)screenbuf,(240 << 16) + 400,*((u32*)gputransferflag));
 
                 	if(r < 0)
                 	{
