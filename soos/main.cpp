@@ -282,7 +282,7 @@ public:
     // Flags don't matter with UDP.
     // Pass the address of the "server" (client; PC; we are the server)
     // (Is this variable "sai" in most cases? I'll have to check)
-    int wribuf_udp(u32 myservaddr)
+    int wribuf_udp(struct sockaddr_in myservaddr)
     {
     	u32 mustwri = getPakSize() + 8;
     	int offs = 0;
@@ -302,7 +302,21 @@ public:
 
     		// get host by name here (maybe) (unfinished)
 
-    		ret = sendto(socketid, &(bufferptr[offs]), wri_now, 0, (struct sockaddr *)&myservaddr, sizeof(myservaddr));
+    		//in_addr_t ina1 = (u64)(myservaddr);
+
+    		//sockaddr_in* sai1 = nullptr;
+    		//sai1->sin_family = AF_INET;
+    		//sai1->sin_port = 6464;
+
+    		// error (:
+    		//sai1->sin_addr(ina1); // = (inaddr) nullptr; //&((u64)(ina1));
+
+    		//sockaddr* sa1 = nullptr;
+    		//sa1->sa_family = AF_INET;
+    		//sa1->sa_data = new u8[14];
+    		//(sa1->sa_data) = (char*)sai1;
+
+    		ret = sendto(socketid, &(bufferptr[offs]), wri_now, 0, (struct sockaddr *)&myservaddr, 16);
 
     		if(ret < 0)
     			return -errno;
@@ -1744,7 +1758,7 @@ void netfunc(void* __dummy_arg__)
                 {
                 	osTickCounterUpdate(&tick_ctr_1);
                 	//soc->wribuf();
-                	soc->wribuf_udp(soc->pc_client_ip);
+                	soc->wribuf_udp(sai);
                 	osTickCounterUpdate(&tick_ctr_1);
 					timems_writetosocbuf = osTickCounterRead(&tick_ctr_1);
                 }
@@ -2014,6 +2028,11 @@ int main()
 
                     // Hardcoded: 192.168.86.29
                     soc->pc_client_ip = 0xC0A8561D;
+
+                    //struct sockaddr_in sai;
+				    sai.sin_family = AF_INET;
+				    sai.sin_addr.s_addr = 0xC0A8561D;
+				    sai.sin_port = htons(port);
 
                     // Priority:
                     // Range from 0x00 to 0x3F. Lower numbers mean higher priority.
