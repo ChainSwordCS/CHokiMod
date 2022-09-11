@@ -325,7 +325,7 @@ public:
     		offs += ret;
     	}
 
-    	return offs;
+    	return ret;
     }
 
     packet* pack()
@@ -1758,7 +1758,10 @@ void netfunc(void* __dummy_arg__)
                 {
                 	osTickCounterUpdate(&tick_ctr_1);
                 	//soc->wribuf();
-                	soc->wribuf_udp(sai);
+
+                	int r9 = soc->wribuf_udp(sai);
+                	printf("wribuf_udp return value = %i", r9);
+
                 	osTickCounterUpdate(&tick_ctr_1);
 					timems_writetosocbuf = osTickCounterRead(&tick_ctr_1);
                 }
@@ -2031,8 +2034,15 @@ int main()
 
                     //struct sockaddr_in sai;
 				    sai.sin_family = AF_INET;
+				    //sai.sin_addr.s_addr = 0x1D56A8C0;
 				    sai.sin_addr.s_addr = 0xC0A8561D;
 				    sai.sin_port = htons(port);
+
+				    soc->setPakType(0xFF);
+				    soc->setPakSize(1);
+
+				    int r9 = soc->wribuf_udp(sai);
+				    printf("Initial wribuf_udp return value = %i", r9);
 
                     // Priority:
                     // Range from 0x00 to 0x3F. Lower numbers mean higher priority.
@@ -2102,6 +2112,13 @@ int main()
             u32* ptr = (u32*)0x1F000000;
             int o = 0x00600000 >> 2;
             while(o--) *(ptr++) = rand();
+
+            soc->setPakType(0xFF);
+			soc->setPakSize(1);
+			soc->bufferptr[bufsoc_pak_data_offset] = 9;
+
+			int r9 = soc->wribuf_udp(sai);
+			printf("ZLZR wribuf_udp return value = %i\n", r9);
         }
         
         yield();
