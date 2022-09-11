@@ -114,7 +114,7 @@ int main(); // So you can call main from main (:
 
 // Debug flag for testing; use experimental UDP instead of TCP.
 // Defined at compile-time, for now.
-const bool debug_useUDP = false;
+const bool debug_useUDP = true;
 
 static int haznet = 0;
 int checkwifi()
@@ -158,6 +158,7 @@ public:
     int bufsize;
     // recvsize is useless; is never read from.
     int recvsize;
+    u32 pc_client_ip;
     
     bufsoc(int passed_sock, int passed_bufsize)
     {
@@ -166,6 +167,7 @@ public:
         
         recvsize = 0;
         socketid = passed_sock;
+        pc_client_ip = 0;
     }
     
     // Destructor
@@ -280,7 +282,7 @@ public:
     // Flags don't matter with UDP.
     // Pass the address of the "server" (client; PC; we are the server)
     // (Is this variable "sai" in most cases? I'll have to check)
-    int wribuf_udp(struct sockaddr_in myservaddr)
+    int wribuf_udp(u32 myservaddr)
     {
     	u32 mustwri = getPakSize() + 8;
     	int offs = 0;
@@ -1084,20 +1086,18 @@ void netfunc(void* __dummy_arg__)
     // Destination Config block
     dmaconf[4] = 0xFF; // peripheral ID. FF for ram (it's forced to FF anyway)
     dmaconf[5] = 8|4|2|1; // Allowed Alignments. Defaults to "1|2|4|8" (15). Also acceptable = 4, 8, "4|8" (12)
-    *(u16*)(dmaconf+6) = 3;// Not exactly known...
-    *(u16*)(dmaconf+8) = 3; // Not exactly known...
-    *(u16*)(dmaconf+10) = 6; // Number of bytes transferred at once(?)
-    *(u16*)(dmaconf+12) = 6; // Number of bytes transferred at once(?) (or Stride)
+    //*(u16*)(dmaconf+6) = 3;// Not exactly known...
+    //*(u16*)(dmaconf+8) = 3; // Not exactly known...
+    //*(u16*)(dmaconf+10) = 6; // Number of bytes transferred at once(?)
+    //*(u16*)(dmaconf+12) = 6; // Number of bytes transferred at once(?) (or Stride)
     
     // Source Config block
     dmaconf[14] = 0xFF; // Peripheral ID
     dmaconf[15] = 8|4|2|1; // Allowed Alignments (!)
-    *(u16*)(dmaconf+16) = 0x0003;//x80; // burstSize? (Number of bytes transferred in a burst loop. Can be 0, in which case the max allowed alignment is used as a unit.)
-    *(u16*)(dmaconf+18) = 0x0003;//x80; // burstStride? (Burst loop stride, can be <= 0.
-    *(u16*)(dmaconf+20) = 6; // transferSize? (Number of bytes transferred in a "transfer" loop, which is made of burst loops.)
-    *(u16*)(dmaconf+22) = 6; // transferStride? ("Transfer" loop stride, can be <= 0.)
-
-    //screenInit();
+    //*(u16*)(dmaconf+16) = 0x0003;//x80; // burstSize? (Number of bytes transferred in a burst loop. Can be 0, in which case the max allowed alignment is used as a unit.)
+    //*(u16*)(dmaconf+18) = 0x0003;//x80; // burstStride? (Burst loop stride, can be <= 0.
+    //*(u16*)(dmaconf+20) = 6; // transferSize? (Number of bytes transferred in a "transfer" loop, which is made of burst loops.)
+    //*(u16*)(dmaconf+22) = 6; // transferStride? ("Transfer" loop stride, can be <= 0.)
     
     PatPulse(0x7F007F); // Notif LED = Medium Purple
     threadrunning = 1;
@@ -1116,14 +1116,14 @@ void netfunc(void* __dummy_arg__)
         kdata[1] = 240 * 3;
         kdata[2] = 1;
         kdata[3] = 240 * 3;
-        soc->wribuf();
+        //soc->wribuf();
     }
     while(0);
     
     // Infinite loop unless it crashes or is halted by another application.
     while(threadrunning)
     {
-        if(soc->avail())
+        //if(soc->avail())
         while(1)
         {
             if((kHeld & (KEY_SELECT | KEY_START)) == (KEY_SELECT | KEY_START))
@@ -1133,18 +1133,19 @@ void netfunc(void* __dummy_arg__)
                 break;
             }
             
-            puts("Reading incoming packet...");
+            //puts("Reading incoming packet...");
             // Consider declaring 'cy' within this function instead of globally.
             int r;
-            r = soc->readbuf();
-            if(r <= 0)
+            //r = soc->readbuf();
+            if(false)//r <= 0)
             {
                 printf("Failed to recvbuf: (%i) %s\n", errno, strerror(errno));
                 delete soc;
                 soc = nullptr;
                 break;
             }
-            else
+            //else
+            if(false)
             {
             	u8 i = soc->getPakSubtype();
             	u8 j = soc->bufferptr[bufsoc_pak_data_offset];
@@ -1267,7 +1268,7 @@ void netfunc(void* __dummy_arg__)
         
         if(!soc) break;
         
-        sendDebugFrametimeStats(timems_processframe,timems_writetosocbuf,&timems_dmaasync,timems_formatconvert);
+        //sendDebugFrametimeStats(timems_processframe,timems_writetosocbuf,&timems_dmaasync,timems_formatconvert);
 
         // If index 0 of the config block is non-zero (we are signaled by the PC to init)
         // And this ImportDisplayCaptureInfo function doesn't error...
@@ -1297,14 +1298,14 @@ void netfunc(void* __dummy_arg__)
                 	((char*)soc->bufferptr + bufsoc_pak_data_offset)[i] = ca[i];
                 soc->setPakSize(12);
 
-                soc->wribuf();
+                //soc->wribuf();
                 
                 char cb[20] = {0x46,0x72,0x61,0x6D,0x65,0x62,0x75,0x66,0x66,0x65,0x72,0x20,0X73,0X74,0X72,0X69,0X64,0X65,0X20,0X20};
 				for(int i=0; i<21; ++i)
 					((char*)soc->bufferptr + bufsoc_pak_data_offset)[i] = cb[i];
 				soc->setPakSize(20);
 
-				soc->wribuf();
+				//soc->wribuf();
 
                 //u32* kdata = (u32*)(soc->bufferptr + bufsoc_pak_data_offset);
                 
@@ -1321,7 +1322,7 @@ void netfunc(void* __dummy_arg__)
                 //GSPGPU_ReadHWRegs(0x1EF00090, &((u32*)soc->bufferptr)[3],4);
 
                 soc->setPakSize(4);
-                soc->wribuf();
+                //soc->wribuf();
                 
                 //kdata[0] = format[0];
                 //kdata[1] = capin.screencapture[0].framebuf_widthbytesize;
@@ -1742,7 +1743,8 @@ void netfunc(void* __dummy_arg__)
                 if(soc->getPakSize())
                 {
                 	osTickCounterUpdate(&tick_ctr_1);
-                	soc->wribuf();
+                	//soc->wribuf();
+                	soc->wribuf_udp(soc->pc_client_ip);
                 	osTickCounterUpdate(&tick_ctr_1);
 					timems_writetosocbuf = osTickCounterRead(&tick_ctr_1);
                 }
@@ -1907,6 +1909,14 @@ int main()
         while(checkwifi()) yield();
     }
     
+    if(debug_useUDP)
+    {
+    	cfgblk[0] = 1;
+    	cfgblk[1] = 59;
+    	cfgblk[3] = 1;
+    	cfgblk[4] = 0;
+    }
+
     if(checkwifi())
     {
     	int r;
@@ -1983,11 +1993,12 @@ int main()
             {
                 if(checkwifi()) goto netreset;
             }
-            else if(pollsock(sock, POLLIN) == POLLIN)
+            else if(true)//pollsock(sock, POLLIN) == POLLIN)
             {
             	// Client
-                int cli = accept(sock, (struct sockaddr*)&sai, &sizeof_sai);
-                if(cli < 0)
+                //int cli = 0; = accept(sock, (struct sockaddr*)&sai, &sizeof_sai);
+
+                if(false)//cli < 0)
                 {
                     printf("Failed to accept client: (%i) %s\n", errno, strerror(errno));
                     if(errno == EINVAL) goto netreset;
@@ -1996,9 +2007,13 @@ int main()
                 else
                 {
                     PatPulse(0x00FF00); // Notif LED = Green
-                    soc = new bufsoc(cli, isold ? 0xC000 : 0x70000);
-                    k = soc->pack();
-                    
+                    soc = new bufsoc(sock, isold ? 0xC000 : 0x70000);
+                    //k = soc->pack();
+
+                    //int r9 = recvfrom(sock,soc,0,0, (struct sockaddr*)&sai, &sizeof_sai);
+
+                    // Hardcoded: 192.168.86.29
+                    soc->pc_client_ip = 0xC0A8561D;
 
                     // Priority:
                     // Range from 0x00 to 0x3F. Lower numbers mean higher priority.
@@ -2049,10 +2064,10 @@ int main()
                     }
                 }
             }
-            else if(pollsock(sock, POLLERR) == POLLERR)
+            else //if(pollsock(sock, POLLERR) == POLLERR)
             {
-                printf("POLLERR (%i) %s", errno, strerror(errno));
-                goto netreset;
+            //    printf("POLLERR (%i) %s", errno, strerror(errno));
+            //    goto netreset;
             }
         }
         
