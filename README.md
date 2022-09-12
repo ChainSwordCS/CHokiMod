@@ -47,12 +47,17 @@ I generally wouldn't recommend setting up a build environment unless you are con
 
 ### Build Requirements
 * [DevKitPro](https://devkitpro.org/wiki/Getting_Started)
-* DevKitPro 3DS extra libraries (should be done automatically by the Makefile)
+* DevKitPro 3DS extra libraries
   * lib-jpeg-turbo
   * lib-zip
 * [makerom](https://github.com/3DSGuy/Project_CTR/releases?q=makerom&expanded=true), in DevKitPro's / MSYS2's PATH.
 
 Note: This branch (the current Main branch) needs to be compiled with legacy libraries. If using Windows, an archive of the libraries can be downloaded from here: https://chainswordcs.com/dl/hzmod_dependencies_2017_v1.zip
+
+Alternatively, archives of libctru can be found here: https://wii.leseratte10.de/devkitPro/libctru/2017/<br />
+and the extra libraries can be found here: https://wii.leseratte10.de/devkitPro/3ds/<br />
+Please try to choose the same version as I included in hzmod_dependencies_2017_v1.zip<br />
+> // Off the top of my head, I forget exactly what versions I used. Slightly newer or older may work too.
 
 * `makerom.exe` must be in the PATH or the root of the repository
 * Contents of the `devkitarm-r46` folder should be moved to `C:devkitPro:devkitARM` (Please copy or rename the up-to-date devkitARM folder so it can be restored if you need)
