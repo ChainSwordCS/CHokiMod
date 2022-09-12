@@ -47,9 +47,11 @@ I generally wouldn't recommend setting up a build environment unless you are con
 
 ### Build Requirements
 * [DevKitPro](https://devkitpro.org/wiki/Getting_Started)
-* DevKitPro 3DS extra libraries
-  * lib-jpeg-turbo
-  * lib-zip
+* Legacy versions of libraries (below)
+  * DevKitARM r46
+  * libctru 1.2.1
+  * 3ds-libjpeg-turbo 2.1.2-2 (Current version as of writing)
+  * 3ds-zlib (libzip) 1.2.11-2 (Current version as of writing)
 * [makerom](https://github.com/3DSGuy/Project_CTR/releases?q=makerom&expanded=true), in DevKitPro's / MSYS2's PATH.
 
 Note: This branch (the current Main branch) needs to be compiled with legacy libraries. If using Windows, an archive of the libraries can be downloaded from here: https://chainswordcs.com/dl/hzmod_dependencies_2017_v1.zip
