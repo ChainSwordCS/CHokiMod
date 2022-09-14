@@ -1752,8 +1752,13 @@ void netfunc(void* __dummy_arg__)
                 }
 
                 // Limit this thread to do other things? (On Old-3DS)
-                // TODO: Fine-tune Old-3DS performance. Maybe remove this outright.
+                // TODO: Fine-tune Old-3DS performance.
+                //
+                // Note to self, removing this entirely will break things
+                // (except maybe in extreme cases, like if priority equals 0x3F,
+                //  but this remains untested for now...)
                 if(isold) svcSleepThread(5e6);
+                // 5 x 10 ^ 6 nanoseconds (iirc)
             }
         }
         else yield();
@@ -1826,38 +1831,68 @@ int main()
     memset(&capin, 0, sizeof(capin));
     memset(cfgblk, 0, sizeof(cfgblk));
     
+    u32 soc_service_buf_siz = 0;
+	u32 screenbuf_siz = 0;
+	u32 bufsoc_siz = 0;
+	u32 netfunc_thread_stack_siz = 0;
+	int netfunc_thread_priority = 0;
+	int netfunc_thread_cpu = 0;
+
     isold = APPMEMTYPE <= 5;
-    
-    if(isold)
+    if(isold) // is Old-3DS
     {
-    	// On Old-3DS, capture the screen in 8 chunks
-        limit[0] = 8;
-        limit[1] = 8;
-        stride[0] = 50; // Screen / Framebuffer width (divided by 8)
-        stride[1] = 40; // Screen / Framebuffer width (divided by 8)
+    	limit[0] = 8; // Capture the screen in 8 chunks
+    	limit[1] = 8;
+    	stride[0] = 50; // Screen / Framebuffer width (divided by 8)
+    	stride[1] = 40;
+
+    	soc_service_buf_siz = 0x10000;
+    	screenbuf_siz = 50 * 240 * 4;
+    	bufsoc_siz = 0xC000;
+
+    	netfunc_thread_stack_siz = 0x2000;
+
+    	// Original values; priority = 0x21, CPU = 1
+    	//
+    	netfunc_thread_priority = 0x21;
+    	netfunc_thread_cpu = 1;
     }
-    else
+    else // is New-3DS (or New-2DS)
     {
-        limit[0] = 1;
-        limit[1] = 1;
-        stride[0] = 400; // Screen / Framebuffer width
-        stride[1] = 320; // Screen / Framebuffer width
+    	limit[0] = 1;
+    	limit[1] = 1;
+    	stride[0] = 400;
+    	stride[1] = 320;
+
+    	soc_service_buf_siz = 0x200000;
+    	screenbuf_siz = 400 * 240 * 4;
+    	bufsoc_siz = 0x70000;
+
+    	netfunc_thread_stack_siz = 0x4000;
+
+    	// Original values; priority = 0x08, CPU = 3
+    	//
+		// Setting priority around 0x10 (16) makes it stop slowing down Home Menu and games.
+        // Priority:
+        // Range from 0x00 to 0x3F. Lower numbers mean higher priority.
+		netfunc_thread_priority = 0x10;
+		// Processor ID:
+		// -2 = Default (Don't bother using this)
+		// -1 = All CPU cores(?)
+		// 0 = Appcore and 1 = Syscore on Old-3DS
+		// 2 and 3 are allowed on New-3DS (for Base processes)
+		//
+		netfunc_thread_cpu = 2;
     }
-    
     
     PatStay(0x0000FF); // Notif LED = Red
     
     // Initialize AC service, for Wifi stuff.
     acInit();
     
-    do
-    {
-    	// Socket buffer size, smaller on Old-3DS
-        u32 siz = isold ? 0x10000 : 0x200000;
-        ret = socInit((u32*)memalign(0x1000, siz), siz);
-    }
-    while(0);
-
+    // TODO: Try experimenting with a hacky way to write to this buffer even though we're not supposed to have access.
+    // I know it'll break things. But I am still interested to see what'll happen, lol.
+	ret = socInit((u32*)memalign(0x1000, soc_service_buf_siz), soc_service_buf_siz);
     if(ret < 0) *(u32*)0x1000F0 = ret;
     
     jencode = tjInitCompress();
@@ -1866,18 +1901,10 @@ int main()
     // Initialize communication with the GSP service, for GPU stuff
     gspInit();
     
-    if(isold)
-    {
-        screenbuf = (u32*)memalign(8, 50 * 240 * 4);
-        //pxarraytwo = (u8*)memalign(8, 8); // Sane default / placeholder, I hope.
-    }
-    else
-    {
-        screenbuf = (u32*)memalign(8, 400 * 240 * 4);
-        // Note 2: Allocating memory for this variable *here* seems to break DMA time stat reporting, for some reason.
-        // Note, pxarraytwo may be fully unnecessary in the future.
-        //pxarraytwo = (u8*)memalign(8, 400 * 120 * 4);
-    }
+	screenbuf = (u32*)memalign(8, screenbuf_siz);
+	// Note 2: Allocating memory for this variable *here* seems to break DMA time stat reporting, for some reason.
+	// Note, pxarraytwo may be fully unnecessary in the future.
+	//pxarraytwo = (u8*)memalign(8, 400 * 120 * 4);
     
     // If memalign returns null or 0
     if(!screenbuf)
@@ -2000,30 +2027,12 @@ int main()
                 else
                 {
                     PatPulse(0x00FF00); // Notif LED = Green
-                    soc = new bufsoc(cli, isold ? 0xC000 : 0x70000);
+                    soc = new bufsoc(cli, bufsoc_siz);
                     k = soc->pack();
                     
 
-                    // Priority:
-                    // Range from 0x00 to 0x3F. Lower numbers mean higher priority.
-                    //
-                    // Processor ID:
-                    // -2 = Default (Don't bother using this)
-                    // -1 = All CPU cores(?)
-                    // 0 = Appcore and 1 = Syscore on Old-3DS
-                    // 2 and 3 are allowed on New-3DS (for Base processes)
-                    //
-                    if(isold)
-                    {
-                    	// Original values; priority = 0x21, CPU = 1
-                        netthread = threadCreate(netfunc, nullptr, 0x2000, 0x21, 1, true);
-                    }
-                    else
-                    {
-                    	// Original values; priority = 0x08, CPU = 3
-                    	// Setting priority around 0x10 (16) makes it stop slowing down Home Menu and games.
-                        netthread = threadCreate(netfunc, nullptr, 0x4000, 0x10, 2, true);
-                    }
+                    netthread = threadCreate(netfunc, nullptr, netfunc_thread_stack_siz, netfunc_thread_priority, netfunc_thread_cpu, true);
+
                     
                     if(!netthread)
                     {
