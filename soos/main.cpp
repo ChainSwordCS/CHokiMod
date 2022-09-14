@@ -190,7 +190,7 @@ public:
     	return bufferptr[1];
     }
 
-    u8 getPakSubtype2()
+    u8 getPakSubtypeB()
     {
     	return bufferptr[2];
     }
@@ -220,7 +220,7 @@ public:
     	return;
     }
 
-    void setPakSubtype2(u8 input)
+    void setPakSubtypeB(u8 input)
     {
     	bufferptr[2] = input;
     	return;
@@ -1665,6 +1665,19 @@ void netfunc(void* __dummy_arg__)
                 	soc->setPakType(01); //Image
                 	soc->setPakSubtype(subtype_aka_flags);
                 }
+
+
+                if(isold)
+				{
+                	// Screen-chunk index ranges from 0 to 7 (Old-3DS only)
+					u8 b = 0b00001000 + (offs[scr] / stride[scr]);
+
+					soc->setPakSubtypeB(b);
+				}
+				else
+				{
+					soc->setPakSubtypeB(0);
+				}
 
                 // Current progress through one complete frame
                 // (Only applicable to Old-3DS)
