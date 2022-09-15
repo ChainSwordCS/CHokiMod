@@ -1272,7 +1272,7 @@ inline void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* sc
 		case 1: // RGB8
 			forceInterlaced = -1; // Function not yet implemented
 			tjpf = TJPF_RGB;
-			*bsiz = 4;
+			*bsiz = 3;
 			*scrw = 240;
 			*doDMA = true;
 			break;
