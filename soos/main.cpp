@@ -1574,7 +1574,12 @@ void netfuncOld3DS(void* __dummy_arg__)
                 	{
                 		if(dmastatusthreadrunning == 0)
                 		{
-                			threadCreate(waitforDMAtoFinish, nullptr, 0x4000, 0x10, 1, true);
+                			// Old-3DS specific configuration to optimize performance of everything *except* that thread, lol.
+                			//
+                			// Note: At lowest possible priority, results will be less consistent
+                			// and on average less accurate. But it still produces usable results
+                			// every once in a while, and this isn't a high-priority feature anyway.
+                			threadCreate(waitforDMAtoFinish, nullptr, 0x80, 0x3F, 0, true);
                 		}
                 	}
                 }
