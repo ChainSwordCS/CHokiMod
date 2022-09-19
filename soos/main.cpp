@@ -95,7 +95,7 @@ void convert16to24_rgba4(u32); // Finished, works.
 void dummyinterlace24(u32,u32); // Very unfinished, broken, do not use.
 
 // Other big functions added by me
-inline int setCpuResourceLimit(u32); // Unfinished, doesn't work IIRC.
+inline int setCpuResourceLimit(u32); // Unfinished, doesn't work.
 void waitforDMAtoFinish(void*); // Don't use this. This is only used by a separate thread, started from within netfunc.
 void sendDebugFrametimeStats(double,double,double*,double); // It works, and I'm still adding to it.
 
@@ -107,9 +107,18 @@ inline void cvt1624_help2_forrgba4(u8*,u8*);
 inline void cvt1624_help2_forrgb5a1(u8*,u8*);
 inline void cvt1624_help2_forrgb565(u8*,u8*);
 
-
-// More functions from original codebase.
+// netfunc
 void netfunc(void*);
+void netfuncOld3DS(void*); // Version of netfunc specifically for Old-3DS (code flow optimization)
+
+// Helper functions for netfunc 1 and 2 (code organization reasons)
+inline void populatedmaconf(u8*,u32); // Rewritten from netfunc
+inline int netfuncWaitForSettings(); // Rewritten from netfunc
+inline void tryStopDma(); // Rewritten from netfunc (very small; shorthand because it's repeated)
+inline void makeTargaImage(double*,double*,int,u32*,u32*,int*,bool*); // Rewritten from netfunc
+inline void makeJpegImage(double*,double*,int,u32*,u32*,int*,bool*); // Rewritten from netfunc
+inline void netfuncTestFramebuffer(u32*, int*); // Rewritten from netfunc
+
 int main(); // So you can call main from main (:
 
 // Debug flag for testing; use experimental UDP instead of TCP.
@@ -438,10 +447,10 @@ static Thread netthread = 0;
 static vu32 threadrunning = 0;
 
 static u32* screenbuf = nullptr;
-// This line of code, instead of the one after it, might be required?
-// The latter seems to break DMA time stat reporting code??? How?????
-static u8 pxarraytwo[2*120*400];
-//static u8* pxarraytwo = nullptr;
+
+// Obsolete now. Will be removed eventually.
+//static u8 pxarraytwo[2*120*400];
+static u8* pxarraytwo = nullptr;
 
 static tga_image img;
 static tjhandle jencode = nullptr;

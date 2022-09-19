@@ -45,8 +45,8 @@ int main()
     nsInit();
     
 #ifndef _HIMEM
-    NS_TerminateProcessTID(0x000401300CF00F02ULL); // shutdown HzMod
-    NS_TerminateProcessTID(0x000401300CF00F09ULL); // ChirunoMod too
+    NS_TerminateProcessTID(0x000401300CF00F02ULL, 0); // shutdown HzMod
+    NS_TerminateProcessTID(0x000401300CF00F09ULL, 0); // ChirunoMod too
 #endif
 
     hidScanInput();
