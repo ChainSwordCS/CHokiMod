@@ -721,22 +721,22 @@ inline void cvt1632i_row1_rgb565(u32 pxnum, u32* fbuf)
 {
 	u32 temppx = fbuf[pxnum];
 	// Blue
-	fbuf[pxnum] = temppx & 0xF8000000;
+	fbuf[pxnum] =(temppx & 0x0000F800) << 8;
 	// Green
-	fbuf[pxnum]+=(temppx & 0x07E00000 >> 4);
+	fbuf[pxnum]+=(temppx & 0x000007E0) << 5;
 	// Red
-	fbuf[pxnum]+=(temppx & 0x001F0000 >> 5);
+	fbuf[pxnum]+=(temppx & 0x0000001F) << 3;
 }
 
 inline void cvt1632i_row2_rgb565(u32 pxnum, u32* fbuf)
 {
 	u32 temppx = fbuf[pxnum];
 	// Blue
-	fbuf[pxnum] = temppx & 0x0000F800 << 16;
+	fbuf[pxnum] =(temppx & 0xF8000000) >> 8;
 	// Green
-	fbuf[pxnum]+=(temppx & 0x000007E0 << 13);
+	fbuf[pxnum]+=(temppx & 0x07E00000) >> 11; // 8 + 3
 	// Red
-	fbuf[pxnum]+=(temppx & 0x0000001F << 11);
+	fbuf[pxnum]+=(temppx & 0x001F0000) >> 13; // 8 + 5
 }
 
 // Unfinished, colors are broken.
@@ -745,10 +745,10 @@ inline void cvt1632i_row2_rgb565(u32 pxnum, u32* fbuf)
 // Note: Destructive implementation. Every other row is trashed and not saved.
 // Therefore it is necessary to DMA the framebuffer again every time we do this.
 // It's a tradeoff, it is what it is, but it's fast(ish) baby
-void fastConvert16to32andInterlace2_rgb565(u32 scrbufwidth)
+void fastConvert16to32andInterlace2_rgb565(u32 stride)
 {
 	u32 i = 0;
-	u32 max = 120*scrbufwidth;
+	u32 max = 120*stride;
 	u32* fbuf = screenbuf; // This is just always this value. lol
 
 	if(interlace_px_offset == 0)
