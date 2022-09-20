@@ -221,7 +221,7 @@ AccessControlInfo:
    - gsp::Gpu # Don't change
    - hid:USER # Don't change
    - http:C # HTTP stuff. Don't change.
-   - ir:rst # Needed for New-3DS ZL,ZR, and C-Stick
+   #- ir:rst # Needed for New-3DS ZL,ZR, and C-Stick
    - mcu::HWC # Used for the Notification LED
    - ns:s # Don't change
    - ptm:sysm # Used for CheckNew3DS and ConfigureNew3DSCPU (if those are used in the code)

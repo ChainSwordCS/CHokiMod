@@ -939,32 +939,32 @@ void dummyinterlace24(u32 passedsiz, u32 scrbfwidth) // UNFINISHED
 	// return;
 }
 
-static u32 pmAppHandle;
-
 // Based on (and slightly modified from) devkitpro/libctru source
 //
 // svcSetResourceLimitValues(Handle res_limit, LimitableResource* resource_type_list, s64* resource_list, u32 count)
 //
-inline int setCpuResourceLimit(u32 passed_cpu_time_limit)
+// Note : These aren't in 2017-libctru. I'm outta luck until compatibility with current libctru is fixed.
+//
+inline int setCpuResourceLimit(u32 cpu_time_limit)
 {
-	srvGetServiceHandle(&pmAppHandle, "pm:app"); // Does this work?
-
 	int ret = 0;
-	u32* cmdbuf = getThreadCommandBuffer();
 
-	cmdbuf[0] = IPC_MakeHeader(0xA,5,0); // 0x000A0140
-	cmdbuf[1] = 0;
-	cmdbuf[2] = 9; // RESLIMIT_CPUTIME (iirc)
-	cmdbuf[3] = passed_cpu_time_limit;
-	cmdbuf[4] = 0;
-	cmdbuf[5] = 0;
+	Handle reslimithandle;
+	ret = svcGetResourceLimit(&reslimithandle,0xFFFF8001);
 
-	ret = svcSendSyncRequest(pmAppHandle);
+	if(ret<0)
+		return ret;
+
+	//ResourceLimitType name = RESLIMIT_CPUTIME;
+	s64 value = cpu_time_limit;
+	//ret = svcSetResourceLimitValues(reslimithandle, &name, &value, 1);
 
 	if(ret < 0)
 		return ret;
-	else
-		return cmdbuf[1];
+
+	//ret = svcSetProcessResourceLimits(0xFFFF8001, reslimithandle);
+
+	return ret;
 }
 
 double timems_dmaasync = 0;
@@ -1660,15 +1660,7 @@ void netfunc(void* __dummy_arg__)
     
     bool doDMA = true;
 
-    if(isold)
-    {
-    	// Commented-out before I got here. -C
-    	// screenbuf = (u32*)k->data;
-    }
-    else
-    {
-    	osSetSpeedupEnable(1);
-    }
+    osSetSpeedupEnable(1);
     
     PatStay(0x00FF00); // Notif LED = Green
     
@@ -2527,9 +2519,6 @@ int main()
     gspInit();
     
 	screenbuf = (u32*)memalign(8, screenbuf_siz);
-	// Note 2: Allocating memory for this variable *here* seems to break DMA time stat reporting, for some reason.
-	// Note, pxarraytwo may be fully unnecessary in the future.
-	//pxarraytwo = (u8*)memalign(8, 400 * 120 * 4);
     
     // If memalign returns null or 0
     if(!screenbuf)
@@ -2706,12 +2695,12 @@ int main()
         }
         
         // VRAM Corruption function :)
-        if((kHeld & (KEY_ZL | KEY_ZR)) == (KEY_ZL | KEY_ZR))
-        {
-            u32* ptr = (u32*)0x1F000000;
-            int o = 0x00600000 >> 2;
-            while(o--) *(ptr++) = rand();
-        }
+        //if((kHeld & (KEY_ZL | KEY_ZR)) == (KEY_ZL | KEY_ZR))
+        //{
+        //    u32* ptr = (u32*)0x1F000000;
+        //    int o = 0x00600000 >> 2;
+        //    while(o--) *(ptr++) = rand();
+        //}
         
         yield();
     }
