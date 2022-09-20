@@ -87,7 +87,7 @@ void CPPCrashHandler();
 
 // Image Processing Functions added by me
 void lazyConvert16to32andInterlace(u32,u32); // Finished, works. Destructive implementation
-void convert16to24andInterlace(u32,u32); // Finished, works. Clean implementation (but needs refactor for o3DS)
+void convert16to24andInterlace(u32,u32); // Needs a rewrite if it's going to ever be used (currently unused)
 void fastConvert16to32andInterlace2_rgb565(u32); // Unfinished, broken colors. (Destructive implementation)
 void convert16to24_rgb5a1(u32); // Finished, works.
 void convert16to24_rgb565(u32); // Finished, works.
@@ -108,8 +108,8 @@ inline void cvt1624_help2_forrgb5a1(u8*,u8*);
 inline void cvt1624_help2_forrgb565(u8*,u8*);
 
 // netfunc
-void netfunc(void*);
 void netfuncOld3DS(void*); // Version of netfunc specifically for Old-3DS (code flow optimization)
+void netfuncNew3DS(void*);
 
 // Helper functions for netfunc 1 and 2 (code organization reasons)
 inline void populatedmaconf(u8*,u32); // Rewritten from netfunc
@@ -551,6 +551,7 @@ void lazyConvert16to32andInterlace(u32 flag, u32 passedsiz)
 	return;
 }
 
+// Needs a rewrite.
 void convert16to24andInterlace(u32 flag, u32 passedsiz)
 {
 	u32 offs_univ = 0;
@@ -716,52 +717,55 @@ void convert16to24andInterlace(u32 flag, u32 passedsiz)
 }
 
 // Unreadable code alert
-inline void cvt1632i_row1_rgb565(u32 offs)
+inline void cvt1632i_row1_rgb565(u32 pxnum, u32* fbuf)
 {
-	u32* u32ptr = screenbuf + offs;
-	u32 temppx = u32ptr[offs];
+	u32 temppx = fbuf[pxnum];
 	// Blue
-	u32ptr[offs] = temppx & 0xF8000000;
+	fbuf[pxnum] = temppx & 0xF8000000;
 	// Green
-	u32ptr[offs]+=(temppx & 0x07E00000 >> 3);
+	fbuf[pxnum]+=(temppx & 0x07E00000 >> 4);
 	// Red
-	u32ptr[offs]+=(temppx & 0x001F0000 >> 5);
+	fbuf[pxnum]+=(temppx & 0x001F0000 >> 5);
 }
 
-inline void cvt1632i_row2_rgb565(u32 offs)
+inline void cvt1632i_row2_rgb565(u32 pxnum, u32* fbuf)
 {
-	u32* u32ptr = screenbuf + offs;
-	u32 temppx = u32ptr[offs];
+	u32 temppx = fbuf[pxnum];
 	// Blue
-	u32ptr[offs] = temppx & 0x0000F800 << 16;
+	fbuf[pxnum] = temppx & 0x0000F800 << 16;
 	// Green
-	u32ptr[offs]+=(temppx & 0x000007E0 << 13);
+	fbuf[pxnum]+=(temppx & 0x000007E0 << 13);
 	// Red
-	u32ptr[offs]+=(temppx & 0x0000001F << 11);
+	fbuf[pxnum]+=(temppx & 0x0000001F << 11);
 }
 
-// Unfinished, colors are broken. Currently not faster.
+// Unfinished, colors are broken.
 // (The bottleneck may be elsewhere right now. -C 2022-09-03)
+//
+// Note: Destructive implementation. Every other row is trashed and not saved.
+// Therefore it is necessary to DMA the framebuffer again every time we do this.
+// It's a tradeoff, it is what it is, but it's fast(ish) baby
 void fastConvert16to32andInterlace2_rgb565(u32 scrbufwidth)
 {
-	u32 offs;
-	u32 offsmax = 120*scrbufwidth;
+	u32 i = 0;
+	u32 max = 120*scrbufwidth;
+	u32* fbuf = screenbuf; // This is just always this value. lol
 
 	if(interlace_px_offset == 0)
 	{
-		while(offs < offsmax)
+		while(i < max)
 		{
-			cvt1632i_row1_rgb565(offs);
-			offs++;
+			cvt1632i_row1_rgb565(i,fbuf);
+			i++;
 		}
 		interlace_px_offset = 2;
 	}
 	else
 	{
-		while(offs < offsmax)
+		while(i < max)
 		{
-			cvt1632i_row2_rgb565(offs);
-			offs++;
+			cvt1632i_row2_rgb565(i,fbuf);
+			i++;
 		}
 		interlace_px_offset = 0;
 	}
@@ -1234,7 +1238,7 @@ inline void tryStopDma()
 	}
 }
 
-inline void makeTargaImage(double* timems_fc, double* timems_pf, int scr, u32* scrw, u32* bits, int* imgsize, bool* doDMA)
+inline void makeTargaImage(double* timems_fc, double* timems_pf, int scr, u32* scrw, u32* bits, int* imgsize)
 {
 	*timems_fc = 0;
 	osTickCounterUpdate(&tick_ctr_1);
@@ -1255,11 +1259,10 @@ inline void makeTargaImage(double* timems_fc, double* timems_pf, int scr, u32* s
 	soc->setPakSubtype(subtype_aka_flags);
 	soc->setPakSize(*imgsize);
 
-	*doDMA = true;
 	return;
 }
 
-inline void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* scrw, u32* bsiz, int* imgsize, bool* doDMA)
+inline void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* scrw, u32* bsiz, int* imgsize)
 {
 	u32 f = format[scr] & 0b111;
 	u8 subtype_aka_flags = 0b00000000 + (scr * 0b00010000) + f;
@@ -1275,7 +1278,6 @@ inline void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* sc
 			tjpf = TJPF_RGBX;
 			*bsiz = 4;
 			*scrw = 240;
-			*doDMA = true;
 			break;
 
 		case 1: // RGB8
@@ -1283,7 +1285,6 @@ inline void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* sc
 			tjpf = TJPF_RGB;
 			*bsiz = 3;
 			*scrw = 240;
-			*doDMA = true;
 			break;
 
 		case 2: // RGB565
@@ -1295,7 +1296,6 @@ inline void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* sc
 				tjpf = TJPF_RGBX;
 				*bsiz = 4;
 				*scrw = 120;
-				*doDMA = true;
 				subtype_aka_flags += 0b00100000 + (interlace_px_offset?0:0b01000000);
 			}
 			else
@@ -1304,7 +1304,6 @@ inline void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* sc
 				tjpf = TJPF_RGB;
 				*bsiz = 3;
 				*scrw = 240;
-				*doDMA = true;
 			}
 			break;
 
@@ -1316,7 +1315,6 @@ inline void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* sc
 				tjpf = TJPF_RGBX;
 				*bsiz = 4;
 				*scrw = 120;
-				*doDMA = true;
 				subtype_aka_flags += 0b00100000 + (interlace_px_offset?0:0b01000000);
 			}
 			else
@@ -1325,7 +1323,6 @@ inline void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* sc
 				tjpf = TJPF_RGB;
 				*bsiz = 3;
 				*scrw = 240;
-				*doDMA = true;
 			}
 			break;
 
@@ -1337,7 +1334,6 @@ inline void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* sc
 				tjpf = TJPF_RGBX;
 				*bsiz = 4;
 				*scrw = 120;
-				*doDMA = true;
 				subtype_aka_flags += 0b00100000 + (interlace_px_offset?0:0b01000000);
 			}
 			else
@@ -1346,7 +1342,6 @@ inline void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* sc
 				tjpf = TJPF_RGB;
 				*bsiz = 3;
 				*scrw = 240;
-				*doDMA = true;
 			}
 			break;
 
@@ -1359,7 +1354,6 @@ inline void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* sc
 			//*bsiz = 3;
 			//*scrw = 240;
 			forceInterlaced = -1;
-			*doDMA = true;
 			break;
 	}
 
@@ -1468,11 +1462,10 @@ void netfuncOld3DS(void* __dummy_arg__)
 	u32 scrw = 1;
 	u32 bits = 8;
 	int scr = 0;
+	u32 procid = 0;
 	bool doDMA = true;
 
 	PatStay(0x00FF00); // Notif LED = Green
-
-	u32 procid = 0;
 
 	u8 dmaconf[0x18];
 	populatedmaconf(dmaconf,0);
@@ -1520,10 +1513,10 @@ void netfuncOld3DS(void* __dummy_arg__)
                 switch(cfgblk[4])
                 {
 					case 0: // JPEG
-						makeJpegImage(&timems_formatconvert, &timems_processframe, scr, &scrw, &bsiz, &imgsize, &doDMA);
+						makeJpegImage(&timems_formatconvert, &timems_processframe, scr, &scrw, &bsiz, &imgsize);
 						break;
 					case 1: // Targa / TGA
-						makeTargaImage(&timems_formatconvert, &timems_processframe, scr, &scrw, &bits, &imgsize, &doDMA);
+						makeTargaImage(&timems_formatconvert, &timems_processframe, scr, &scrw, &bits, &imgsize);
 						break;
 					default:
 						break; // This case shouldn't occur.
@@ -1642,651 +1635,84 @@ void netfuncOld3DS(void* __dummy_arg__)
     threadrunning = 0;
 }
 
-void netfunc(void* __dummy_arg__)
+void netfuncNew3DS(void* __dummy_arg__)
 {
 	osTickCounterStart(&tick_ctr_1);
 	osTickCounterStart(&tick_ctr_2_dma);
-
 	double timems_processframe = 0;
 	double timems_writetosocbuf = 0;
 	double timems_formatconvert = 0;
+	u32 siz = 0x80;
+	u32 bsiz = 1;
+	u32 scrw = 1;
+	u32 bits = 8;
+	int scr = 0;
+	u32 procid = 0;
+	bool doDMA = true;
 
-    u32 siz = 0x80;
-    u32 bsiz = 1;
-    u32 scrw = 1;
-    u32 bits = 8;
-    
-    int scr = 0;
-    
-    bool doDMA = true;
+	//New3DS-Specific
+	osSetSpeedupEnable(1);
 
-    osSetSpeedupEnable(1);
-    
-    PatStay(0x00FF00); // Notif LED = Green
-    
-    format[0] = 0xF00FCACE; //invalidate
-    
-    u32 procid = 0;
+	PatStay(0x00FF00); // Notif LED = Green
 
-    // Note: in modern libctru, DmaConfig is its own object type.
-    u8 dmaconf[0x18];
-    memset(dmaconf, 0, 0x18);
+	u8 dmaconf[0x18];
+	populatedmaconf(dmaconf,0);
 
-    // https://www.3dbrew.org/wiki/Corelink_DMA_Engines
-    // https://github.com/devkitPro/libctru/blob/master/libctru/include/3ds/svc.h
-    //
-    dmaconf[0] = -1; // -1 = Auto-assign to a free channel (Arm11: 3-7, Arm9:0-1)
-    
+	PatPulse(0x7F007F); // Notif LED = Medium Purple
+	threadrunning = 1;
 
-    if(false) // Use custom, non-standard DMA config.
-    {
-		dmaconf[1] = 0; // Endian swap size. 0 = None, 2 = 16-bit, 4 = 32-bit, 8 = 64-bit
-		dmaconf[2] = 0b11000000; // Flags. DMACFG_USE_SRC_CONFIG and DMACFG_USE_DST_CONFIG
-		//dmaconf[3] = 0; // Padding.
-
-		// Destination Config block
-		dmaconf[4] = 0xFF; // peripheral ID. FF for ram (it's forced to FF anyway)
-		dmaconf[5] = 8|4|2|1; // Allowed Alignments. Defaults to "1|2|4|8" (15). Also acceptable = 4, 8, "4|8" (12)
-		*(u16*)(dmaconf+6) = 3;// Not exactly known...
-		*(u16*)(dmaconf+8) = 3; // Not exactly known...
-		*(u16*)(dmaconf+10) = 6; // Number of bytes transferred at once(?)
-		*(u16*)(dmaconf+12) = 6; // Number of bytes transferred at once(?) (or Stride)
-
-		// Source Config block
-		dmaconf[14] = 0xFF; // Peripheral ID
-		dmaconf[15] = 8|4|2|1; // Allowed Alignments (!)
-		*(u16*)(dmaconf+16) = 0x0003;//x80; // burstSize? (Number of bytes transferred in a burst loop. Can be 0, in which case the max allowed alignment is used as a unit.)
-		*(u16*)(dmaconf+18) = 0x0003;//x80; // burstStride? (Burst loop stride, can be <= 0.
-		*(u16*)(dmaconf+20) = 6; // transferSize? (Number of bytes transferred in a "transfer" loop, which is made of burst loops.)
-		*(u16*)(dmaconf+22) = 6; // transferStride? ("Transfer" loop stride, can be <= 0.)
-    }
-    //screenInit();
-    
-    PatPulse(0x7F007F); // Notif LED = Medium Purple
-    threadrunning = 1;
-    
-    // Note: This is a compile-optimization trick.
-    // But it could be more elegant.
-    do
-    {
-    	soc->setPakType(0x02);
-    	soc->setPakSubtype(0x00);
-    	soc->setPakSize(16); // or 4 * 4? Why were we ever calculating that?
-        
-        u32* kdata = (u32*)(soc->bufferptr+bufsoc_pak_data_offset);
-        
-        kdata[0] = 1;
-        kdata[1] = 240 * 3;
-        kdata[2] = 1;
-        kdata[3] = 240 * 3;
-        soc->wribuf();
-    }
-    while(0);
-    
-    // Infinite loop unless it crashes or is halted by another application.
-    while(threadrunning)
-    {
+	// Infinite loop unless it crashes or is halted by another application.
+	while(threadrunning)
+	{
         if(soc->avail())
-        while(1)
+
+        if(netfuncWaitForSettings() < 0)
         {
-            if((kHeld & (KEY_SELECT | KEY_START)) == (KEY_SELECT | KEY_START))
-            {
-                delete soc;
-                soc = nullptr;
-                break;
-            }
-            
-            puts("Reading incoming packet...");
-            // Consider declaring 'cy' within this function instead of globally.
-            int r;
-            r = soc->readbuf();
-            if(r <= 0)
-            {
-                printf("Failed to recvbuf: (%i) %s\n", errno, strerror(errno));
-                delete soc;
-                soc = nullptr;
-                break;
-            }
-            else
-            {
-            	u8 i = soc->getPakSubtype();
-            	u8 j = soc->bufferptr[bufsoc_pak_data_offset];
-            	// Only used in one of these, but want to be declared up here.
-            	u32 k;
-            	u32 l;
-
-                switch(soc->getPakType())
-                {
-                	case 0x02: // Init (New CHmod / CHokiMod Packet Specification)
-                		cfgblk[0] = 1;
-                		// TODO: Maybe put sane defaults in here, or in the variable init code.
-                		break;
-
-                	case 0x03: // Disconnect (new packet spec)
-                		cfgblk[0] = 0;
-                		puts("forced dc");
-                		delete soc;
-                		soc = nullptr;
-                		break;
-                        
-                	case 0x04: // Settings input (new packet spec)
-
-                		switch(i)
-                		{
-                			case 0x01: // JPEG Quality (1-100%)
-                				// Error-Checking
-                				if(j > 100)
-                					cfgblk[1] = 100;
-                				else if(j < 1)
-                					cfgblk[1] = 1;
-                				else
-                					cfgblk[1] = j;
-								break;
-
-                			case 0x02: // CPU Cap value / CPU Limit / App Resource Limit
-
-                				// Redundancy check
-                				if(j == cfgblk[2])
-                					break;
-
-                				// Maybe this is percentage of CPU time? (https://www.3dbrew.org/wiki/APT:SetApplicationCpuTimeLimit)
-                				// In which case, values can range from 5% to 89%
-                				// (The respective passed values are 5 and 89, respectively)
-                				// So I don't know if 0x7F (127) will work.
-                				//
-                				// Maybe I'm looking at two different things by accident.
-
-                				// Also, it may be required to set the 'reslimitdesc' in exheader a certain way (in cia.rsf)
-
-                				if(j > 0x7F)
-                					j = 0x7F;
-                				else if(j < 5)
-                					j = 5;
-
-                				// This code doesn't work, lol.
-                				// Functionality dummied out for now.
-                				//setCpuResourceLimit((u32)j);
-
-                				cfgblk[2] = j;
-
-                				break;
-
-                			case 0x03: // Which Screen
-                				if(j < 1 || j > 3)
-                					cfgblk[3] = 1; // Default to top screen only
-                				else
-                					cfgblk[3] = j;
-                				break;
-
-                			case 0x04: // Image Format (JPEG or TGA?)
-                				if(j > 1)
-                					cfgblk[4] = 0;
-                				else
-                					cfgblk[4] = j;
-                				break;
-
-                			case 0x05: // Request to use Interlacing (yes or no)
-                				if(j == 0)
-                					cfgblk[5] = 0;
-                				else
-                					cfgblk[5] = 1;
-                				break;
-
-                			default:
-                				// Invalid subtype for "Settings" packet-type
-                				break;
-                		}
-                		break;
-                        
-                    case 0xFF: // Debug info. Prints to log file, interpreting the Data as u8 char objects.
-                    	// Note: packet subtype is ignored, lol.
-
-                    	// Size
-                    	k = soc->getPakSize();
-                    	// Current offset
-                    	l = 0;
-
-                    	if(k > 255) // Error checking; arbitrary limit on text characters.
-                    		k = 255;
-
-                    	while(k > 0)
-                    	{
-                    		printf((char*)(soc->bufferptr + bufsoc_pak_data_offset));
-                    		k--;
-                    		l++;
-                    	}
-                    	break;
-
-                    default:
-                        printf("Invalid packet ID: %i\n", soc->getPakType());
-                        delete soc;
-                        soc = nullptr;
-                        break;
-                }
-                
-                break;
-            }
+        	delete soc;
+        	soc = nullptr;
         }
-        
+
         if(!soc) break;
-        
+
         sendDebugFrametimeStats(timems_processframe,timems_writetosocbuf,&timems_dmaasync,timems_formatconvert);
 
         // If index 0 of the config block is non-zero (we are signaled by the PC to init)
         // And this ImportDisplayCaptureInfo function doesn't error...
         if(cfgblk[0] && GSPGPU_ImportDisplayCaptureInfo(&capin) >= 0)
         {
-            //test for changed framebuffers
-            if\
-            (\
-                capin.screencapture[0].format != format[0]\
-                ||\
-                capin.screencapture[1].format != format[1]\
-            )
-            {
-                PatStay(0xFFFF00); // Notif LED = Teal
-                
-                //fbuf[0] = (u8*)capin.screencapture[0].framebuf0_vaddr;
-                //fbuf[1] = (u8*)capin.screencapture[1].framebuf0_vaddr;
-                format[0] = capin.screencapture[0].format;
-                format[1] = capin.screencapture[1].format;
-                
-                soc->setPakType(0xFF);
-                soc->setPakSubtype(02);
-                // Not proud of this. Just pretend it's not here lol
-                //"Hello world"
-                char ca[12] = {0x48,0x65,0x6C,0x6C,0x6F,0x20,0x77,0x6F,0x00,0x72,0x6C,0x64};
-                for(int i=0; i<13; ++i)
-                	((char*)soc->bufferptr + bufsoc_pak_data_offset)[i] = ca[i];
-                soc->setPakSize(12);
+        	netfuncTestFramebuffer(&procid,&scr);
 
-                soc->wribuf();
-                
-                char cb[20] = {0x46,0x72,0x61,0x6D,0x65,0x62,0x75,0x66,0x66,0x65,0x72,0x20,0X73,0X74,0X72,0X69,0X64,0X65,0X20,0X20};
-				for(int i=0; i<21; ++i)
-					((char*)soc->bufferptr + bufsoc_pak_data_offset)[i] = cb[i];
-				soc->setPakSize(20);
-
-				soc->wribuf();
-
-                //u32* kdata = (u32*)(soc->bufferptr + bufsoc_pak_data_offset);
-                
-                // framebuf_widthbytesize = stride. distance between the start of two framebuffer rows.
-                // (must be a multiple of 8)
-                // so: the amount to add to the framebuffer pointer after displaying a scanline
-
-                soc->setPakSubtype(01);
-
-                // Both of these lines of code are interchangeable. They both always return
-                // 0x4672616D and I don't know why. ):
-                *((u32*)(soc->bufferptr+bufsoc_pak_data_offset)) = capin.screencapture[scr].framebuf_widthbytesize;
-                //((u32*)soc->bufferptr)[3] = capin.screencapture[scr].framebuf_widthbytesize;
-                //GSPGPU_ReadHWRegs(0x1EF00090, &((u32*)soc->bufferptr)[3],4);
-
-                soc->setPakSize(4);
-                soc->wribuf();
-                
-                //kdata[0] = format[0];
-                //kdata[1] = capin.screencapture[0].framebuf_widthbytesize;
-                //kdata[2] = format[1];
-                //kdata[3] = capin.screencapture[1].framebuf_widthbytesize;
-                //soc->wribuf();
-
-                //soc->setPakSize(sizeof(capin));
-                //*( (GSPGPU_CaptureInfo*)(kdata) ) = capin;
-                //soc->wribuf();
-                
-                
-                if(dmahand)
-                {
-                    svcStopDma(dmahand);
-                    svcCloseHandle(dmahand);
-                    dmahand = 0;
-                }
-                
-                procid = 0;
-                
-                
-                //test for VRAM
-                if\
-                (\
-                    (u32)capin.screencapture[0].framebuf0_vaddr >= 0x1F000000\
-                    &&\
-                    (u32)capin.screencapture[0].framebuf0_vaddr <  0x1F600000\
-                )
-                {
-                    //nothing to do?
-                }
-                else //use APT fuckery, auto-assume application as all retail applets use VRAM framebuffers
-                {
-                	// Notif LED = Flashing red and green
-                    memset(&pat.r[0], 0xFF, 16);
-                    memset(&pat.r[16], 0, 16);
-                    memset(&pat.g[0], 0, 16);
-                    memset(&pat.g[16], 0xFF, 16);
-                    memset(&pat.b[0], 0, 32);
-                    pat.ani = 0x2004;
-                    PatApply();
-                    
-                    u64 progid = -1ULL;
-                    bool loaded = false;
-                    
-                    while(1)
-                    {
-                        loaded = false;
-                        while(1)
-                        {
-                        	// loaded = Registration Status(?) of the specified application.
-                            if(APT_GetAppletInfo((NS_APPID)0x300, &progid, nullptr, &loaded, nullptr, nullptr) < 0) break;
-                            if(loaded) break;
-                            
-                            svcSleepThread(15e6);
-                        }
-                        
-                        if(!loaded) break;
-                        
-                        if(NS_LaunchTitle(progid, 0, &procid) >= 0) break;
-                    }
-                    
-                    if(loaded)
-                    {
-                    	// Commented-out before I got here. -C
-                    	// svcOpenProcess(&prochand, procid);
-                    }
-                    else
-                    {
-                    	format[0] = 0xF00FCACE; //invalidate
-                    }
-                }
-                
-                PatStay(0x00FF00); // Notif LED = Green
-            }
-            
-
-            int loopcnt = 2;
-            
             // Note: We control how often this loop runs
             // compared to how often the capture info is checked,
-            // by changing the loopcnt variable.
-            // By default it's 2, which means the ratio is actually 1:1
-            while(--loopcnt)
+            // by changing the loopcnt variable. (Renamed to loopy, lol.)
+            // By default, the ratio was 1:1
+        	//
+        	// If loopy = 2, the ratio is 2:1 (do this twice for every one time we test framebuffers)
+        	//
+        	// Increasing this would lead to a theoretical speed increase,
+        	// but probably not noticeable in practice.
+            for(int loopy = 2; loopy > 0; loopy--)
             {
-                if(format[scr] == 0xF00FCACE)
-                {
-                    scr = !scr;
-                    continue;
-                }
-                
-                soc->setPakSize(0);
-                
+                //soc->setPakSize(0);
+            	tryStopDma();
 
-                if(dmahand)
-                {
-                    svcStopDma(dmahand);
-                    svcCloseHandle(dmahand);
-                    dmahand = 0;
-                    // Purpose is to clear the cached data, so we aren't accidentally processing and sending old framebuffer data.
-                    // On Old-3DS this isn't necessary because the cache is so small anyway.
-                    //
-                    // Note that removing this instruction causes strange behavior...
-                    if(!isold)
-                    {
-                    	svcFlushProcessDataCache(0xFFFF8001, (u8*)screenbuf, capin.screencapture[scr].framebuf_widthbytesize * 400);
+            	//New3DS-Specific
+            	svcFlushProcessDataCache(0xFFFF8001, (u8*)screenbuf, capin.screencapture[scr].framebuf_widthbytesize * 400);
 
-                    	if(cfgblk[5] == 1) // If Interlacing requested
-                    	{
-                    		// Note, I'm not sure if this will be required or not. -C
-                    		//svcFlushProcessDataCache(0xFFFF8001, pxarraytwo, 2*120*400);
-                    	}
-                    }
-                }
-                
                 int imgsize = 0;
-                
-                u8* kdata = soc->bufferptr + bufsoc_pak_data_offset; // Leaving this as-is should be just fine.
 
-                u8 subtype_aka_flags = 0;
-
-                // TGA
-                if(cfgblk[4] == 01)
+                switch(cfgblk[4])
                 {
-                	timems_formatconvert = 0;
-                	osTickCounterUpdate(&tick_ctr_1);
-
-                	// Note: interlacing not yet implemented here.
-                    init_tga_image(&img, (u8*)screenbuf, scrw, stride[scr], bits);
-                    img.image_type = TGA_IMAGE_TYPE_BGR_RLE;
-                    img.origin_y = (scr * 400) + (stride[scr] * offs[scr]);
-                    tga_write_to_FILE(kdata, &img, &imgsize);
-                    
-
-                    osTickCounterUpdate(&tick_ctr_1);
-                    timems_processframe = osTickCounterRead(&tick_ctr_1);
-
-
-                    subtype_aka_flags = 0b00001000 + (scr * 0b00010000) + (format[scr] & 0b111);
-                    soc->setPakType(01); // Image
-                    soc->setPakSubtype(subtype_aka_flags);
-                    soc->setPakSize(imgsize);
-
-                    doDMA = true;
-                }
-                // JPEG
-                else // This is written profoundly stupid, courtesy of yours truly. I wouldn't have it any other way. -ChainSwordCS
-                {
-                	u32 f = format[scr] & 0b111;
-                	subtype_aka_flags = 0b00000000 + (scr * 0b00010000) + f;
-
-                	int tjpf = 0;
-
-                	// I don't know if this temp variable is required.
-                	// I don't know if using 'siz' produces correct results
-                	// or if it breaks... -C
-                	// TODO: Not this. Do anything but this. Optimize pls.
-                	u32 siz_2 = (capin.screencapture[scr].framebuf_widthbytesize * stride[scr]);
-
-                	osTickCounterUpdate(&tick_ctr_1);
-
-                	if(f == 0) // RGBA8
-                	{
-                		forceInterlaced = -1; // Function not yet implemented
-                		tjpf = TJPF_RGBX;
-                		//bsiz = 4;
-                		//scrw = 240;
-                		doDMA = true;
-                	}
-                	else if(f == 1) // RGB8
-                	{
-                		forceInterlaced = -1; // Function not yet implemented
-                		tjpf = TJPF_RGB;
-                		//bsiz = 3;
-                		//scrw = 240;
-                		doDMA = true;
-                	}
-                	else if(f == 2) // RGB565
-                	{
-                		forceInterlaced = 0;
-
-                		if(cfgblk[5] == 1)
-                		{
-                			if(isold)
-                			{
-                				// Both Fast and Lazy want DMA to be refreshed every frame.
-                				//fastConvert16to32andInterlace2_rgb565(stride[scr]);
-                				lazyConvert16to32andInterlace(2,siz_2);
-								tjpf = TJPF_RGBX;
-								bsiz = 4;
-								doDMA = true;
-                			}
-                			else
-                			{
-                				convert16to24andInterlace(2,siz_2);
-								tjpf = TJPF_RGB;
-								bsiz = 3;
-
-								if(interlace_px_offset != 0)
-									doDMA = false;
-								else
-									doDMA = true;
-                			}
-							scrw = 120;
-							subtype_aka_flags += 0b00100000 + (interlace_px_offset?0:0b01000000);
-                		}
-                		else
-                		{
-                			convert16to24_rgb565(stride[scr]);
-                			tjpf = TJPF_RGB;
-                			bsiz = 3;
-                			scrw = 240;
-                			doDMA = true;
-                		}
-
-                	}
-                	else if(f == 3) // RGB5A1
-                	{
-                		forceInterlaced = 0;
-
-                		if(cfgblk[5] == 1) // Interlace time (:
-                		{
-							if(isold)
-							{
-								lazyConvert16to32andInterlace(3,siz_2);
-								tjpf = TJPF_RGBX;
-								bsiz = 4;
-								doDMA = true;
-							}
-							else
-							{
-								convert16to24andInterlace(3,siz_2);
-								tjpf = TJPF_RGB;
-								bsiz = 3;
-
-								if(interlace_px_offset != 0)
-									doDMA = false;
-								else
-									doDMA = true;
-							}
-							scrw = 120;
-							subtype_aka_flags += 0b00100000 + (interlace_px_offset?0:0b01000000);
-                		}
-                		else // Progressive mode
-                		{
-							convert16to24_rgb5a1(stride[scr]);
-							tjpf = TJPF_RGB;
-							bsiz = 3;
-							scrw = 240;
-							doDMA = false;
-                		}
-                	}
-                	else if(f == 4) // RGBA4
-                	{
-                		forceInterlaced = 0;
-
-                		if(cfgblk[5] == 1)
-                		{
-							if(isold)
-							{
-								// We are tight on RAM. Does the old method work better?
-								lazyConvert16to32andInterlace(4,siz_2);
-								tjpf = TJPF_RGBX;
-								bsiz = 4;
-								doDMA = true;
-							}
-							else
-							{
-								convert16to24andInterlace(4,siz_2);
-								tjpf = TJPF_RGB;
-								bsiz = 3;
-
-								if(interlace_px_offset != 0)
-									doDMA = false;
-								else
-									doDMA = true;
-							}
-							scrw = 120;
-							subtype_aka_flags += 0b00100000 + (interlace_px_offset?0:0b01000000);
-                		}
-                		else
-                		{
-                			convert16to24_rgba4(stride[scr]);
-                			tjpf = TJPF_RGB;
-							bsiz = 3;
-							scrw = 240;
-							doDMA = true;
-                		}
-                	}
-                	else
-                	{
-                		// Invalid format, should never happen, but put a failsafe here anyway.
-                		//
-                		// This failsafe is just taken from the 24-bit code. I don't know if that's the
-                		// safest or not, it's just a placeholder. -C
-                		tjpf = TJPF_RGB;
-                		//bsiz = bsiz;
-                		//scrw = 240;
-                		forceInterlaced = -1; // Trying to interlace an unknown format would not go well.
-                		doDMA = true;
-                	}
-
-                    osTickCounterUpdate(&tick_ctr_1);
-                    timems_formatconvert = osTickCounterRead(&tick_ctr_1);
-
-                	//*(u32*)&k->data[0] = (scr * 400) + (stride[scr] * offs[scr]);
-                	//u8* dstptr = &k->data[8];
-                	// destination pointer is "kdata" from now on
-
-                	// Original Line:
-                 // int r = tjCompress2(jencode, (u8*)screenbuf, scrw, bsiz * scrw, stride[scr], format[scr] ? TJPF_RGB : TJPF_RGBX, &dstptr, (u32*)&imgsize, TJSAMP_420, cfgblk[3], TJFLAG_NOREALLOC | TJFLAG_FASTDCT))
-
-                	// "width" is supposed to be 240 always,
-                	// unless of course we're doing interlacing shenanigans.
-
-                	// TODO: Important!
-                	// For some unknown reason, Mario Kart 7 requires the "width" (height)
-                	// to be 128 when interlaced. And possibly 256 or something similar
-                	// when not interlaced. No I don't know why.
-                	// But I would love to get to the bottom of it.
-                	// If I can't, I'll add a debug feature to force-override the number.
-
-                	// stride was always variable (different on Old-3DS vs New-3DS)
-                	// so I am not doing anything to that.
-
-                    // Experimental option: to try and save time, don't even keep a framebuffer ourselves (but this doesn't save much time in practice)
-					//u8* experimentaladdr1 = (u8*)capin.screencapture[scr].framebuf0_vaddr + (siz * offs[scr]);
-					u8* experimentaladdr1 = (u8*)screenbuf;
-
-                    if(!tjCompress2(jencode, experimentaladdr1, scrw, bsiz*scrw, stride[scr], tjpf, &kdata, (u32*)&imgsize, TJSAMP_420, cfgblk[1], TJFLAG_NOREALLOC | TJFLAG_FASTDCT))
-                	{
-                        osTickCounterUpdate(&tick_ctr_1);
-                        timems_processframe = osTickCounterRead(&tick_ctr_1);
-                		soc->setPakSize(imgsize);
-                	}
-                	else
-                	{
-                		timems_processframe = 0;
-                	}
-
-                	soc->setPakType(01); //Image
-                	soc->setPakSubtype(subtype_aka_flags);
+					case 0: // JPEG
+						makeJpegImage(&timems_formatconvert, &timems_processframe, scr, &scrw, &bsiz, &imgsize);
+						break;
+					case 1: // Targa / TGA
+						makeTargaImage(&timems_formatconvert, &timems_processframe, scr, &scrw, &bits, &imgsize);
+						break;
+					default:
+						break; // This case shouldn't occur.
                 }
 
-
-                if(isold)
-				{
-                	// Screen-chunk index ranges from 0 to 7 (Old-3DS only)
-					u8 b = 0b00001000 + (offs[scr] / stride[scr]);
-
-					soc->setPakSubtypeB(b);
-				}
-				else
-				{
-					soc->setPakSubtypeB(0);
-				}
-
-                // Current progress through one complete frame
-                // (Only applicable to Old-3DS)
-                if(++offs[scr] == limit[scr]) offs[scr] = 0;
-                
                 if(cfgblk[3] == 01) // Top Screen Only
                 	scr = 0;
                 else if(cfgblk[3] == 02) // Bottom Screen Only
@@ -2296,29 +1722,19 @@ void netfunc(void* __dummy_arg__)
                 //else if(cfgblk[0] == 04)
                 // Planning to add more complex functionality with prioritizing one
                 // screen over the other, like NTR. Maybe.
-                
-                // TODO: This code will be redundant in the future, if not already.
-                // Size of the entire frame (in bytes)
-                // TODO: Does this even return a correct value? Even remotely?
-                siz = (capin.screencapture[scr].framebuf_widthbytesize * stride[scr]);
-                // Size of a single pixel in bytes(????)
-                bsiz = capin.screencapture[scr].framebuf_widthbytesize / 240;
-                // Screen "Width" (usually 240)
-                scrw = capin.screencapture[scr].framebuf_widthbytesize / bsiz;
 
+                // TODO: This code will be redundant in the future, if not already.
+                //
+                // TODO: Does this even return a correct value? Even remotely?
+                siz = (capin.screencapture[scr].framebuf_widthbytesize * stride[scr]); // Size of the entire frame (in bytes)
+                bsiz = capin.screencapture[scr].framebuf_widthbytesize / 240; // Size of a single pixel in bytes (???)
+                scrw = capin.screencapture[scr].framebuf_widthbytesize / bsiz; // Screen "Width" (Usually 240)
                 bits = 4 << bsiz; // ?
-                
+
+
                 Handle prochand = 0;
                 if(procid) if(svcOpenProcess(&prochand, procid) < 0) procid = 0;
-                
-                // DMA Code!!!
 
-                // TODO: Future Plan: Rework this DMA function call;
-                // try to use special parameters for certain
-                // color formats and/or settings (like Interlaced, if requested)
-                //
-                // Note: I don't currently know enough to make those adjustments.
-                // Lots more testing and fine tuning is needed. -ChainSwordCS
 
                 if(doDMA)
                 {
@@ -2344,20 +1760,23 @@ void netfunc(void* __dummy_arg__)
                 	{
                 		if(dmastatusthreadrunning == 0)
                 		{
-                			threadCreate(waitforDMAtoFinish, nullptr, 0x4000, 0x10, 1, true);
+                			// Old-3DS specific configuration to optimize performance of everything *except* that thread, lol.
+                			//
+                			// Note: At lowest possible priority, results will be less consistent
+                			// and on average less accurate. But it still produces usable results
+                			// every once in a while, and this isn't a high-priority feature anyway.
+                			//
+                			// On New-3DS, this will help very very slightly. Honestly worth it
+                			threadCreate(waitforDMAtoFinish, nullptr, 0x80, 0x3F, 0, true);
                 		}
                 	}
                 }
-                
+
                 if(prochand)
                 {
                     svcCloseHandle(prochand);
                     prochand = 0;
                 }
-                
-                // Clear cache here?
-                // This doesn't solve anything unfortunately. -C
-                //if(!isold) svcFlushProcessDataCache(0xFFFF8001, (u8*)screenbuf, capin.screencapture[scr].framebuf_widthbytesize * 400);
 
                 // If size is 0, don't send the packet.
                 if(soc->getPakSize())
@@ -2367,20 +1786,10 @@ void netfunc(void* __dummy_arg__)
                 	osTickCounterUpdate(&tick_ctr_1);
 					timems_writetosocbuf = osTickCounterRead(&tick_ctr_1);
                 }
-
-                // Limit this thread to do other things? (On Old-3DS)
-                // TODO: Fine-tune Old-3DS performance.
-                //
-                // Note to self, removing this entirely will break things
-                // (except maybe in extreme cases, like if priority equals 0x3F,
-                //  but this remains untested for now...)
-                if(isold) svcSleepThread(5e6);
-                // 5 x 10 ^ 6 nanoseconds (iirc)
             }
         }
         else yield();
     }
-    
     // Notif LED = Flashing yellow and purple
     memset(&pat.r[0], 0xFF, 16);
     memset(&pat.g[0], 0xFF, 16);
@@ -2390,21 +1799,19 @@ void netfunc(void* __dummy_arg__)
     memset(&pat.b[16],0x7F, 16);
     pat.ani = 0x0406;
     PatApply();
-    
     if(soc)
     {
         delete soc;
         soc = nullptr;
     }
-    
     if(dmahand)
     {
         svcStopDma(dmahand);
         svcCloseHandle(dmahand);
     }
-    
     threadrunning = 0;
 }
+
 
 static FILE* f = nullptr;
 
@@ -2650,7 +2057,7 @@ int main()
                     }
                     else
                     {
-                    	netthread = threadCreate(netfunc, nullptr, netfunc_thread_stack_siz, netfunc_thread_priority, netfunc_thread_cpu, true);
+                    	netthread = threadCreate(netfuncNew3DS, nullptr, netfunc_thread_stack_siz, netfunc_thread_priority, netfunc_thread_cpu, true);
                 	}
                     
                     if(!netthread)
