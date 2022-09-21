@@ -1,3 +1,5 @@
+LOG_ON = 0
+
 #---------------------------------------------------------------------------------
 .SUFFIXES:
 #---------------------------------------------------------------------------------
@@ -26,8 +28,8 @@ include $(DEVKITARM)/3ds_rules
 #     - icon.png
 #     - <libctru folder>/default_icon.png
 #---------------------------------------------------------------------------------
-#TARGET         := $(notdir $(CURDIR))
-TARGET		    :=  ChirunoMod
+
+TARGET=ChirunoMod
 BUILD		    :=	chirunomod-build
 SOURCES		    :=	soos
 DATA		    :=	data
@@ -61,7 +63,6 @@ ASFLAGS	:=	-g $(ARCH)
 LDFLAGS	=	-specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
 
 LIBS	:= -lturbojpeg -lz -lctru -lm
-
 #---------------------------------------------------------------------------------
 # list of directories containing libraries, this must be the top level containing
 # include and lib
@@ -77,6 +78,7 @@ ifneq ($(BUILD),$(notdir $(CURDIR)))
 #---------------------------------------------------------------------------------
 
 export OUTPUT	:=	$(CURDIR)/$(TARGET)
+
 export TOPDIR	:=	$(CURDIR)
 
 export VPATH	:=	$(foreach dir,$(SOURCES),$(CURDIR)/$(dir)) \
@@ -127,7 +129,7 @@ else
 	export APP_ICON := $(TOPDIR)/$(ICON)
 endif
 
-.PHONY: $(BUILD) clean all
+.PHONY: $(BUILD) clean all debuglogenable
 
 #---------------------------------------------------------------------------------
 all: $(BUILD)
@@ -142,6 +144,12 @@ clean:
 	@echo clean ...
 	@rm -rf $(BUILD) $(TARGET).3dsx $(OUTPUT).smdh $(TARGET).elf $(TARGET).3ds $(TARGET).cia
 
+#---------------------------------------------------------------------------------
+debuglogenable:
+	LOG_ON=1
+	@[ -d $@ ] || mkdir -p $@
+	@find $(SOURCES) -type d -printf "%P\0" | xargs -0 -I {} mkdir -p $(BUILD)/{}
+	@make --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
 
 #---------------------------------------------------------------------------------
 else

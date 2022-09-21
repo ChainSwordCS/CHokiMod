@@ -100,8 +100,8 @@ void waitforDMAtoFinish(void*); // Don't use this. This is only used by a separa
 void sendDebugFrametimeStats(double,double,double*,double); // It works, and I'm still adding to it.
 
 // Helper functions, added by me.
-inline void cvt1632i_row1_rgb565(u32); // Unfinished
-inline void cvt1632i_row2_rgb565(u32); // Unfinished
+inline void cvt1632i_row1_rgb565(u32,u32*); // Unfinished
+inline void cvt1632i_row2_rgb565(u32,u32*); // Unfinished
 inline void cvt1624_help1(u32,u8**,u8**);
 inline void cvt1624_help2_forrgba4(u8*,u8*);
 inline void cvt1624_help2_forrgb5a1(u8*,u8*);
@@ -115,8 +115,8 @@ void netfuncNew3DS(void*);
 inline void populatedmaconf(u8*,u32); // Rewritten from netfunc
 inline int netfuncWaitForSettings(); // Rewritten from netfunc
 inline void tryStopDma(); // Rewritten from netfunc (very small; shorthand because it's repeated)
-inline void makeTargaImage(double*,double*,int,u32*,u32*,int*,bool*); // Rewritten from netfunc
-inline void makeJpegImage(double*,double*,int,u32*,u32*,int*,bool*); // Rewritten from netfunc
+inline void makeTargaImage(double*,double*,int,u32*,u32*,int*); // Rewritten from netfunc
+inline void makeJpegImage(double*,double*,int,u32*,u32*,int*); // Rewritten from netfunc
 inline void netfuncTestFramebuffer(u32*, int*); // Rewritten from netfunc
 
 int main(); // So you can call main from main (:
@@ -1095,14 +1095,14 @@ inline int netfuncWaitForSettings()
 		if((kHeld & (KEY_SELECT | KEY_START)) == (KEY_SELECT | KEY_START))
 			return -1;
 
-#ifdef log_on
+#ifdef LOG_ON
 		puts("Reading incoming packet...");
 #endif
 
 		int r = soc->readbuf();
 		if(r <= 0)
 		{
-#ifdef log_on
+#ifdef LOG_ON
 			printf("Failed to recvbuf: (%i) %s\n", errno, strerror(errno));
 #endif
 			return -1;
@@ -1124,7 +1124,7 @@ inline int netfuncWaitForSettings()
 
 				case 0x03: // Disconnect (new packet spec)
 					cfgblk[0] = 0;
-#ifdef log_on
+#ifdef LOG_ON
 					puts("forced dc");
 #endif
 					return -1;
@@ -1200,7 +1200,7 @@ inline int netfuncWaitForSettings()
 
 				case 0xFF: // Debug info. Prints to log file, interpreting the Data as u8 char objects.
 					// Note: packet subtype is ignored, lol.
-
+#ifdef LOG_ON
 					k = soc->getPakSize();
 					// Current offset
 					l = 0;
@@ -1214,10 +1214,13 @@ inline int netfuncWaitForSettings()
 						k--;
 						l++;
 					}
+#endif
 					return 1;
 
 				default:
+#ifdef LOG_ON
 					printf("Invalid packet ID: %i\n", soc->getPakType());
+#endif
 					return -1;
 			}
 
@@ -1240,8 +1243,10 @@ inline void tryStopDma()
 
 inline void makeTargaImage(double* timems_fc, double* timems_pf, int scr, u32* scrw, u32* bits, int* imgsize)
 {
+#ifdef LOG_ON
 	*timems_fc = 0;
 	osTickCounterUpdate(&tick_ctr_1);
+#endif
 
 	// Note: interlacing not yet implemented here.
 	init_tga_image(&img, (u8*)screenbuf, *scrw, stride[scr], *bits);
@@ -1249,10 +1254,10 @@ inline void makeTargaImage(double* timems_fc, double* timems_pf, int scr, u32* s
 	img.origin_y = (scr * 400) + (stride[scr] * offs[scr]);
 	tga_write_to_FILE((soc->bufferptr + bufsoc_pak_data_offset), &img, imgsize);
 
-
+#ifdef LOG_ON
 	osTickCounterUpdate(&tick_ctr_1);
 	*timems_pf = osTickCounterRead(&tick_ctr_1);
-
+#endif
 
 	u8 subtype_aka_flags = 0b00001000 + (scr * 0b00010000) + (format[scr] & 0b111);
 	soc->setPakType(01); // Image
@@ -1269,7 +1274,9 @@ inline void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* sc
 	int tjpf = 0;
 	u32 siz_2 = (capin.screencapture[scr].framebuf_widthbytesize * stride[scr]);
 
+#ifdef LOG_ON
 	osTickCounterUpdate(&tick_ctr_1);
+#endif
 
 	switch(f)
 	{
@@ -1357,8 +1364,10 @@ inline void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* sc
 			break;
 	}
 
+#ifdef LOG_ON
 	osTickCounterUpdate(&tick_ctr_1);
 	*timems_fc = osTickCounterRead(&tick_ctr_1);
+#endif
 
 	// TODO: Important!
 	// For some unknown reason, Mario Kart 7 requires the "width" (height)
@@ -1375,13 +1384,17 @@ inline void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* sc
 
 	if(!tjCompress2(jencode, experimentaladdr1, *scrw, (*bsiz) * (*scrw), stride[scr], tjpf, &destaddr, (u32*)imgsize, TJSAMP_420, cfgblk[1], TJFLAG_NOREALLOC | TJFLAG_FASTDCT))
 	{
+#ifdef LOG_ON
 		osTickCounterUpdate(&tick_ctr_1);
 		*timems_pf = osTickCounterRead(&tick_ctr_1);
+#endif
 		soc->setPakSize(*imgsize);
 	}
 	else
 	{
+#ifdef LOG_ON
 		*timems_pf = 0;
+#endif
 	}
 
 	soc->setPakType(01); //Image
@@ -1452,11 +1465,15 @@ inline void netfuncTestFramebuffer(u32* procid, int* scr)
 
 void netfuncOld3DS(void* __dummy_arg__)
 {
+
+#ifdef LOG_ON
 	osTickCounterStart(&tick_ctr_1);
 	osTickCounterStart(&tick_ctr_2_dma);
+#endif
 	double timems_processframe = 0;
 	double timems_writetosocbuf = 0;
 	double timems_formatconvert = 0;
+
 	u32 siz = 0x80;
 	u32 bsiz = 1;
 	u32 scrw = 1;
@@ -1486,7 +1503,9 @@ void netfuncOld3DS(void* __dummy_arg__)
 
         if(!soc) break;
 
+#ifdef LOG_ON
         sendDebugFrametimeStats(timems_processframe,timems_writetosocbuf,&timems_dmaasync,timems_formatconvert);
+#endif
 
         // If index 0 of the config block is non-zero (we are signaled by the PC to init)
         // And this ImportDisplayCaptureInfo function doesn't error...
@@ -1562,7 +1581,10 @@ void netfuncOld3DS(void* __dummy_arg__)
 
                 	//u8 gputransferflag[4] = {0b00100000,formatsbyte,0,0};
 
+#ifdef LOG_ON
                 	osTickCounterUpdate(&tick_ctr_2_dma);
+#endif
+
                 	int r = svcStartInterProcessDma(&dmahand,0xFFFF8001,screenbuf,srcprochand,srcaddr,siz,dmaconf);
 
                 	//int r = GX_DisplayTransfer((u32*)srcaddr,(240 << 16) + 400,(u32*)screenbuf,(240 << 16) + 400,*((u32*)gputransferflag));
@@ -1574,6 +1596,7 @@ void netfuncOld3DS(void* __dummy_arg__)
                 	}
                 	else
                 	{
+#ifdef LOG_ON
                 		if(dmastatusthreadrunning == 0)
                 		{
                 			// Old-3DS specific configuration to optimize performance of everything *except* that thread, lol.
@@ -1583,6 +1606,7 @@ void netfuncOld3DS(void* __dummy_arg__)
                 			// every once in a while, and this isn't a high-priority feature anyway.
                 			threadCreate(waitforDMAtoFinish, nullptr, 0x80, 0x3F, 0, true);
                 		}
+#endif
                 	}
                 }
 
@@ -1595,10 +1619,16 @@ void netfuncOld3DS(void* __dummy_arg__)
                 // If size is 0, don't send the packet.
                 if(soc->getPakSize())
                 {
+#ifdef LOG_ON
                 	osTickCounterUpdate(&tick_ctr_1);
+#endif
+
                 	soc->wribuf();
+
+#ifdef LOG_ON
                 	osTickCounterUpdate(&tick_ctr_1);
 					timems_writetosocbuf = osTickCounterRead(&tick_ctr_1);
+#endif
                 }
 
                 // Limit this thread to do other things? (On Old-3DS)
@@ -1607,7 +1637,7 @@ void netfuncOld3DS(void* __dummy_arg__)
                 // Note to self, removing this entirely will break things
                 // (except maybe in extreme cases, like if priority equals 0x3F,
                 //  but this remains untested for now...)
-                if(isold) svcSleepThread(5e6);
+                svcSleepThread(5e6);
                 // 5 x 10 ^ 6 nanoseconds (iirc)
             }
         }
@@ -1674,7 +1704,9 @@ void netfuncNew3DS(void* __dummy_arg__)
 
         if(!soc) break;
 
+#ifdef LOG_ON
         sendDebugFrametimeStats(timems_processframe,timems_writetosocbuf,&timems_dmaasync,timems_formatconvert);
+#endif
 
         // If index 0 of the config block is non-zero (we are signaled by the PC to init)
         // And this ImportDisplayCaptureInfo function doesn't error...
@@ -1746,7 +1778,10 @@ void netfuncNew3DS(void* __dummy_arg__)
 
                 	//u8 gputransferflag[4] = {0b00100000,formatsbyte,0,0};
 
+#ifdef LOG_ON
                 	osTickCounterUpdate(&tick_ctr_2_dma);
+#endif
+
                 	int r = svcStartInterProcessDma(&dmahand,0xFFFF8001,screenbuf,srcprochand,srcaddr,siz,dmaconf);
 
                 	//int r = GX_DisplayTransfer((u32*)srcaddr,(240 << 16) + 400,(u32*)screenbuf,(240 << 16) + 400,*((u32*)gputransferflag));
@@ -1758,6 +1793,7 @@ void netfuncNew3DS(void* __dummy_arg__)
                 	}
                 	else
                 	{
+#ifdef LOG_ON
                 		if(dmastatusthreadrunning == 0)
                 		{
                 			// Old-3DS specific configuration to optimize performance of everything *except* that thread, lol.
@@ -1769,6 +1805,7 @@ void netfuncNew3DS(void* __dummy_arg__)
                 			// On New-3DS, this will help very very slightly. Honestly worth it
                 			threadCreate(waitforDMAtoFinish, nullptr, 0x80, 0x3F, 0, true);
                 		}
+#endif
                 	}
                 }
 
@@ -1781,10 +1818,16 @@ void netfuncNew3DS(void* __dummy_arg__)
                 // If size is 0, don't send the packet.
                 if(soc->getPakSize())
                 {
+#ifdef LOG_ON
                 	osTickCounterUpdate(&tick_ctr_1);
+#endif
+
                 	soc->wribuf();
+
+#ifdef LOG_ON
                 	osTickCounterUpdate(&tick_ctr_1);
 					timems_writetosocbuf = osTickCounterRead(&tick_ctr_1);
+#endif
                 }
             }
         }
@@ -1840,6 +1883,7 @@ int main()
     // Isn't this already initialized to null?
     soc = nullptr;
     
+#ifdef LOG_ON
     f = fopen("HzLog.log", "a");
     if(f != NULL)
     {
@@ -1850,6 +1894,7 @@ int main()
 		setvbuf(stderr, nullptr, _IONBF, 0);
     }
     printf("Hello World? Does this work? lol\n");
+#endif
     
     memset(&pat, 0, sizeof(pat));
     memset(&capin, 0, sizeof(capin));
@@ -1980,7 +2025,9 @@ int main()
 
         if(r <= 0)
         {
+#ifdef LOG_ON
             printf("socket error: (%i) %s\n", errno, strerror(errno));
+#endif
             hangmacro();
         }
         
@@ -1993,7 +2040,9 @@ int main()
         
         if(bind(sock, (struct sockaddr*)&sao, sizeof(sao)) < 0)
         {
+#ifdef LOG_ON
             printf("bind error: (%i) %s\n", errno, strerror(errno));
+#endif
             hangmacro();
         }
         
@@ -2001,7 +2050,9 @@ int main()
         {
 			if(listen(sock, 1) < 0)
 			{
+#ifdef LOG_ON
 				printf("listen error: (%i) %s\n", errno, strerror(errno));
+#endif
 				hangmacro();
 			}
         }
@@ -2041,7 +2092,9 @@ int main()
                 int cli = accept(sock, (struct sockaddr*)&sai, &sizeof_sai);
                 if(cli < 0)
                 {
+#ifdef LOG_ON
                     printf("Failed to accept client: (%i) %s\n", errno, strerror(errno));
+#endif
                     if(errno == EINVAL) goto netreset;
                     PatPulse(0x0000FF); // Notif LED = Red
                 }
@@ -2090,7 +2143,9 @@ int main()
             }
             else if(pollsock(sock, POLLERR) == POLLERR)
             {
+#ifdef LOG_ON
                 printf("POLLERR (%i) %s", errno, strerror(errno));
+#endif
                 goto netreset;
             }
         }
@@ -2127,7 +2182,9 @@ int main()
     if(soc) delete soc;
     else close(sock);
     
+#ifdef LOG_ON
     puts("Shutting down sockets...");
+#endif
     SOCU_ShutdownSockets();
     
     socExit();
