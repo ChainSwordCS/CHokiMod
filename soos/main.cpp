@@ -95,9 +95,9 @@ void CPPCrashHandler();
 
 
 // Image Processing Functions added by me
-void lazyConvert16to32andInterlace(u32,u32); // Finished, works. Destructive implementation
-void convert16to24andInterlace(u32,u32); // Needs a rewrite if it's going to ever be used (currently unused)
-void fastConvert16to32andInterlace2_rgb565(u32); // Unfinished, broken colors. (Destructive implementation)
+void lazyConvert16to32andInterlace(u32,u32); // Finished, works. (Destructive implementation)
+void convert16to24andInterlace(u32,u32); // Needs a rewrite (currently unused)
+void fastConvert16to32andInterlace2_rgb565(u32); // Finished, works. (Destructive implementation)
 void convert16to24_rgb5a1(u32); // Finished, works.
 void convert16to24_rgb565(u32); // Finished, works.
 void convert16to24_rgba4(u32); // Finished, works.
@@ -1197,6 +1197,13 @@ inline int netfuncWaitForSettings()
 								cfgblk[5] = 1;
 							return 1;
 
+						case 0x06: // Force hotfix for Mario Kart 7 (on or off; breaks compatibility with all other games)
+							if(j > 1)
+								cfgblk[6] = 0;
+							else
+								cfgblk[6] = j;
+							return 1;
+
 						default:
 							// Invalid subtype for "Settings" packet-type
 							return 1;
@@ -1289,14 +1296,14 @@ inline void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* sc
 			forceInterlaced = -1; // Function not yet implemented
 			tjpf = TJPF_RGBX;
 			*bsiz = 4;
-			*scrw = 240;
+			//*scrw = 240;
 			break;
 
 		case 1: // RGB8
 			forceInterlaced = -1; // Function not yet implemented
 			tjpf = TJPF_RGB;
 			*bsiz = 3;
-			*scrw = 240;
+			//*scrw = 240;
 			break;
 
 		case 2: // RGB565
@@ -1307,7 +1314,7 @@ inline void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* sc
 				//lazyConvert16to32andInterlace(2,siz_2);
 				tjpf = TJPF_RGBX;
 				*bsiz = 4;
-				*scrw = 120;
+				*scrw = *scrw / 2; // Account for Mario Kart 7. Usually 120, but in that one case it's 128.
 				subtype_aka_flags += 0b00100000 + (interlace_px_offset?0:0b01000000);
 			}
 			else
@@ -1315,7 +1322,7 @@ inline void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* sc
 				convert16to24_rgb565(stride[scr]);
 				tjpf = TJPF_RGB;
 				*bsiz = 3;
-				*scrw = 240;
+				//*scrw = 240;
 			}
 			break;
 
@@ -1326,7 +1333,7 @@ inline void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* sc
 				lazyConvert16to32andInterlace(3,siz_2);
 				tjpf = TJPF_RGBX;
 				*bsiz = 4;
-				*scrw = 120;
+				*scrw = *scrw / 2;
 				subtype_aka_flags += 0b00100000 + (interlace_px_offset?0:0b01000000);
 			}
 			else
@@ -1334,7 +1341,7 @@ inline void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* sc
 				convert16to24_rgb5a1(stride[scr]);
 				tjpf = TJPF_RGB;
 				*bsiz = 3;
-				*scrw = 240;
+				//*scrw = 240;
 			}
 			break;
 
@@ -1345,7 +1352,7 @@ inline void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* sc
 				lazyConvert16to32andInterlace(4,siz_2);
 				tjpf = TJPF_RGBX;
 				*bsiz = 4;
-				*scrw = 120;
+				*scrw = *scrw / 2;
 				subtype_aka_flags += 0b00100000 + (interlace_px_offset?0:0b01000000);
 			}
 			else
@@ -1353,7 +1360,7 @@ inline void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* sc
 				convert16to24_rgba4(stride[scr]);
 				tjpf = TJPF_RGB;
 				*bsiz = 3;
-				*scrw = 240;
+				//*scrw = 240;
 			}
 			break;
 
@@ -1405,6 +1412,18 @@ inline void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* sc
 	soc->setPakType(01); //Image
 	soc->setPakSubtype(subtype_aka_flags);
 	return;
+}
+
+inline void tryMarioKartHotfix(u32* scrw)
+{
+	if(cfgblk[6] == 1)
+	{
+		*scrw = 256;
+	}
+	else
+	{
+		*scrw = 240;
+	}
 }
 
 inline void netfuncTestFramebuffer(u32* procid, int* scr)
@@ -1518,6 +1537,8 @@ void netfuncOld3DS(void* __dummy_arg__)
         {
         	netfuncTestFramebuffer(&procid,&scr);
 
+        	tryMarioKartHotfix(&scrw);
+
             // Note: We control how often this loop runs
             // compared to how often the capture info is checked,
             // by changing the loopcnt variable. (Renamed to loopy, lol.)
@@ -1569,7 +1590,7 @@ void netfuncOld3DS(void* __dummy_arg__)
                 // TODO: Does this even return a correct value? Even remotely?
                 siz = (capin.screencapture[scr].framebuf_widthbytesize * stride[scr]); // Size of the entire frame (in bytes)
                 bsiz = capin.screencapture[scr].framebuf_widthbytesize / 240; // Size of a single pixel in bytes (???)
-                scrw = capin.screencapture[scr].framebuf_widthbytesize / bsiz; // Screen "Width" (Usually 240)
+                //scrw = capin.screencapture[scr].framebuf_widthbytesize / bsiz; // Screen "Width" (Usually 240)
                 bits = 4 << bsiz; // ?
 
                 Handle prochand = 0;
@@ -1719,6 +1740,8 @@ void netfuncNew3DS(void* __dummy_arg__)
         {
         	netfuncTestFramebuffer(&procid,&scr);
 
+        	tryMarioKartHotfix(&scrw);
+
             // Note: We control how often this loop runs
             // compared to how often the capture info is checked,
             // by changing the loopcnt variable. (Renamed to loopy, lol.)
@@ -1765,7 +1788,7 @@ void netfuncNew3DS(void* __dummy_arg__)
                 // TODO: Does this even return a correct value? Even remotely?
                 siz = (capin.screencapture[scr].framebuf_widthbytesize * stride[scr]); // Size of the entire frame (in bytes)
                 bsiz = capin.screencapture[scr].framebuf_widthbytesize / 240; // Size of a single pixel in bytes (???)
-                scrw = capin.screencapture[scr].framebuf_widthbytesize / bsiz; // Screen "Width" (Usually 240)
+                //scrw = capin.screencapture[scr].framebuf_widthbytesize / bsiz; // Screen "Width" (Usually 240)
                 bits = 4 << bsiz; // ?
 
 
