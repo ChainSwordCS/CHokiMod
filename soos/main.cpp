@@ -21,6 +21,15 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+// this makes me so unfathomably upset. you can fix it and open a pull request if you wish
+// i'd rather never think of this ever again. i hate makefile logic and syntax (and also my life)
+
+#define DEBUG_BASIC 1
+#define DEBUG_VERBOSE 0
+// Debug flag for testing; use experimental UDP instead of TCP.
+// Don't enable this for now. It doesn't work.
+#define DEBUG_USEUDP 0
+
 extern "C"
 {
 #include <stdio.h>
@@ -120,10 +129,6 @@ inline void makeJpegImage(double*,double*,int,u32*,u32*,int*); // Rewritten from
 inline void netfuncTestFramebuffer(u32*, int*); // Rewritten from netfunc
 
 int main(); // So you can call main from main (:
-
-// Debug flag for testing; use experimental UDP instead of TCP.
-// Defined at compile-time, for now.
-const bool debug_useUDP = false;
 
 static int haznet = 0;
 int checkwifi()
@@ -1095,14 +1100,14 @@ inline int netfuncWaitForSettings()
 		if((kHeld & (KEY_SELECT | KEY_START)) == (KEY_SELECT | KEY_START))
 			return -1;
 
-#ifdef LOG_ON
+#if DEBUG_BASIC==1
 		puts("Reading incoming packet...");
 #endif
 
 		int r = soc->readbuf();
 		if(r <= 0)
 		{
-#ifdef LOG_ON
+#if DEBUG_BASIC==1
 			printf("Failed to recvbuf: (%i) %s\n", errno, strerror(errno));
 #endif
 			return -1;
@@ -1124,7 +1129,7 @@ inline int netfuncWaitForSettings()
 
 				case 0x03: // Disconnect (new packet spec)
 					cfgblk[0] = 0;
-#ifdef LOG_ON
+#if DEBUG_BASIC==1
 					puts("forced dc");
 #endif
 					return -1;
@@ -1200,7 +1205,7 @@ inline int netfuncWaitForSettings()
 
 				case 0xFF: // Debug info. Prints to log file, interpreting the Data as u8 char objects.
 					// Note: packet subtype is ignored, lol.
-#ifdef LOG_ON
+#if DEBUG_BASIC==1
 					k = soc->getPakSize();
 					// Current offset
 					l = 0;
@@ -1218,7 +1223,7 @@ inline int netfuncWaitForSettings()
 					return 1;
 
 				default:
-#ifdef LOG_ON
+#if DEBUG_BASIC==1
 					printf("Invalid packet ID: %i\n", soc->getPakType());
 #endif
 					return -1;
@@ -1243,7 +1248,7 @@ inline void tryStopDma()
 
 inline void makeTargaImage(double* timems_fc, double* timems_pf, int scr, u32* scrw, u32* bits, int* imgsize)
 {
-#ifdef LOG_ON
+#if DEBUG_VERBOSE==1
 	*timems_fc = 0;
 	osTickCounterUpdate(&tick_ctr_1);
 #endif
@@ -1254,7 +1259,7 @@ inline void makeTargaImage(double* timems_fc, double* timems_pf, int scr, u32* s
 	img.origin_y = (scr * 400) + (stride[scr] * offs[scr]);
 	tga_write_to_FILE((soc->bufferptr + bufsoc_pak_data_offset), &img, imgsize);
 
-#ifdef LOG_ON
+#if DEBUG_VERBOSE==1
 	osTickCounterUpdate(&tick_ctr_1);
 	*timems_pf = osTickCounterRead(&tick_ctr_1);
 #endif
@@ -1274,7 +1279,7 @@ inline void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* sc
 	int tjpf = 0;
 	u32 siz_2 = (capin.screencapture[scr].framebuf_widthbytesize * stride[scr]);
 
-#ifdef LOG_ON
+#if DEBUG_VERBOSE==1
 	osTickCounterUpdate(&tick_ctr_1);
 #endif
 
@@ -1364,7 +1369,7 @@ inline void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* sc
 			break;
 	}
 
-#ifdef LOG_ON
+#if DEBUG_VERBOSE==1
 	osTickCounterUpdate(&tick_ctr_1);
 	*timems_fc = osTickCounterRead(&tick_ctr_1);
 #endif
@@ -1384,7 +1389,7 @@ inline void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* sc
 
 	if(!tjCompress2(jencode, experimentaladdr1, *scrw, (*bsiz) * (*scrw), stride[scr], tjpf, &destaddr, (u32*)imgsize, TJSAMP_420, cfgblk[1], TJFLAG_NOREALLOC | TJFLAG_FASTDCT))
 	{
-#ifdef LOG_ON
+#if DEBUG_VERBOSE==1
 		osTickCounterUpdate(&tick_ctr_1);
 		*timems_pf = osTickCounterRead(&tick_ctr_1);
 #endif
@@ -1392,7 +1397,7 @@ inline void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* sc
 	}
 	else
 	{
-#ifdef LOG_ON
+#if DEBUG_VERBOSE==1
 		*timems_pf = 0;
 #endif
 	}
@@ -1466,7 +1471,7 @@ inline void netfuncTestFramebuffer(u32* procid, int* scr)
 void netfuncOld3DS(void* __dummy_arg__)
 {
 
-#ifdef LOG_ON
+#if DEBUG_VERBOSE==1
 	osTickCounterStart(&tick_ctr_1);
 	osTickCounterStart(&tick_ctr_2_dma);
 #endif
@@ -1503,7 +1508,7 @@ void netfuncOld3DS(void* __dummy_arg__)
 
         if(!soc) break;
 
-#ifdef LOG_ON
+#if DEBUG_VERBOSE==1
         sendDebugFrametimeStats(timems_processframe,timems_writetosocbuf,&timems_dmaasync,timems_formatconvert);
 #endif
 
@@ -1581,7 +1586,7 @@ void netfuncOld3DS(void* __dummy_arg__)
 
                 	//u8 gputransferflag[4] = {0b00100000,formatsbyte,0,0};
 
-#ifdef LOG_ON
+#if DEBUG_VERBOSE==1
                 	osTickCounterUpdate(&tick_ctr_2_dma);
 #endif
 
@@ -1596,7 +1601,7 @@ void netfuncOld3DS(void* __dummy_arg__)
                 	}
                 	else
                 	{
-#ifdef LOG_ON
+#if DEBUG_VERBOSE==1
                 		if(dmastatusthreadrunning == 0)
                 		{
                 			// Old-3DS specific configuration to optimize performance of everything *except* that thread, lol.
@@ -1619,13 +1624,13 @@ void netfuncOld3DS(void* __dummy_arg__)
                 // If size is 0, don't send the packet.
                 if(soc->getPakSize())
                 {
-#ifdef LOG_ON
+#if DEBUG_VERBOSE==1
                 	osTickCounterUpdate(&tick_ctr_1);
 #endif
 
                 	soc->wribuf();
 
-#ifdef LOG_ON
+#if DEBUG_VERBOSE==1
                 	osTickCounterUpdate(&tick_ctr_1);
 					timems_writetosocbuf = osTickCounterRead(&tick_ctr_1);
 #endif
@@ -1704,7 +1709,7 @@ void netfuncNew3DS(void* __dummy_arg__)
 
         if(!soc) break;
 
-#ifdef LOG_ON
+#if DEBUG_VERBOSE==1
         sendDebugFrametimeStats(timems_processframe,timems_writetosocbuf,&timems_dmaasync,timems_formatconvert);
 #endif
 
@@ -1778,7 +1783,7 @@ void netfuncNew3DS(void* __dummy_arg__)
 
                 	//u8 gputransferflag[4] = {0b00100000,formatsbyte,0,0};
 
-#ifdef LOG_ON
+#if DEBUG_VERBOSE==1
                 	osTickCounterUpdate(&tick_ctr_2_dma);
 #endif
 
@@ -1793,7 +1798,7 @@ void netfuncNew3DS(void* __dummy_arg__)
                 	}
                 	else
                 	{
-#ifdef LOG_ON
+#if DEBUG_VERBOSE==1
                 		if(dmastatusthreadrunning == 0)
                 		{
                 			// Old-3DS specific configuration to optimize performance of everything *except* that thread, lol.
@@ -1818,13 +1823,13 @@ void netfuncNew3DS(void* __dummy_arg__)
                 // If size is 0, don't send the packet.
                 if(soc->getPakSize())
                 {
-#ifdef LOG_ON
+#if DEBUG_VERBOSE==1
                 	osTickCounterUpdate(&tick_ctr_1);
 #endif
 
                 	soc->wribuf();
 
-#ifdef LOG_ON
+#if DEBUG_VERBOSE==1
                 	osTickCounterUpdate(&tick_ctr_1);
 					timems_writetosocbuf = osTickCounterRead(&tick_ctr_1);
 #endif
@@ -1883,7 +1888,7 @@ int main()
     // Isn't this already initialized to null?
     soc = nullptr;
     
-#ifdef LOG_ON
+#if DEBUG_BASIC==1
     f = fopen("HzLog.log", "a");
     if(f != NULL)
     {
@@ -2009,23 +2014,22 @@ int main()
     	int r;
 
 
-    	if(debug_useUDP)
-    	{
-    		// UDP (May not work!)
+#if DEBUG_USEUDP==1
+		// UDP (May not work!)
 
-        	// For third argument, 0 is fine as there's only one form of datagram service(?)
-    		// But also, if IPPROTO_UDP is fine, I may stick with that.
+		// For third argument, 0 is fine as there's only one form of datagram service(?)
+		// But also, if IPPROTO_UDP is fine, I may stick with that.
 
-        	r = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    	}
-    	else
-    	{
-    		r = socket(AF_INET, SOCK_STREAM, IPPROTO_IP); // TCP (This works; don't change it.)
-    	}
+		r = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+#endif
+
+#if DEBUG_USEUDP==0
+		r = socket(AF_INET, SOCK_STREAM, IPPROTO_IP); // TCP (This works; don't change it.)
+#endif
 
         if(r <= 0)
         {
-#ifdef LOG_ON
+#if DEBUG_BASIC==1
             printf("socket error: (%i) %s\n", errno, strerror(errno));
 #endif
             hangmacro();
@@ -2040,22 +2044,23 @@ int main()
         
         if(bind(sock, (struct sockaddr*)&sao, sizeof(sao)) < 0)
         {
-#ifdef LOG_ON
+#if DEBUG_BASIC==1
             printf("bind error: (%i) %s\n", errno, strerror(errno));
 #endif
             hangmacro();
         }
         
-        if(!debug_useUDP) // TCP-only code block
+#if DEBUG_USEUDP==0// TCP-only code block
         {
 			if(listen(sock, 1) < 0)
 			{
-#ifdef LOG_ON
+#if DEBUG_BASIC==1
 				printf("listen error: (%i) %s\n", errno, strerror(errno));
 #endif
 				hangmacro();
 			}
         }
+#endif
     }
     
     
@@ -2092,7 +2097,7 @@ int main()
                 int cli = accept(sock, (struct sockaddr*)&sai, &sizeof_sai);
                 if(cli < 0)
                 {
-#ifdef LOG_ON
+#if DEBUG_BASIC==1
                     printf("Failed to accept client: (%i) %s\n", errno, strerror(errno));
 #endif
                     if(errno == EINVAL) goto netreset;
@@ -2143,7 +2148,7 @@ int main()
             }
             else if(pollsock(sock, POLLERR) == POLLERR)
             {
-#ifdef LOG_ON
+#if DEBUG_BASIC==1
                 printf("POLLERR (%i) %s", errno, strerror(errno));
 #endif
                 goto netreset;
@@ -2182,7 +2187,7 @@ int main()
     if(soc) delete soc;
     else close(sock);
     
-#ifdef LOG_ON
+#if DEBUG_BASIC==1
     puts("Shutting down sockets...");
 #endif
     SOCU_ShutdownSockets();
