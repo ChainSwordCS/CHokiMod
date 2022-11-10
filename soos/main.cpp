@@ -26,6 +26,8 @@
 
 #define DEBUG_BASIC 1
 #define DEBUG_VERBOSE 0
+// Unfinished
+#define DEBUG_O3DSNEWINTERLACE 0
 // Debug flag for testing; use experimental UDP instead of TCP.
 // Don't enable this for now. It doesn't work.
 #define DEBUG_USEUDP 0
@@ -1198,10 +1200,10 @@ inline int netfuncWaitForSettings()
 							return 1;
 
 						case 0x06: // Force hotfix for Mario Kart 7 (on or off; breaks compatibility with all other games)
-							if(j > 1)
+							if(j == 0)
 								cfgblk[6] = 0;
 							else
-								cfgblk[6] = j;
+								cfgblk[6] = 1;
 							return 1;
 
 						default:
@@ -1296,14 +1298,14 @@ inline void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* sc
 			forceInterlaced = -1; // Function not yet implemented
 			tjpf = TJPF_RGBX;
 			*bsiz = 4;
-			//*scrw = 240;
+			*scrw = 240;
 			break;
 
 		case 1: // RGB8
 			forceInterlaced = -1; // Function not yet implemented
 			tjpf = TJPF_RGB;
 			*bsiz = 3;
-			//*scrw = 240;
+			*scrw = 240;
 			break;
 
 		case 2: // RGB565
@@ -1314,7 +1316,8 @@ inline void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* sc
 				//lazyConvert16to32andInterlace(2,siz_2);
 				tjpf = TJPF_RGBX;
 				*bsiz = 4;
-				*scrw = *scrw / 2; // Account for Mario Kart 7. Usually 120, but in that one case it's 128.
+				*scrw = 120;
+				//*scrw = *scrw / 2; // Account for Mario Kart 7. Usually 120, but in that one case it's 128.
 				subtype_aka_flags += 0b00100000 + (interlace_px_offset?0:0b01000000);
 			}
 			else
@@ -1322,7 +1325,7 @@ inline void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* sc
 				convert16to24_rgb565(stride[scr]);
 				tjpf = TJPF_RGB;
 				*bsiz = 3;
-				//*scrw = 240;
+				*scrw = 240;
 			}
 			break;
 
@@ -1333,7 +1336,8 @@ inline void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* sc
 				lazyConvert16to32andInterlace(3,siz_2);
 				tjpf = TJPF_RGBX;
 				*bsiz = 4;
-				*scrw = *scrw / 2;
+				*scrw = 120;
+				//*scrw = *scrw / 2; // MK7
 				subtype_aka_flags += 0b00100000 + (interlace_px_offset?0:0b01000000);
 			}
 			else
@@ -1341,7 +1345,7 @@ inline void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* sc
 				convert16to24_rgb5a1(stride[scr]);
 				tjpf = TJPF_RGB;
 				*bsiz = 3;
-				//*scrw = 240;
+				*scrw = 240;
 			}
 			break;
 
@@ -1352,7 +1356,8 @@ inline void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* sc
 				lazyConvert16to32andInterlace(4,siz_2);
 				tjpf = TJPF_RGBX;
 				*bsiz = 4;
-				*scrw = *scrw / 2;
+				*scrw = 120;
+				//*scrw = *scrw / 2; // MK7
 				subtype_aka_flags += 0b00100000 + (interlace_px_offset?0:0b01000000);
 			}
 			else
@@ -1360,7 +1365,7 @@ inline void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* sc
 				convert16to24_rgba4(stride[scr]);
 				tjpf = TJPF_RGB;
 				*bsiz = 3;
-				//*scrw = 240;
+				*scrw = 240;
 			}
 			break;
 
@@ -1414,6 +1419,7 @@ inline void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* sc
 	return;
 }
 
+// This is implemented in a really dumb way i think
 inline void tryMarioKartHotfix(u32* scrw)
 {
 	if(cfgblk[6] == 1)
@@ -1537,7 +1543,7 @@ void netfuncOld3DS(void* __dummy_arg__)
         {
         	netfuncTestFramebuffer(&procid,&scr);
 
-        	tryMarioKartHotfix(&scrw);
+        	//tryMarioKartHotfix(&scrw);
 
             // Note: We control how often this loop runs
             // compared to how often the capture info is checked,
@@ -1569,11 +1575,13 @@ void netfuncOld3DS(void* __dummy_arg__)
 
 
 				// Screen-chunk index ranges from 0 to 7 (Old-3DS only)
-				u8 b = 0b00001000 + (offs[scr] / stride[scr]);
+				u8 b = 0b00001000 + (offs[scr]);
 				soc->setPakSubtypeB(b);
                 // Current progress through one complete frame
                 // (Only applicable to Old-3DS)
-                if(++offs[scr] == limit[scr]) offs[scr] = 0;
+				offs[scr]++;
+                if(offs[scr] >= limit[scr])
+                	offs[scr] = 0;
 
                 if(cfgblk[3] == 01) // Top Screen Only
                 	scr = 0;
@@ -1590,7 +1598,7 @@ void netfuncOld3DS(void* __dummy_arg__)
                 // TODO: Does this even return a correct value? Even remotely?
                 siz = (capin.screencapture[scr].framebuf_widthbytesize * stride[scr]); // Size of the entire frame (in bytes)
                 bsiz = capin.screencapture[scr].framebuf_widthbytesize / 240; // Size of a single pixel in bytes (???)
-                //scrw = capin.screencapture[scr].framebuf_widthbytesize / bsiz; // Screen "Width" (Usually 240)
+                scrw = capin.screencapture[scr].framebuf_widthbytesize / bsiz; // Screen "Width" (Usually 240)
                 bits = 4 << bsiz; // ?
 
                 Handle prochand = 0;
@@ -1740,7 +1748,7 @@ void netfuncNew3DS(void* __dummy_arg__)
         {
         	netfuncTestFramebuffer(&procid,&scr);
 
-        	tryMarioKartHotfix(&scrw);
+        	//tryMarioKartHotfix(&scrw);
 
             // Note: We control how often this loop runs
             // compared to how often the capture info is checked,
@@ -1788,7 +1796,7 @@ void netfuncNew3DS(void* __dummy_arg__)
                 // TODO: Does this even return a correct value? Even remotely?
                 siz = (capin.screencapture[scr].framebuf_widthbytesize * stride[scr]); // Size of the entire frame (in bytes)
                 bsiz = capin.screencapture[scr].framebuf_widthbytesize / 240; // Size of a single pixel in bytes (???)
-                //scrw = capin.screencapture[scr].framebuf_widthbytesize / bsiz; // Screen "Width" (Usually 240)
+                scrw = capin.screencapture[scr].framebuf_widthbytesize / bsiz; // Screen "Width" (Usually 240)
                 bits = 4 << bsiz; // ?
 
 
@@ -1938,6 +1946,22 @@ int main()
     isold = APPMEMTYPE <= 5;
     if(isold) // is Old-3DS
     {
+
+#if DEBUG_O3DSNEWINTERLACE==1
+    	limit[0] = 1;
+    	limit[1] = 1;
+    	stride[0] = 400;
+    	stride[1] = 320;
+
+    	soc_service_buf_siz = 0x20000;
+    	screenbuf_siz = 400 * 120 * 3;
+    	bufsoc_siz = 0x10000;
+
+    	netfunc_thread_stack_siz = 0x2000;
+
+    	netfunc_thread_priority = 0x21;
+    	netfunc_thread_cpu = 1;
+#else
     	limit[0] = 8; // Capture the screen in 8 chunks
     	limit[1] = 8;
     	stride[0] = 50; // Screen / Framebuffer width (divided by 8)
@@ -1953,6 +1977,8 @@ int main()
     	//
     	netfunc_thread_priority = 0x21;
     	netfunc_thread_cpu = 1;
+#endif
+
     }
     else // is New-3DS (or New-2DS)
     {
