@@ -1089,6 +1089,7 @@ inline void populatedmaconf(u8* dmac, u32 flag)
 	}
 
 	dmac[0] = -1; // -1 = Auto-assign to a free channel (Arm11: 3-7, Arm9:0-1)
+	//dmac[2] = 0b11000000;
 
 	return;
 }
@@ -1618,6 +1619,40 @@ void netfuncOld3DS(void* __dummy_arg__)
 #if DEBUG_VERBOSE==1
                 	osTickCounterUpdate(&tick_ctr_2_dma);
 #endif
+
+                	// Theory: the Mario Kart 7 bug happens here. "siz" is the Stride, the number of bytes to go forward
+                	// before starting to copy pixel data for the next row.
+                	// (Counterintuitively, not the same as the variable which has historically been named "stride"...)
+                	//
+                	// But anyway, the value that the game is reporting is not being respected correctly.
+                	// I'm calculating it manually based on bitdepth, but that doesn't take into account
+                	// the extra bytes that may be between each row (as in Mario Kart 7, I believe.)
+                	//
+                	// ...some of that is actually probably wrong... whatever.
+                	// TLDR: use "capin.screencapture[scr].framebuf_widthbytesize" somewhere to fix the bug.
+                	//
+                	// It may benefit me to solve this with custom DMA configuration
+
+                	// TODO: suboptimal mem allocation for these vars
+                	//int bytesperpixel;
+                	//if(format == 0)
+                	//	bytesperpixel = 4;
+                	//else
+                	//	bytesperpixel = 3;
+
+                	// real
+                	//int stride_real = capin.screencapture[scr].framebuf_widthbytesize - (240 * bytesperpixel);
+
+                	// hardcoded mk7 hotfix
+                	//stride_real = 16*3;
+
+                	// burstSize (Source config block)
+                	//*(u16*)(dmaconf+16) = 240 * bytesperpixel;
+                	// burstStride (Source config block)
+                	//*(u16*)(dmaconf+18) = stride_real;
+
+                	//*(u16*)(dmaconf+20) = stride[scr];
+                	//*(u16*)(dmaconf+22) = stride[scr];
 
                 	int r = svcStartInterProcessDma(&dmahand,0xFFFF8001,screenbuf,srcprochand,srcaddr,siz,dmaconf);
 
