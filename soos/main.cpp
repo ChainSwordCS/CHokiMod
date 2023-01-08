@@ -58,6 +58,7 @@ extern "C"
 #include "service/mcu.h"
 #include "service/gx.h"
 #include "misc/pattern.h"
+#include "imanip/imanip.h"
 
 #include "tga/targa.h"
 #include <turbojpeg.h>
@@ -97,28 +98,10 @@ int checkwifi();
 int pollsock(int,int,int);
 void CPPCrashHandler();
 
-
-// Image Processing Functions added by me
-void lazyConvert16to32andInterlace(u32,u32); // Finished, works. (Destructive implementation)
-void convert16to24andInterlace(u32,u32); // Needs a rewrite (currently unused)
-void fastConvert16to32andInterlace2_rgb565(u32); // Finished, works. (Destructive implementation)
-void convert16to24_rgb5a1(u32); // Finished, works.
-void convert16to24_rgb565(u32); // Finished, works.
-void convert16to24_rgba4(u32); // Finished, works.
-void dummyinterlace24(u32,u32); // Very unfinished, broken, do not use.
-
 // Other big functions added by me
 inline int setCpuResourceLimit(u32); // Unfinished, doesn't work.
 void waitforDMAtoFinish(void*); // Don't use this. This is only used by a separate thread, started from within netfunc.
 void sendDebugFrametimeStats(double,double,double*,double); // It works, and I'm still adding to it.
-
-// Helper functions, added by me.
-inline void cvt1632i_row1_rgb565(u32,u32*); // Unfinished
-inline void cvt1632i_row2_rgb565(u32,u32*); // Unfinished
-inline void cvt1624_help1(u32,u8**,u8**);
-inline void cvt1624_help2_forrgba4(u8*,u8*);
-inline void cvt1624_help2_forrgb5a1(u8*,u8*);
-inline void cvt1624_help2_forrgb565(u8*,u8*);
 
 // netfunc
 void netfuncOld3DS(void*); // Version of netfunc specifically for Old-3DS (code flow optimization)
@@ -473,484 +456,6 @@ static TickCounter tick_ctr_2_dma;
 // This variable is separate from the row index numbers.
 // Rows of pixels will generally be indexed starting at 1 and ending at 240 (or 120)
 static int interlace_px_offset = 0;
-
-// Super lazy, proof-of-concept function for converting 16-bit color images to 24-bit.
-// (Note: This function focuses on speed and not having to reallocate anything.)
-// Converts to RGBA8 (hopefully) (TJPF_RGBX)
-//
-// As it is now, Alpha is not read and will always be totally nullified after this function.
-// Interpreting the resulting data as RGBA instead of RGBX could cause the
-// Alpha channel to be interpreted as 0.
-//
-// P.S. Sorry my code is dumb and bad and hard to read lol
-//
-// Note to self... What I actually kinda want to do is to modify the libturbojpeg code
-// to accept 16bpp input to the compressor, but that'd be a whole other challenge...
-//
-void lazyConvert16to32andInterlace(u32 flag, u32 passedsiz)
-{
-	// offs is used to track our progress through the loop.
-	u32 offs = 0;
-
-	// One-time reinterpret as an array of u8 objects
-	// u8scrbuf points to the exact same data (if my logic is sound)
-	u8* u8scrbuf = (u8*)screenbuf;
-	//u16* u16scrbuf = (u16*)screenbuf;
-
-	if(flag == 4) // RGBA4 -> RGBA8
-	{
-		while((offs + 3) < passedsiz) // This conditional should be good enough to catch errors...
-		{
-			u8 b = ( u8scrbuf[offs + interlace_px_offset] & 0b11110000);
-			u8 g = ( u8scrbuf[offs+1+interlace_px_offset] & 0b00001111) << 4;
-			u8 r = ( u8scrbuf[offs+1+interlace_px_offset] & 0b11110000);
-			screenbuf[(offs/4)] = ((u32)r << 16) + ((u32)g << 8) + ((u32)b << 0);
-
-			// At compile-time, hopefully this will just be one register(?)
-			// i.e. this is hard to read, but I think working with u32 objects instead of u8s will save us CPU time(...?)
-
-			// derive red pixel
-			//u32 rgba8pix = (u32)(u8scrbuf[(offs+interlace_px_offset)] & 0b11110000) << 24;
-			// derive green pixel
-			//rgba8pix = rgba8pix + ( (u32)(u8scrbuf[(offs+interlace_px_offset)] & 0b00001111) << 20 );
-			// derive blue pixel
-			//rgba8pix = rgba8pix + ( (u32)(u8scrbuf[(offs+1+interlace_px_offset)] & 0b11110000) << 8 );
-			//screenbuf[(offs/4)] = rgba8pix;
-
-			offs = offs + 4;
-		}
-	}
-	else if(flag == 3) // RGB5A1 -> RGBA8
-	{
-		while((offs + 3) < passedsiz)
-		{
-			u8 b = ( u8scrbuf[offs + interlace_px_offset] & 0b00111110) << 2;
-			u8 g = ( u8scrbuf[offs + interlace_px_offset] & 0b11000000) >> 3;
-			g = g +((u8scrbuf[offs+1+interlace_px_offset] & 0b00000111) << 5);
-			u8 r = ( u8scrbuf[offs+1+interlace_px_offset] & 0b11111000);
-			screenbuf[(offs/4)] = ((u32)r << 16) + ((u32)g << 8) + ((u32)b << 0);
-
-			offs = offs + 4;
-		}
-	}
-	else if(flag == 2) // RGB565 -> RGBA8
-	{
-		while((offs + 3) < passedsiz)
-		{
-			u8 b = ( u8scrbuf[offs + interlace_px_offset] & 0b00011111) << 3;
-			u8 g = ( u8scrbuf[offs + interlace_px_offset] & 0b11100000) >> 3;
-			g = g +((u8scrbuf[offs+1+interlace_px_offset] & 0b00000111) << 5);
-			u8 r = ( u8scrbuf[offs+1+interlace_px_offset] & 0b11111000);
-			screenbuf[(offs/4)] = ((u32)r << 16) + ((u32)g << 8) + ((u32)b << 0);
-
-			offs = offs + 4;
-		}
-	}
-	else
-	{
-		// Do nothing; we expect to receive a valid flag.
-	}
-
-	// Next frame, do the other set of rows instead.
-	if(interlace_px_offset == 0)
-		interlace_px_offset = 2;
-	else
-		interlace_px_offset = 0;
-
-	return;
-}
-
-// Needs a rewrite.
-void convert16to24andInterlace(u32 flag, u32 passedsiz)
-{
-	u32 offs_univ = 0;
-	const u32 ofumax = 120*400;
-
-	//const u32 buf2siz = 2*120*400;
-
-	u8* u8scrbuf = (u8*)screenbuf;
-
-	if(interlace_px_offset == 0)
-	{
-		if(flag == 4) // RGBA4 -> RGB8
-		{
-			while(offs_univ < ofumax) // (offs + 2) < passedsiz && (offstwo+1) < buf2siz )
-			{
-				u32 deriveoffs1 = offs_univ*4;
-
-				u8 r = ( u8scrbuf[deriveoffs1+0] & 0b11110000);
-				u8 g = ( u8scrbuf[deriveoffs1+1] & 0b00001111) << 4;
-				u8 b = ( u8scrbuf[deriveoffs1+1] & 0b11110000);
-
-				u32 deriveoffs2 = offs_univ*2;
-
-				pxarraytwo[deriveoffs2+0] = u8scrbuf[deriveoffs1+2];
-				pxarraytwo[deriveoffs2+1] = u8scrbuf[deriveoffs1+3];
-
-				u32 deriveoffs3 = offs_univ*3;
-
-				u8scrbuf[deriveoffs3] = r;
-				u8scrbuf[deriveoffs3+1] = g;
-				u8scrbuf[deriveoffs3+2] = b;
-
-				offs_univ++;
-			}
-		}
-		else if(flag == 3) // RGB5A1 -> RGB8
-		{
-			while(offs_univ < ofumax) // (offs + 2) < passedsiz && (offstwo+1) < buf2siz )
-			{
-				u32 deriveoffs1 = offs_univ*4;
-
-				u8 r = ( u8scrbuf[deriveoffs1+0] & 0b00111110) << 2;
-				u8 g = ( u8scrbuf[deriveoffs1+0] & 0b11000000) >> 3;
-				g = g +((u8scrbuf[deriveoffs1+1] & 0b00000111) << 5);
-				u8 b = ( u8scrbuf[deriveoffs1+1] & 0b11111000);
-
-				u32 deriveoffs2 = offs_univ*2;
-
-				pxarraytwo[deriveoffs2+0] = u8scrbuf[deriveoffs1+2];
-				pxarraytwo[deriveoffs2+1] = u8scrbuf[deriveoffs1+3];
-
-				u32 deriveoffs3 = offs_univ*3;
-
-				u8scrbuf[deriveoffs3] = r;
-				u8scrbuf[deriveoffs3+1] = g;
-				u8scrbuf[deriveoffs3+2] = b;
-
-				offs_univ++;
-			}
-		}
-		else if(flag == 2) // RGB565 -> RGB8
-		{
-			while(offs_univ < ofumax) // (offs + 2) < passedsiz && (offstwo+1) < buf2siz )
-			{
-				u32 deriveoffs1 = offs_univ*4;
-
-				u8 r = ( u8scrbuf[deriveoffs1+0] & 0b00011111) << 3;
-				u8 g = ( u8scrbuf[deriveoffs1+0] & 0b11100000) >> 3;
-				g = g +((u8scrbuf[deriveoffs1+1] & 0b00000111) << 5);
-				u8 b = ( u8scrbuf[deriveoffs1+1] & 0b11111000);
-
-				u32 deriveoffs2 = offs_univ*2;
-
-				pxarraytwo[deriveoffs2+0] = u8scrbuf[deriveoffs1+2];
-				pxarraytwo[deriveoffs2+1] = u8scrbuf[deriveoffs1+3];
-
-				u32 deriveoffs3 = offs_univ*3;
-
-				u8scrbuf[deriveoffs3] = r;
-				u8scrbuf[deriveoffs3+1] = g;
-				u8scrbuf[deriveoffs3+2] = b;
-
-				offs_univ++;
-			}
-		}
-		else
-		{
-			// Do nothing; we expect to receive a valid flag.
-		}
-		interlace_px_offset = 2;
-	}
-	else
-	{
-		// Alternate rows. Complex style...
-
-		if(flag == 4) // RGBA4 -> RGB8
-		{
-			while(offs_univ < ofumax) // (offs + 2) < passedsiz && (offstwo+1) < buf2siz )
-			{
-				u32 deriveoffs2 = offs_univ*2;
-
-				u8 r = ( pxarraytwo[deriveoffs2+0] & 0b11110000);
-				u8 g = ( pxarraytwo[deriveoffs2+0] & 0b00001111) << 4;
-				u8 b = ( pxarraytwo[deriveoffs2+1] & 0b11110000);
-
-				u32 deriveoffs3 = offs_univ*3;
-
-				u8scrbuf[deriveoffs3] = r;
-				u8scrbuf[deriveoffs3+1] = g;
-				u8scrbuf[deriveoffs3+2] = b;
-
-				offs_univ++;
-			}
-		}
-		else if(flag == 3) // RGB5A1 -> RGB8
-		{
-			while(offs_univ < ofumax) // (offs + 2) < passedsiz && (offstwo+1) < buf2siz )
-			{
-				u32 deriveoffs2 = offs_univ*2;
-
-				u8 r = ( pxarraytwo[deriveoffs2+0] & 0b00111110) << 2;
-				u8 g = ( pxarraytwo[deriveoffs2+0] & 0b11000000) >> 3;
-				g = g +((pxarraytwo[deriveoffs2+1] & 0b00000111) << 5);
-				u8 b = ( pxarraytwo[deriveoffs2+1] & 0b11111000);
-
-				u32 deriveoffs3 = offs_univ*3;
-
-				u8scrbuf[deriveoffs3] = r;
-				u8scrbuf[deriveoffs3+1] = g;
-				u8scrbuf[deriveoffs3+2] = b;
-
-				offs_univ++;
-			}
-		}
-		else if(flag == 2) // RGB565 -> RGB8
-		{
-			while(offs_univ < ofumax) // (offs + 2) < passedsiz && (offstwo+1) < buf2siz )
-			{
-				u32 deriveoffs2 = offs_univ*2;
-
-				u8 r = ( pxarraytwo[deriveoffs2+0] & 0b00011111) << 3;
-				u8 g = ( pxarraytwo[deriveoffs2+0] & 0b11100000) >> 3;
-				g = g +((pxarraytwo[deriveoffs2+1] & 0b00000111) << 5);
-				u8 b = ( pxarraytwo[deriveoffs2+1] & 0b11111000);
-
-				u32 deriveoffs3 = offs_univ*3;
-
-				u8scrbuf[deriveoffs3] = r;
-				u8scrbuf[deriveoffs3+1] = g;
-				u8scrbuf[deriveoffs3+2] = b;
-
-				offs_univ++;
-			}
-		}
-		else
-		{
-			// Do nothing; we expect to receive a valid flag.
-		}
-		interlace_px_offset = 0;
-	}
-
-	return;
-}
-
-// Unreadable code alert
-inline void cvt1632i_row1_rgb565(u32 pxnum, u32* fbuf)
-{
-	u32 temppx = fbuf[pxnum];
-	// Blue
-	fbuf[pxnum] =(temppx & 0x0000F800) << 8;
-	// Green
-	fbuf[pxnum]+=(temppx & 0x000007E0) << 5;
-	// Red
-	fbuf[pxnum]+=(temppx & 0x0000001F) << 3;
-}
-
-inline void cvt1632i_row2_rgb565(u32 pxnum, u32* fbuf)
-{
-	u32 temppx = fbuf[pxnum];
-	// Blue
-	fbuf[pxnum] =(temppx & 0xF8000000) >> 8;
-	// Green
-	fbuf[pxnum]+=(temppx & 0x07E00000) >> 11; // 8 + 3
-	// Red
-	fbuf[pxnum]+=(temppx & 0x001F0000) >> 13; // 8 + 5
-}
-
-// Unfinished, colors are broken.
-// (The bottleneck may be elsewhere right now. -C 2022-09-03)
-//
-// Note: Destructive implementation. Every other row is trashed and not saved.
-// Therefore it is necessary to DMA the framebuffer again every time we do this.
-// It's a tradeoff, it is what it is, but it's fast(ish) baby
-void fastConvert16to32andInterlace2_rgb565(u32 stride)
-{
-	u32 i = 0;
-	u32 max = 120*stride;
-	u32* fbuf = screenbuf; // This is just always this value. lol
-
-	if(interlace_px_offset == 0)
-	{
-		while(i < max)
-		{
-			cvt1632i_row1_rgb565(i,fbuf);
-			i++;
-		}
-		interlace_px_offset = 2;
-	}
-	else
-	{
-		while(i < max)
-		{
-			cvt1632i_row2_rgb565(i,fbuf);
-			i++;
-		}
-		interlace_px_offset = 0;
-	}
-}
-
-// Helper function 1
-inline void cvt1624_help1(u32 mywidth, u8** endof24bimg, u8** endof16bimg)
-{
-	*endof24bimg = (u8*)screenbuf + (240*mywidth*3) - 3; // -1
-	*endof16bimg = (u8*)screenbuf + (240*mywidth*2) - 2; // -1
-	//*sparebuffersiz = (mywidth*240*4) - (mywidth*240*3);
-}
-
-inline void cvt1624_help2_forrgba4(u8* myaddr1, u8* myaddr2)
-{
-	u8 r = myaddr1[0] & 0b11110000;
-	u8 g =(myaddr1[1] & 0b00001111) << 4;
-	u8 b = myaddr1[1] & 0b11110000;
-
-	myaddr2[0] = r;
-	myaddr2[1] = g;
-	myaddr2[2] = b;
-}
-
-inline void cvt1624_help2_forrgb5a1(u8* myaddr1, u8* myaddr2)
-{
-	u8 r =(myaddr1[0] & 0b00111100) << 2;
-	u8 g =(myaddr1[0] & 0b11000000) >> 3;
-	   g+=(myaddr1[1] & 0b00000111) << 5;
-	u8 b = myaddr1[1] & 0b11111000;
-
-	myaddr2[0] = r;
-	myaddr2[1] = g;
-	myaddr2[2] = b;
-}
-
-inline void cvt1624_help2_forrgb565(u8* myaddr1, u8* myaddr2)
-{
-	u8 r =(myaddr1[0] & 0b00011111) << 3;
-	u8 g =(myaddr1[0] & 0b11100000) >> 3;
-	   g+=(myaddr1[1] & 0b00000111) << 5;
-	u8 b = myaddr1[1] & 0b11111000;
-
-	myaddr2[0] = r;
-	myaddr2[1] = g;
-	myaddr2[2] = b;
-}
-
-// This is Progressive! (Not Interlaced)
-// Also, this works on Old-3DS.
-void convert16to24_rgb5a1(u32 scrbfwidth)
-{
-	u8* buf16; // Copy FROM here, starting at the end of the 16bpp buffer
-	u8* buf24; // Copy TO here, starting at the end of the 24bpp buffer
-	cvt1624_help1(scrbfwidth, &buf24, &buf16); // calc variables
-
-	while(buf16 + 1 < buf24)
-	{
-		cvt1624_help2_forrgb5a1(buf16,buf24);
-		buf16 -= 2;
-		buf24 -= 3;
-	}
-}
-
-// Progressive (Not Interlaced)
-// Works on Old-3DS
-void convert16to24_rgb565(u32 scrbfwidth)
-{
-	u8* buf16;
-	u8* buf24;
-	cvt1624_help1(scrbfwidth, &buf24, &buf16);
-
-	while(buf16 + 1 < buf24)
-	{
-		cvt1624_help2_forrgb565(buf16,buf24);
-		buf16 -= 2;
-		buf24 -= 3;
-	}
-}
-
-// Progressive (Not Interlaced)
-// Works on Old-3DS
-void convert16to24_rgba4(u32 scrbfwidth)
-{
-	u8* buf16;
-	u8* buf24;
-	cvt1624_help1(scrbfwidth, &buf24, &buf16);
-
-	while(buf16 + 1 < buf24)
-	{
-		cvt1624_help2_forrgba4(buf16,buf24);
-		buf16 -= 2;
-		buf24 -= 3;
-	}
-}
-
-void dummyinterlace24(u32 passedsiz, u32 scrbfwidth) // UNFINISHED
-{
-	u32 offs2 = 0;
-
-	// Used as a spare buffer.
-	// This is critical on Old-3DS,
-	// (This is only used when we have a 32bpp image,
-	// so it's free memory otherwise! :)
-	//
-	// Buffer starts at refaddr_endof24bimg + 1
-	u32 sparebuffersiz;
-
-	u8* refaddr_endof24bimg;
-	u8* refaddr_endof16bimg;
-	//cvt1624_help1(scrbfwidth, &refaddr_endof24bimg, &refaddr_endof16bimg, &sparebuffersiz);
-
-	// Address to read from, the first of two bytes of
-	// the very last pixel of the 16bpp image.
-	u8* addr1 = refaddr_endof16bimg - 1;
-	// Address to write to, the first of three bytes of
-	// the very last pixel of the 24bpp image.
-	u8* addr2 = refaddr_endof24bimg - 2;
-
-	//u32* addr3 = 0;
-
-	u8* addr4 = 0;
-
-	u32 pixelsdrawn = 0;
-	u32 maxpix = scrbfwidth * 240;
-
-	// this While-loop is only Part 1.
-	// When these two addresses are too close together,
-	// we move on to Part 2.
-	while(addr1 + 1 < addr2 && addr1 >= (u8*)screenbuf)
-	{
-		cvt1624_help2_forrgb5a1(addr1,addr2);
-
-		// Increment and decrement
-		pixelsdrawn++;
-		addr1 -= 2;
-		addr2 -= 3;
-	}
-
-	// Big Part 2
-	while(false)//(pixelsdrawn <= maxpix)
-	{
-		offs2 = 0;
-		addr4 = refaddr_endof24bimg + 1;
-
-		// Copy from 16bpp framebuffer to spare buffer
-		while(addr1 >= (u8*)screenbuf && pixelsdrawn < maxpix && addr4 <= (refaddr_endof24bimg+sparebuffersiz))
-		{
-			//cvt1624_help3(addr4,addr1);
-
-			addr1 -= 2;
-			addr4 += 2;
-		}
-
-		if(addr1 < (u8*)screenbuf)
-			addr1 = (u8*)screenbuf;
-
-		offs2 = 0;
-		addr4 = refaddr_endof24bimg + 1;
-
-		// Copy from spare buffer to 24bpp framebuffer
-		while(addr1 <= addr2 && offs2 + 1 < sparebuffersiz && pixelsdrawn < maxpix)
-		{
-			cvt1624_help2_forrgb5a1((u8*)addr4,(u8*)addr2);
-			// Increment
-			addr2 -= 3;
-			offs2 += 2;
-			addr4 += 2;
-			pixelsdrawn++;
-		}
-
-		// Loop back on Part 2 (:
-	}
-
-	// return;
-}
 
 // Based on (and slightly modified from) devkitpro/libctru source
 //
@@ -1375,8 +880,7 @@ inline void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* sc
 			forceInterlaced = 0;
 			if(cfgblk[5] == 1) // Interlaced
 			{
-				fastConvert16to32andInterlace2_rgb565(stride[scr]);
-				//lazyConvert16to32andInterlace(2,siz_2);
+				fastConvert16to32andInterlace2_rgb565(stride[scr],screenbuf,&interlace_px_offset);
 				tjpf = TJPF_RGBX;
 				*bsiz = 4;
 				*scrw = 120;
@@ -1385,7 +889,7 @@ inline void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* sc
 			}
 			else
 			{
-				convert16to24_rgb565(stride[scr]);
+				convert16to24_rgb565(stride[scr],(u8*)screenbuf);
 				tjpf = TJPF_RGB;
 				*bsiz = 3;
 				*scrw = 240;
@@ -1396,7 +900,7 @@ inline void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* sc
 			forceInterlaced = 0;
 			if(cfgblk[5] == 1) // Interlaced
 			{
-				lazyConvert16to32andInterlace(3,siz_2);
+				lazyConvert16to32andInterlace(3,siz_2,(u8*)screenbuf,&interlace_px_offset);
 				tjpf = TJPF_RGBX;
 				*bsiz = 4;
 				*scrw = 120;
@@ -1405,7 +909,7 @@ inline void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* sc
 			}
 			else
 			{
-				convert16to24_rgb5a1(stride[scr]);
+				convert16to24_rgb5a1(stride[scr],(u8*)screenbuf);
 				tjpf = TJPF_RGB;
 				*bsiz = 3;
 				*scrw = 240;
@@ -1416,7 +920,7 @@ inline void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* sc
 			forceInterlaced = 0;
 			if(cfgblk[5] == 1) // Interlaced
 			{
-				lazyConvert16to32andInterlace(4,siz_2);
+				lazyConvert16to32andInterlace(4,siz_2,(u8*)screenbuf,&interlace_px_offset);
 				tjpf = TJPF_RGBX;
 				*bsiz = 4;
 				*scrw = 120;
@@ -1425,7 +929,7 @@ inline void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* sc
 			}
 			else
 			{
-				convert16to24_rgba4(stride[scr]);
+				convert16to24_rgba4(stride[scr],(u8*)screenbuf);
 				tjpf = TJPF_RGB;
 				*bsiz = 3;
 				*scrw = 240;
@@ -1513,7 +1017,7 @@ inline void makeJpegImageO3dsExperimentalInterlaced(double* timems_fc, double* t
 			break;
 
 		case 2: // RGB565
-			convert16to24_rgb565(stride[scr]/2);
+			convert16to24_rgb565(stride[scr]/2,(u8*)screenbuf);
 			tjpf = TJPF_RGB;
 			*bsiz = 3;
 			*scrw = 120;
@@ -1521,7 +1025,7 @@ inline void makeJpegImageO3dsExperimentalInterlaced(double* timems_fc, double* t
 			break;
 
 		case 3: // RGB5A1
-			convert16to24_rgb5a1(stride[scr]/2);
+			convert16to24_rgb5a1(stride[scr]/2,(u8*)screenbuf);
 			tjpf = TJPF_RGB;
 			*bsiz = 3;
 			*scrw = 120;
@@ -1529,7 +1033,7 @@ inline void makeJpegImageO3dsExperimentalInterlaced(double* timems_fc, double* t
 			break;
 
 		case 4: // RGBA4
-			convert16to24_rgba4(stride[scr]/2);
+			convert16to24_rgba4(stride[scr]/2,(u8*)screenbuf);
 			tjpf = TJPF_RGB;
 			*bsiz = 3;
 			*scrw = 120;
