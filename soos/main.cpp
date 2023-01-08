@@ -26,8 +26,10 @@
 
 #define DEBUG_BASIC 1
 #define DEBUG_VERBOSE 0
+
 // Unfinished
 #define DEBUG_O3DSNEWINTERLACE 0
+
 // Debug flag for testing; use experimental UDP instead of TCP.
 // Don't enable this for now. It doesn't work.
 #define DEBUG_USEUDP 0
@@ -395,7 +397,7 @@ void CPPCrashHandler()
     puts("\n");
     
     PatStay(0xFFFFFF);
-    PatPulse(0xFF);
+    PatPulse(0x0000FF);
     
     svcSleepThread(1e9);
     
@@ -1061,37 +1063,97 @@ inline void populatedmaconf(u8* dmac, u32 flag)
 	// https://www.3dbrew.org/wiki/Corelink_DMA_Engines
 	// https://github.com/devkitPro/libctru/blob/master/libctru/include/3ds/svc.h
 
-	if(flag == 1) // Use custom, non-standard DMA config. (This specific config is for interlaced, but it's not very necessary...)
-	{
-		//dmac[1] = 0; // Endian swap size. 0 = None, 2 = 16-bit, 4 = 32-bit, 8 = 64-bit
-		dmac[2] = 0b11000000; // Flags. DMACFG_USE_SRC_CONFIG and DMACFG_USE_DST_CONFIG
-		//dmaconf[3] = 0; // Padding.
-
-		// Destination Config block
-		dmac[4] = 0xFF; // peripheral ID. FF for ram (it's forced to FF anyway)
-		dmac[5] = 8|4|2|1; // Allowed Alignments. Defaults to "1|2|4|8" (15). Also acceptable = 4, 8, "4|8" (12)
-		*(u16*)(dmac+6) = 3;// Not exactly known...
-		*(u16*)(dmac+8) = 3; // Not exactly known...
-		*(u16*)(dmac+10) = 6; // Number of bytes transferred at once(?)
-		*(u16*)(dmac+12) = 6; // Number of bytes transferred at once(?) (or Stride)
-
-		// Source Config block
-		dmac[14] = 0xFF; // Peripheral ID
-		dmac[15] = 8|4|2|1; // Allowed Alignments (!)
-		*(u16*)(dmac+16) = 0x0003;//x80; // burstSize? (Number of bytes transferred in a burst loop. Can be 0, in which case the max allowed alignment is used as a unit.)
-		*(u16*)(dmac+18) = 0x0003;//x80; // burstStride? (Burst loop stride, can be <= 0.
-		*(u16*)(dmac+20) = 6; // transferSize? (Number of bytes transferred in a "transfer" loop, which is made of burst loops.)
-		*(u16*)(dmac+22) = 6; // transferStride? ("Transfer" loop stride, can be <= 0.)
-	}
-	else
-	{
-		memset(dmac, 0, 0x18);
-	}
-
 	dmac[0] = -1; // -1 = Auto-assign to a free channel (Arm11: 3-7, Arm9:0-1)
-	//dmac[2] = 0b11000000;
 
-	return;
+	switch(flag){
+
+		case 1: // Use custom, non-standard DMA config. This specific config is for interlaced, and is currently unused (and not intended for general use as-is)
+
+			dmac[0] = -1; // -1 = Auto-assign to a free channel (Arm11: 3-7, Arm9:0-1)
+			//dmac[1] = 0; // Endian swap size. 0 = None, 2 = 16-bit, 4 = 32-bit, 8 = 64-bit
+			dmac[2] = 0b11000000; // Flags. DMACFG_USE_SRC_CONFIG and DMACFG_USE_DST_CONFIG
+			//dmaconf[3] = 0; // Padding.
+
+			// Destination Config block
+			dmac[4] = 0xFF; // peripheral ID. FF for ram (it's forced to FF anyway)
+			dmac[5] = 8|4|2|1; // Allowed Alignments. Defaults to "1|2|4|8" (15). Also acceptable = 4, 8, "4|8" (12)
+			*(u16*)(dmac+6) = 3;// Not exactly known...
+			*(u16*)(dmac+8) = 3; // Not exactly known...
+			*(u16*)(dmac+10) = 6; // Number of bytes transferred at once(?)
+			*(u16*)(dmac+12) = 6; // Number of bytes transferred at once(?) (or Stride)
+
+			// Source Config block
+			dmac[14] = 0xFF; // Peripheral ID
+			dmac[15] = 8|4|2|1; // Allowed Alignments (!)
+			*(u16*)(dmac+16) = 0x0003;//x80; // burstSize? (Number of bytes transferred in a burst loop. Can be 0, in which case the max allowed alignment is used as a unit.)
+			*(u16*)(dmac+18) = 0x0003;//x80; // burstStride? (Burst loop stride, can be <= 0.)
+			*(u16*)(dmac+20) = 6; // transferSize? (Number of bytes transferred in a "transfer" loop, which is made of burst loops.)
+			*(u16*)(dmac+22) = 6; // transferStride? ("Transfer" loop stride, can be <= 0.)
+			return;
+
+
+		case 2: // DEBUG_O3DSNEWINTERLACE - init
+			dmac[0] = -1;
+			dmac[2] = 0b11000000;
+			//Destination Config block
+			dmac[4] = 0xFF; // default
+			dmac[5] = 8|4|2|1; // default
+			*(u16*)(dmac+6) = 3;
+			*(u16*)(dmac+8) = 3;
+			*(u16*)(dmac+10) = 3;
+			*(u16*)(dmac+12) = 3;
+
+			// Source Config block
+			dmac[14] = 0xFF; // default
+			dmac[15] = 8|4|2|1; // default
+			*(u16*)(dmac+16) = 3;
+			*(u16*)(dmac+18) = 3;
+			*(u16*)(dmac+20) = 3;
+			*(u16*)(dmac+22) = 3;
+			return;
+
+		case 3: // DEBUG_O3DSNEWINTERLACE - 16bpp
+			*(u16*)(dmac+6) = 2;
+			*(u16*)(dmac+8) = 2;
+			*(u16*)(dmac+10) = 2;
+			*(u16*)(dmac+12) = 2;
+
+			*(u16*)(dmac+16) = 2; // burstSize
+			*(u16*)(dmac+18) = 2; // burstStride
+			*(u16*)(dmac+20) = 4; // transferSize
+			*(u16*)(dmac+22) = 4; // transferStride
+			return;
+
+		case 4: // DEBUG_O3DSNEWINTERLACE - 24bpp
+			*(u16*)(dmac+6) = 3;
+			*(u16*)(dmac+8) = 3;
+			*(u16*)(dmac+10) = 3;
+			*(u16*)(dmac+12) = 3;
+
+			*(u16*)(dmac+16) = 3; // burstSize
+			*(u16*)(dmac+18) = 3; // burstStride
+			*(u16*)(dmac+20) = 6; // transferSize
+			*(u16*)(dmac+22) = 6; // transferStride
+			return;
+
+		case 5: // DEBUG_O3DSNEWINTERLACE - 32bpp
+			*(u16*)(dmac+6) = 3;
+			*(u16*)(dmac+8) = 3;
+			*(u16*)(dmac+10) = 3;
+			*(u16*)(dmac+12) = 3;
+
+			*(u16*)(dmac+16) = 3; // burstSize
+			*(u16*)(dmac+18) = 3; // burstStride
+			*(u16*)(dmac+20) = 8; // transferSize
+			*(u16*)(dmac+22) = 8; // transferStride
+			return;
+
+
+		default: // Case 0 (zero-out dma config block)
+			memset(dmac, 0, 0x18);
+			dmac[0] = -1; // -1 = Auto-assign to a free channel (Arm11: 3-7, Arm9:0-1)
+			return;
+	}
 }
 
 // Returns -1 on an error, and expects the calling function to close the socket.
@@ -1286,7 +1348,7 @@ inline void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* sc
 {
 	u32 f = format[scr] & 0b111;
 	u8 subtype_aka_flags = 0b00000000 + (scr * 0b00010000) + f;
-	int tjpf = 0;
+	int tjpf = 0; // TurboJpeg Pixel Format
 	u32 siz_2 = (capin.screencapture[scr].framebuf_widthbytesize * stride[scr]);
 
 #if DEBUG_VERBOSE==1
@@ -1420,6 +1482,110 @@ inline void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* sc
 	return;
 }
 
+// Experimental. Interlacing is forced. Please don't call this function on New-3DS
+inline void makeJpegImageO3dsExperimentalInterlaced(double* timems_fc, double* timems_pf, int scr, u32* scrw, u32* bsiz, int* imgsize)
+{
+	u32 f = format[scr] & 0b111;
+	u8 subtype_aka_flags = 0b00000000 + (scr * 0b00010000) + f;
+	int tjpf = 0; // TurboJpeg Pixel Format
+
+	// siz_2 goes unused in this function
+	//u32 siz_2 = (capin.screencapture[scr].framebuf_widthbytesize * stride[scr]);
+
+#if DEBUG_VERBOSE==1
+	osTickCounterUpdate(&tick_ctr_1);
+#endif
+
+	switch(f)
+	{
+		case 0: // RGBA8, Not yet supported. Will be decoded into garbage, lol.
+			tjpf = TJPF_RGB;
+			*bsiz = 3;
+			*scrw = 120;
+			subtype_aka_flags += 0b00100000 + (interlace_px_offset?0:0b01000000);
+			break;
+
+		case 1: // RGB8
+			tjpf = TJPF_RGB;
+			*bsiz = 3;
+			*scrw = 120;
+			subtype_aka_flags += 0b00100000 + (interlace_px_offset?0:0b01000000);
+			break;
+
+		case 2: // RGB565
+			convert16to24_rgb565(stride[scr]/2);
+			tjpf = TJPF_RGB;
+			*bsiz = 3;
+			*scrw = 120;
+			subtype_aka_flags += 0b00100000 + (interlace_px_offset?0:0b01000000);
+			break;
+
+		case 3: // RGB5A1
+			convert16to24_rgb5a1(stride[scr]/2);
+			tjpf = TJPF_RGB;
+			*bsiz = 3;
+			*scrw = 120;
+			subtype_aka_flags += 0b00100000 + (interlace_px_offset?0:0b01000000);
+			break;
+
+		case 4: // RGBA4
+			convert16to24_rgba4(stride[scr]/2);
+			tjpf = TJPF_RGB;
+			*bsiz = 3;
+			*scrw = 120;
+			subtype_aka_flags += 0b00100000 + (interlace_px_offset?0:0b01000000);
+			break;
+
+		default:
+			// Invalid format, should never happen, but put a failsafe here anyway.
+			//
+			// This failsafe is just taken from the 24-bit code. I don't know if that's the
+			// safest or not, it's just a placeholder. -C
+			tjpf = TJPF_RGB;
+			*bsiz = 3;
+			*scrw = 120;
+			subtype_aka_flags += 0b00100000 + (interlace_px_offset?0:0b01000000);
+			break;
+	}
+
+	// This is only here because interlacing is forced in all cases this function is called.
+	// If interlacing isn't forced and this function is called, the var will break.
+	// TODO: This might be stupid, consider refactoring it.
+	if(interlace_px_offset == 0)
+		interlace_px_offset = 2;
+	else
+		interlace_px_offset = 0;
+
+#if DEBUG_VERBOSE==1
+	osTickCounterUpdate(&tick_ctr_1);
+	*timems_fc = osTickCounterRead(&tick_ctr_1);
+#endif
+
+	u8* experimentaladdr1 = (u8*)screenbuf;
+	u8* destaddr = soc->bufferptr + bufsoc_pak_data_offset;
+
+
+	if(!tjCompress2(jencode, experimentaladdr1, *scrw, (*bsiz) * (*scrw), stride[scr], tjpf, &destaddr, (u32*)imgsize, TJSAMP_420, cfgblk[1], TJFLAG_NOREALLOC | TJFLAG_FASTDCT))
+	{
+#if DEBUG_VERBOSE==1
+		osTickCounterUpdate(&tick_ctr_1);
+		*timems_pf = osTickCounterRead(&tick_ctr_1);
+#endif
+		soc->setPakSize(*imgsize);
+	}
+	else
+	{
+#if DEBUG_VERBOSE==1
+		*timems_pf = 0;
+#endif
+	}
+
+	soc->setPakType(01); //Image
+	soc->setPakSubtype(subtype_aka_flags);
+	soc->setPakSubtypeB(0);
+	return;
+}
+
 // This is implemented in a really dumb way i think
 inline void tryMarioKartHotfix(u32* scrw)
 {
@@ -1516,8 +1682,15 @@ void netfuncOld3DS(void* __dummy_arg__)
 	PatStay(0x00FF00); // Notif LED = Green
 
 	u8 dmaconf[0x18];
-	populatedmaconf(dmaconf,0);
 
+	// Old-3DS Only (:
+#if DEBUG_O3DSNEWINTERLACE==1
+	populatedmaconf(dmaconf,2);
+	//populatedmaconf(dmaconf,3);
+	printf("populated dmaconf");
+#else
+	populatedmaconf(dmaconf,0);
+#endif
 	PatPulse(0x7F007F); // Notif LED = Medium Purple
 	threadrunning = 1;
 
@@ -1565,7 +1738,11 @@ void netfuncOld3DS(void* __dummy_arg__)
                 switch(cfgblk[4])
                 {
 					case 0: // JPEG
+#if DEBUG_O3DSNEWINTERLACE==1
+						makeJpegImageO3dsExperimentalInterlaced(&timems_formatconvert, &timems_processframe, scr, &scrw, &bsiz, &imgsize);
+#else
 						makeJpegImage(&timems_formatconvert, &timems_processframe, scr, &scrw, &bsiz, &imgsize);
+#endif
 						break;
 					case 1: // Targa / TGA
 						makeTargaImage(&timems_formatconvert, &timems_processframe, scr, &scrw, &bits, &imgsize);
@@ -1575,6 +1752,7 @@ void netfuncOld3DS(void* __dummy_arg__)
                 }
 
 
+#if DEBUG_O3DSNEWINTERLACE==0
 				// Screen-chunk index ranges from 0 to 7 (Old-3DS only)
 				u8 b = 0b00001000 + (offs[scr]);
 				soc->setPakSubtypeB(b);
@@ -1583,6 +1761,7 @@ void netfuncOld3DS(void* __dummy_arg__)
 				offs[scr]++;
                 if(offs[scr] >= limit[scr])
                 	offs[scr] = 0;
+#endif
 
                 if(cfgblk[3] == 01) // Top Screen Only
                 	scr = 0;
@@ -1654,7 +1833,33 @@ void netfuncOld3DS(void* __dummy_arg__)
                 	//*(u16*)(dmaconf+20) = stride[scr];
                 	//*(u16*)(dmaconf+22) = stride[scr];
 
-                	int r = svcStartInterProcessDma(&dmahand,0xFFFF8001,screenbuf,srcprochand,srcaddr,siz,dmaconf);
+                	// Likely inefficient, idk lol, I'll fix it later?
+                	u8* dmasrcaddr = srcaddr;
+
+#if DEBUG_O3DSNEWINTERLACE==1
+                	siz = siz / 2;
+
+                	if(format[scr]==1)
+                	{
+                		populatedmaconf(dmaconf,4); // 24bpp DMA
+                		if(interlace_px_offset != 0)
+                			dmasrcaddr += 3;
+                	}
+                	else if(format[scr] == 0)
+                	{
+                		populatedmaconf(dmaconf,5); // 32bpp DMA (only has minimal testing)
+                		if(interlace_px_offset != 0)
+                			dmasrcaddr += 4;
+                	}
+                	else
+                	{
+                		populatedmaconf(dmaconf,3); // 16bpp DMA
+                		if(interlace_px_offset != 0)
+                			dmasrcaddr += 2;
+                	}
+#endif
+
+                	int r = svcStartInterProcessDma(&dmahand,0xFFFF8001,screenbuf,srcprochand,dmasrcaddr,siz,dmaconf);
 
                 	//int r = GX_DisplayTransfer((u32*)srcaddr,(240 << 16) + 400,(u32*)screenbuf,(240 << 16) + 400,*((u32*)gputransferflag));
 
@@ -1988,7 +2193,7 @@ int main()
     	stride[0] = 400;
     	stride[1] = 320;
 
-    	soc_service_buf_siz = 0x20000;
+    	soc_service_buf_siz = 0x10000;
     	screenbuf_siz = 400 * 120 * 3;
     	bufsoc_siz = 0x10000;
 
@@ -2066,6 +2271,7 @@ int main()
     {
         makerave();
         svcSleepThread(2e9);
+        printf("crashed while trying to allocate memory for screenbuf\n");
         hangmacro();
     }
     
