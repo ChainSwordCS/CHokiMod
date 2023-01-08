@@ -22,47 +22,6 @@
 #include <3ds.h>
 
 
-// TODO: I should calculate this elsewhere, preferably so it's not being recalc'd every frame.
-inline void cvt1624_help1(u32 mywidth, u8* myscreenbuf, u8** endof24bimg, u8** endof16bimg)
-{
-	*endof24bimg = (u8*)myscreenbuf + (240*mywidth*3) - 3;
-	*endof16bimg = (u8*)myscreenbuf + (240*mywidth*2) - 2;
-	//*sparebuffersiz = (mywidth*240*4) - (mywidth*240*3);
-}
-inline void cvt1624_help2_forrgba4(u8* myaddr1, u8* myaddr2)
-{
-	u8 r = myaddr1[0] & 0b11110000;
-	u8 g =(myaddr1[1] & 0b00001111) << 4;
-	u8 b = myaddr1[1] & 0b11110000;
-
-	myaddr2[0] = r;
-	myaddr2[1] = g;
-	myaddr2[2] = b;
-}
-inline void cvt1624_help2_forrgb5a1(u8* myaddr1, u8* myaddr2)
-{
-	u8 r =(myaddr1[0] & 0b00111100) << 2;
-	u8 g =(myaddr1[0] & 0b11000000) >> 3;
-	   g+=(myaddr1[1] & 0b00000111) << 5;
-	u8 b = myaddr1[1] & 0b11111000;
-
-	myaddr2[0] = r;
-	myaddr2[1] = g;
-	myaddr2[2] = b;
-}
-inline void cvt1624_help2_forrgb565(u8* myaddr1, u8* myaddr2)
-{
-	u8 r =(myaddr1[0] & 0b00011111) << 3;
-	u8 g =(myaddr1[0] & 0b11100000) >> 3;
-	   g+=(myaddr1[1] & 0b00000111) << 5;
-	u8 b = myaddr1[1] & 0b11111000;
-
-	myaddr2[0] = r;
-	myaddr2[1] = g;
-	myaddr2[2] = b;
-}
-
-
 // works on o3DS
 void convert16to24_rgb5a1(u32 scrbfwidth, u8* scrbf)
 {
@@ -207,27 +166,6 @@ void fastConvert16to32andInterlace2_rgb565(u32 stride, void* scrbuf, int* interl
 		}
 		*interlace_px_offset = 0;
 	}
-}
-// Helper functions
-inline void cvt1632i_row1_rgb565(u32 pxnum, u32* fbuf)
-{
-	u32 temppx = fbuf[pxnum];
-	// Blue
-	fbuf[pxnum] =(temppx & 0x0000F800) << 8;
-	// Green
-	fbuf[pxnum]+=(temppx & 0x000007E0) << 5;
-	// Red
-	fbuf[pxnum]+=(temppx & 0x0000001F) << 3;
-}
-inline void cvt1632i_row2_rgb565(u32 pxnum, u32* fbuf)
-{
-	u32 temppx = fbuf[pxnum];
-	// Blue
-	fbuf[pxnum] =(temppx & 0xF8000000) >> 8;
-	// Green
-	fbuf[pxnum]+=(temppx & 0x07E00000) >> 11; // 8 + 3
-	// Red
-	fbuf[pxnum]+=(temppx & 0x001F0000) >> 13; // 8 + 5
 }
 
 

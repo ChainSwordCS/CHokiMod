@@ -21,13 +21,9 @@
 #pragma once
 
 #include <3ds.h>
+#include "imhelper.h"
 
 
-// Helper functions
-inline void cvt1624_help1(u32,u8*,u8**,u8**);
-inline void cvt1624_help2_forrgba4(u8*,u8*);
-inline void cvt1624_help2_forrgb5a1(u8*,u8*);
-inline void cvt1624_help2_forrgb565(u8*,u8*);
 
 
 // In the given framebuffer, converts a 16bpp image to a 24bpp image.
@@ -96,9 +92,6 @@ void lazyConvert16to32andInterlace(u32,u32,u8*,int*);
 //
 void fastConvert16to32andInterlace2_rgb565(u32,void*,int*);
 
-// Helper functions
-inline void cvt1632i_row1_rgb565(u32,u32*); // Unfinished ?
-inline void cvt1632i_row2_rgb565(u32,u32*); // Unfinished ?
 
 
 // Placeholder; unused and non-functional.

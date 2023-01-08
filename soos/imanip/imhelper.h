@@ -22,10 +22,10 @@
 
 #include <3ds.h>
 
-inline void cvt1624_help1(u32,u8*,u8**,u8**);
-inline void cvt1624_help2_forrgba4(u8*,u8*);
-inline void cvt1624_help2_forrgb5a1(u8*,u8*);
-inline void cvt1624_help2_forrgb565(u8*,u8*);
+void cvt1624_help1(u32,u8*,u8**,u8**);
+void cvt1624_help2_forrgba4(u8*,u8*);
+void cvt1624_help2_forrgb5a1(u8*,u8*);
+void cvt1624_help2_forrgb565(u8*,u8*);
 
-inline void cvt1632i_row1_rgb565(u32,u32*); // Unfinished ?
-inline void cvt1632i_row2_rgb565(u32,u32*); // Unfinished ?
+void cvt1632i_row1_rgb565(u32,u32*); // Unfinished ?
+void cvt1632i_row2_rgb565(u32,u32*); // Unfinished ?
