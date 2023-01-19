@@ -58,6 +58,7 @@ extern "C"
 #include "service/mcu.h"
 #include "service/gx.h"
 #include "misc/pattern.h"
+#include "misc/setdmacfg.h"
 #include "imanip/imanip.h"
 
 #include "tga/targa.h"
@@ -108,12 +109,12 @@ void netfuncOld3DS(void*); // Version of netfunc specifically for Old-3DS (code 
 void netfuncNew3DS(void*);
 
 // Helper functions for netfunc 1 and 2 (code organization reasons)
-inline void populatedmaconf(u8*,u32); // Rewritten from netfunc
 inline int netfuncWaitForSettings(); // Rewritten from netfunc
 inline void tryStopDma(); // Rewritten from netfunc (very small; shorthand because it's repeated)
 inline void makeTargaImage(double*,double*,int,u32*,u32*,int*); // Rewritten from netfunc
 inline void makeJpegImage(double*,double*,int,u32*,u32*,int*); // Rewritten from netfunc
 inline void netfuncTestFramebuffer(u32*, int*); // Rewritten from netfunc
+
 
 int main(); // So you can call main from main (:
 
@@ -562,104 +563,6 @@ void sendDebugFrametimeStats(double ms_compress, double ms_writesocbuf, double* 
 	return;
 }
 
-inline void populatedmaconf(u8* dmac, u32 flag)
-{
-	// Note: in modern libctru, DmaConfig is its own object type.
-	// https://www.3dbrew.org/wiki/Corelink_DMA_Engines
-	// https://github.com/devkitPro/libctru/blob/master/libctru/include/3ds/svc.h
-
-	dmac[0] = -1; // -1 = Auto-assign to a free channel (Arm11: 3-7, Arm9:0-1)
-
-	switch(flag){
-
-		case 1: // Use custom, non-standard DMA config. This specific config is for interlaced, and is currently unused (and not intended for general use as-is)
-
-			dmac[0] = -1; // -1 = Auto-assign to a free channel (Arm11: 3-7, Arm9:0-1)
-			//dmac[1] = 0; // Endian swap size. 0 = None, 2 = 16-bit, 4 = 32-bit, 8 = 64-bit
-			dmac[2] = 0b11000000; // Flags. DMACFG_USE_SRC_CONFIG and DMACFG_USE_DST_CONFIG
-			//dmaconf[3] = 0; // Padding.
-
-			// Destination Config block
-			dmac[4] = 0xFF; // peripheral ID. FF for ram (it's forced to FF anyway)
-			dmac[5] = 8|4|2|1; // Allowed Alignments. Defaults to "1|2|4|8" (15). Also acceptable = 4, 8, "4|8" (12)
-			*(u16*)(dmac+6) = 3;// Not exactly known...
-			*(u16*)(dmac+8) = 3; // Not exactly known...
-			*(u16*)(dmac+10) = 6; // Number of bytes transferred at once(?)
-			*(u16*)(dmac+12) = 6; // Number of bytes transferred at once(?) (or Stride)
-
-			// Source Config block
-			dmac[14] = 0xFF; // Peripheral ID
-			dmac[15] = 8|4|2|1; // Allowed Alignments (!)
-			*(u16*)(dmac+16) = 0x0003;//x80; // burstSize? (Number of bytes transferred in a burst loop. Can be 0, in which case the max allowed alignment is used as a unit.)
-			*(u16*)(dmac+18) = 0x0003;//x80; // burstStride? (Burst loop stride, can be <= 0.)
-			*(u16*)(dmac+20) = 6; // transferSize? (Number of bytes transferred in a "transfer" loop, which is made of burst loops.)
-			*(u16*)(dmac+22) = 6; // transferStride? ("Transfer" loop stride, can be <= 0.)
-			return;
-
-
-		case 2: // DEBUG_O3DSNEWINTERLACE - init
-			dmac[0] = -1;
-			dmac[2] = 0b11000000;
-			//Destination Config block
-			dmac[4] = 0xFF; // default
-			dmac[5] = 8|4|2|1; // default
-			*(u16*)(dmac+6) = 3;
-			*(u16*)(dmac+8) = 3;
-			*(u16*)(dmac+10) = 3;
-			*(u16*)(dmac+12) = 3;
-
-			// Source Config block
-			dmac[14] = 0xFF; // default
-			dmac[15] = 8|4|2|1; // default
-			*(u16*)(dmac+16) = 3;
-			*(u16*)(dmac+18) = 3;
-			*(u16*)(dmac+20) = 3;
-			*(u16*)(dmac+22) = 3;
-			return;
-
-		case 3: // DEBUG_O3DSNEWINTERLACE - 16bpp
-			*(u16*)(dmac+6) = 2;
-			*(u16*)(dmac+8) = 2;
-			*(u16*)(dmac+10) = 2;
-			*(u16*)(dmac+12) = 2;
-
-			*(u16*)(dmac+16) = 2; // burstSize
-			*(u16*)(dmac+18) = 2; // burstStride
-			*(u16*)(dmac+20) = 4; // transferSize
-			*(u16*)(dmac+22) = 4; // transferStride
-			return;
-
-		case 4: // DEBUG_O3DSNEWINTERLACE - 24bpp
-			*(u16*)(dmac+6) = 3;
-			*(u16*)(dmac+8) = 3;
-			*(u16*)(dmac+10) = 3;
-			*(u16*)(dmac+12) = 3;
-
-			*(u16*)(dmac+16) = 3; // burstSize
-			*(u16*)(dmac+18) = 3; // burstStride
-			*(u16*)(dmac+20) = 6; // transferSize
-			*(u16*)(dmac+22) = 6; // transferStride
-			return;
-
-		case 5: // DEBUG_O3DSNEWINTERLACE - 32bpp
-			*(u16*)(dmac+6) = 3;
-			*(u16*)(dmac+8) = 3;
-			*(u16*)(dmac+10) = 3;
-			*(u16*)(dmac+12) = 3;
-
-			*(u16*)(dmac+16) = 3; // burstSize
-			*(u16*)(dmac+18) = 3; // burstStride
-			*(u16*)(dmac+20) = 8; // transferSize
-			*(u16*)(dmac+22) = 8; // transferStride
-			return;
-
-
-		default: // Case 0 (zero-out dma config block)
-			memset(dmac, 0, 0x18);
-			dmac[0] = -1; // -1 = Auto-assign to a free channel (Arm11: 3-7, Arm9:0-1)
-			return;
-	}
-}
 
 // Returns -1 on an error, and expects the calling function to close the socket.
 // Returns 1 on success.
@@ -1186,12 +1089,10 @@ void netfuncOld3DS(void* __dummy_arg__)
 	PatStay(0x00FF00); // Notif LED = Green
 
 	u8 dmaconf[0x18];
+	initCustomDmaCfg(dmaconf);
 
-	// Old-3DS Only (:
 #if DEBUG_O3DSNEWINTERLACE==1
 	populatedmaconf(dmaconf,2);
-	//populatedmaconf(dmaconf,3);
-	printf("populated dmaconf");
 #else
 	populatedmaconf(dmaconf,0);
 #endif
@@ -1220,6 +1121,8 @@ void netfuncOld3DS(void* __dummy_arg__)
         if(cfgblk[0] && GSPGPU_ImportDisplayCaptureInfo(&capin) >= 0)
         {
         	netfuncTestFramebuffer(&procid,&scr);
+
+        	// test for whether the GPUDisplayCaptureInfo has meaningfully changed
 
         	//tryMarioKartHotfix(&scrw);
 
