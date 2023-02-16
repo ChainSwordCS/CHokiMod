@@ -23,11 +23,11 @@
 
 
 // TODO: I should calculate this elsewhere, preferably so it's not being recalc'd every frame.
-inline void cvt1624_help1(u32 mywidth, u8* myscreenbuf, u8** endof24bimg, u8** endof16bimg)
+inline void cvt1624_help1(u32 mywidth, u32 myheight, u8* myscreenbuf, u8** endof24bimg, u8** endof16bimg)
 {
-	*endof24bimg = (u8*)myscreenbuf + (240*mywidth*3) - 3;
-	*endof16bimg = (u8*)myscreenbuf + (240*mywidth*2) - 2;
-	//*sparebuffersiz = (mywidth*240*4) - (mywidth*240*3);
+	*endof24bimg = (u8*)myscreenbuf + (myheight*mywidth*3) - 3;
+	*endof16bimg = (u8*)myscreenbuf + (myheight*mywidth*2) - 2;
+	// *sparebuffersiz = (mywidth*myheight*4) - (mywidth*myheight*3);
 }
 inline void cvt1624_help2_forrgba4(u8* myaddr1, u8* myaddr2)
 {

@@ -31,12 +31,13 @@
 // version of this function (for runtime optimization)
 //
 // Pass variables:
-// u32 scrbfwidth - Screen buffer width, in pixels (where "height" is usually 240,
-//                  and "width" is always either 320 or 400 on n3DS)
-// u8* scrbf - Pointer to screen buffer
+// u32 scrbfwidth  - Screen buffer width, in pixels. (On n3DS, always either 320 or 400.)
+// u32 scrbfheight - Screen buffer height, in pixels. (Usually 240, or 120 for an Interlaced frame.)
+// u8* scrbf       - Pointer to screen buffer
 //
 // Decently-written
 // Designed for compatibility, to work on old-3DS.
+// Supports variable height! And eventually native compatibility with weird cases like Mario Kart 7 (height of seemingly 256 px)
 //
 // Writes to the same buffer it reads from, but fills the buffer backwards.
 // Basically. And it doesn't interfere with itself, or corrupt any data.
@@ -50,9 +51,9 @@
 // As far as I know the 3DS doesn't really use the Alpha channel of each pixel in the framebuffer.
 // In any case that it does, unexpected issues may arise.
 //
-void convert16to24_rgb5a1(u32,u8*);
-void convert16to24_rgb565(u32,u8*);
-void convert16to24_rgba4(u32,u8*);
+void convert16to24_rgb5a1(u32,u32,u8*);
+void convert16to24_rgb565(u32,u32,u8*);
+void convert16to24_rgba4(u32,u32,u8*);
 
 
 

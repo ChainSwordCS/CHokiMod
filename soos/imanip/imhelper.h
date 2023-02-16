@@ -22,7 +22,7 @@
 
 #include <3ds.h>
 
-void cvt1624_help1(u32,u8*,u8**,u8**);
+void cvt1624_help1(u32,u32,u8*,u8**,u8**);
 void cvt1624_help2_forrgba4(u8*,u8*);
 void cvt1624_help2_forrgb5a1(u8*,u8*);
 void cvt1624_help2_forrgb565(u8*,u8*);

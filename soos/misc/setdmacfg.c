@@ -22,6 +22,7 @@
 
 #include "setdmacfg.h"
 #include <3ds.h>
+#include <string.h>
 
 inline void initCustomDmaCfg(u8* dmacfgblk)
 {
@@ -39,7 +40,7 @@ inline void initCustomDmaCfg(u8* dmacfgblk)
 	return;
 }
 
-void updateDmaCfgBpp(void* dmacfgblk, u8 source_bpp, u8 interlaced)
+void updateDmaCfgBpp(u8* dmacfgblk, u8 source_bpp, u8 interlaced)
 {
 	u8 destination_bpp;
 

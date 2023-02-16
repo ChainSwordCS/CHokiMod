@@ -23,11 +23,11 @@
 
 
 // works on o3DS
-void convert16to24_rgb5a1(u32 scrbfwidth, u8* scrbf)
+void convert16to24_rgb5a1(u32 scrbfwidth, u32 scrbfheight, u8* scrbf)
 {
 	u8* buf24; // Copy TO here, starting at the end of the 24bpp buffer
 	u8* buf16; // Copy FROM here, starting at the end of the 16bpp buffer
-	cvt1624_help1(scrbfwidth, scrbf, &buf24, &buf16); // calc variables
+	cvt1624_help1(scrbfwidth, scrbfheight, scrbf, &buf24, &buf16); // calc variables
 
 	while(buf16 + 1 < buf24)
 	{
@@ -39,11 +39,11 @@ void convert16to24_rgb5a1(u32 scrbfwidth, u8* scrbf)
 
 
 // works on o3DS
-void convert16to24_rgb565(u32 scrbfwidth, u8* scrbf)
+void convert16to24_rgb565(u32 scrbfwidth, u32 scrbfheight, u8* scrbf)
 {
 	u8* buf16;
 	u8* buf24;
-	cvt1624_help1(scrbfwidth, scrbf, &buf24, &buf16);
+	cvt1624_help1(scrbfwidth, scrbfheight, scrbf, &buf24, &buf16);
 
 	while(buf16 + 1 < buf24)
 	{
@@ -55,11 +55,11 @@ void convert16to24_rgb565(u32 scrbfwidth, u8* scrbf)
 
 
 // works on o3DS
-void convert16to24_rgba4(u32 scrbfwidth, u8* scrbf)
+void convert16to24_rgba4(u32 scrbfwidth, u32 scrbfheight, u8* scrbf)
 {
 	u8* buf16;
 	u8* buf24;
-	cvt1624_help1(scrbfwidth, scrbf, &buf24, &buf16);
+	cvt1624_help1(scrbfwidth, scrbfheight, scrbf, &buf24, &buf16);
 
 	while(buf16 + 1 < buf24)
 	{
