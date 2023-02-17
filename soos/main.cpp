@@ -111,6 +111,7 @@ inline int setCpuResourceLimit(u32); // Unfinished, doesn't work.
 void waitforDMAtoFinish(void*); // Don't use this. This is only used by a separate thread, started from within netfunc.
 void debugPrint(u8, const char*); // Essentially shorthand for puts(), with respect to debug log level.
 void sendDebugFrametimeStats(double,double,double*,double); // It works, and I'm still adding to it.
+int allocateScreenbufMem(u32**); // Only called in specific contexts from main()
 
 // netfunc
 void newThreadMainFunction(void*);
@@ -694,7 +695,7 @@ inline int netfuncWaitForSettings()
 
 								if(isold)
 								{
-
+									return 9;
 								}
 							}
 							else if(j == 1 && cfgblk[5] != 1)
@@ -703,7 +704,7 @@ inline int netfuncWaitForSettings()
 
 								if(isold)
 								{
-
+									return 9;
 								}
 							}
 							return 1;
@@ -755,6 +756,63 @@ inline int netfuncWaitForSettings()
 	return 1;
 }
 
+int allocateScreenbufMem(u32** myscreenbuf)
+{
+	u32 screenbuf_siz = 0;
+	debugPrint(1, "(re)allocating memory for screenbuf...");
+	if(isold) // is Old-3DS
+	{
+		// If Interlaced
+		if(cfgblk[5] == 1)
+		{
+			limit[0] = 1;
+			limit[1] = 1;
+			stride[0] = 400;
+			stride[1] = 320;
+			screenbuf_siz = 400 * 120 * 3;
+		}
+		else
+		{
+			limit[0] = 8; // Capture the screen in 8 chunks
+			limit[1] = 8;
+			stride[0] = 50; // Screen / Framebuffer width (divided by 8)
+			stride[1] = 40;
+			screenbuf_siz = 50 * 240 * 3;
+		}
+	}
+	else
+	{
+		limit[0] = 1;
+		limit[1] = 1;
+		stride[0] = 400;
+		stride[1] = 320;
+		screenbuf_siz = 400 * 240 * 3;
+	}
+
+	int i = 0;
+	while(i < 5 && (!*myscreenbuf) )
+	{
+		*myscreenbuf = (u32*)memalign(8, screenbuf_siz);
+
+		if(!*myscreenbuf)
+		{
+			debugPrint(1, "memalign failed, retrying...");
+			makerave();
+			svcSleepThread(2e9);
+		}
+		i++;
+	}
+
+	if(!*myscreenbuf)
+	{
+		debugPrint(1, "Error: out of memory (memalign failed trying to allocate memory for screenbuf)");
+		return -1;
+	}
+	else
+	{
+		return 0;
+	}
+}
 
 void makeTargaImage(double* timems_fc, double* timems_pf, int scr, u32* scrw, u32* bits, int* imgsize)
 {
@@ -1045,13 +1103,23 @@ void newThreadMainFunction(void* __dummy_arg__)
 	while(threadrunning)
 	{
         if(soc->avail())
+        { // ?
 
-        if(netfuncWaitForSettings() < 0)
-        {
-        	delete soc;
-        	soc = nullptr;
+        	int ret_nwfs = netfuncWaitForSettings();
+			if(ret_nwfs < 0)
+			{
+				delete soc;
+				soc = nullptr;
+			}
+			else if(ret_nwfs == 9)
+			{
+				debugPrint(1, "o3DS toggled Interlaced setting, reallocating screenbuf...");
+				free(screenbuf);
+				screenbuf = nullptr;
+				yield(); // does this help
+				allocateScreenbufMem(&screenbuf);
+			}
         }
-
         if(!soc) break;
 
 #if DEBUG_VERBOSE==1
@@ -1444,6 +1512,11 @@ int main()
     std::set_terminate(CPPCrashHandler);
 #endif
     
+	if( allocateScreenbufMem(&screenbuf) == -1)
+	{
+		hangmacro();
+	}
+
     netreset:
     
     if(sock)
@@ -1515,51 +1588,12 @@ int main()
     }
     
     
-    reloop:
-    
-    if(!isold) osSetSpeedupEnable(1);
-    
-
-
-    if(isold) // is Old-3DS
+	if(!isold) // is New-3DS
 	{
-		// If Interlaced
-		if(cfgblk[5] == 1)
-		{
-			limit[0] = 1;
-			limit[1] = 1;
-			stride[0] = 400;
-			stride[1] = 320;
-			screenbuf_siz = 400 * 120 * 3;
-		}
-		else
-		{
-			limit[0] = 8; // Capture the screen in 8 chunks
-			limit[1] = 8;
-			stride[0] = 50; // Screen / Framebuffer width (divided by 8)
-			stride[1] = 40;
-			screenbuf_siz = 50 * 240 * 3;
-		}
-	}
-	else // is New-3DS (or New-2DS)
-	{
-		limit[0] = 1;
-		limit[1] = 1;
-		stride[0] = 400;
-		stride[1] = 320;
-		screenbuf_siz = 400 * 240 * 3;
+		osSetSpeedupEnable(1);
 	}
 
-
-	screenbuf = (u32*)memalign(8, screenbuf_siz);
-	// If memalign returns null or 0
-	if(!screenbuf)
-	{
-		makerave();
-		svcSleepThread(2e9);
-		debugPrint(1, "Error: out of memory (memalign failed trying to allocate memory for screenbuf)");
-		hangmacro();
-	}
+	reloop:
 
 
     PatPulse(0xFF40FF);
@@ -1579,6 +1613,7 @@ int main()
 
         if(kHeld == (KEY_SELECT | KEY_START)) break;
         
+
         if(!soc)
         {
             if(!haznet)
@@ -1642,16 +1677,11 @@ int main()
             }
         }
         
-        // Soft-reboot
         if(netthread && !threadrunning)
-        {
-            netthread = nullptr;
-
-            free(screenbuf);
-            screenbuf = nullptr;
-
-            goto reloop;
-        }
+		{
+			netthread = nullptr;
+			//goto reloop;
+		}
         
         // VRAM Corruption function :)
         //if((kHeld & (KEY_ZL | KEY_ZR)) == (KEY_ZL | KEY_ZR))
