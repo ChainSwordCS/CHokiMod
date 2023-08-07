@@ -23,6 +23,7 @@
 #include "setdmacfg.h"
 #include <3ds.h>
 #include <string.h>
+#include <stdio.h>
 
 inline void initCustomDmaCfg(u8* dmacfgblk)
 {
@@ -60,6 +61,11 @@ void updateDmaCfgBpp(u8* dmacfgblk, u8 source_bpp, u8 interlaced)
 	// Shortcut: These are all 16-bit integers, but touching the higher byte may be a waste of time.
 
 	// TODO: Potentially rethink how this works and what is most optimal.
+
+	//printf("Interlaced stuff:");
+	//printf("source: %i bits (%i bytes)", source_bpp, source_bytesperpixel);
+	//printf("destination: %i bits (%i bytes)", destination_bpp, destination_bytesperpixel);
+	//printf("interlaced=%i ; skip %i bytes every pixel", interlaced, source_skipbytes);
 
 	dmacfgblk[1+CFG_OFFS_DST_S16_GATHER_GRANULE_SIZE] = destination_bytesperpixel;
 	dmacfgblk[1+CFG_OFFS_DST_S16_GATHER_STRIDE] = destination_bytesperpixel;

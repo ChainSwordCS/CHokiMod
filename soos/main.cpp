@@ -849,7 +849,7 @@ void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* scrw, u32
 	int tjpixelformat = 0;
 	//u32 siz_2 = (capin.screencapture[scr].framebuf_widthbytesize * stride[scr]);
 
-	if(cfgblk[5])
+	if(isinterlaced)
 	{
 		subtype_aka_flags += 0b00100000 + (interlace_px_offset?0:0b01000000);
 	}
@@ -1158,6 +1158,7 @@ void newThreadMainFunction(void* __dummy_arg__)
             	int imgsize = 0;
 
             	if(isold == 0){ //New3DS-Specific
+            		//TODO: This should throw a data abort exception with 32bpp images. too lazy to fix it right now
             		svcFlushProcessDataCache(0xFFFF8001, (u8*)screenbuf, capin.screencapture[scr].framebuf_widthbytesize * 400);
             	}
 
@@ -1179,6 +1180,9 @@ void newThreadMainFunction(void* __dummy_arg__)
 						break; // This case shouldn't occur.
                 }
 
+                //printf("height (scrw) = %i\n", scrw);
+                //printf("screen size in bytes = %i\n", bsiz);
+                //printf("interlace_px_offset = %i\n", interlace_px_offset);
 
                 if(isold){
 #if DEBUG_O3DSNEWINTERLACE==0
