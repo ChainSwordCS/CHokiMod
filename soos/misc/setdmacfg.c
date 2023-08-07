@@ -41,7 +41,7 @@ inline void initCustomDmaCfg(u8* dmacfgblk)
 	return;
 }
 
-void updateDmaCfgBpp(u8* dmacfgblk, u8 source_bpp, u8 interlaced)
+void updateDmaCfgBpp(u8* dmacfgblk, u8 source_bpp, u8 interlaced, u32 rowstride)
 {
 	u8 destination_bpp;
 
@@ -57,6 +57,7 @@ void updateDmaCfgBpp(u8* dmacfgblk, u8 source_bpp, u8 interlaced)
 	const u8 destination_bytesperpixel = destination_bpp / 8;
 
 	const u8 source_skipbytes = interlaced ? source_bytesperpixel : 0;
+	const u8 width = interlaced ? 120 : 240;
 
 	// Shortcut: These are all 16-bit integers, but touching the higher byte may be a waste of time.
 
@@ -69,12 +70,13 @@ void updateDmaCfgBpp(u8* dmacfgblk, u8 source_bpp, u8 interlaced)
 
 	dmacfgblk[1+CFG_OFFS_DST_S16_GATHER_GRANULE_SIZE] = destination_bytesperpixel;
 	dmacfgblk[1+CFG_OFFS_DST_S16_GATHER_STRIDE] = destination_bytesperpixel;
-	dmacfgblk[1+CFG_OFFS_DST_S16_SCATTER_GRANULE_SIZE] = destination_bytesperpixel;
-	dmacfgblk[1+CFG_OFFS_DST_S16_SCATTER_STRIDE] = destination_bytesperpixel;
+
+	((u16*)dmacfgblk)[CFG_OFFS_DST_S16_SCATTER_GRANULE_SIZE/2] = destination_bytesperpixel * width;
+	((u16*)dmacfgblk)[CFG_OFFS_DST_S16_SCATTER_STRIDE/2] = destination_bytesperpixel * width;
 
 	dmacfgblk[1+CFG_OFFS_SRC_S16_GATHER_GRANULE_SIZE] = destination_bytesperpixel;
-	dmacfgblk[1+CFG_OFFS_SRC_S16_GATHER_STRIDE] = destination_bytesperpixel;
+	dmacfgblk[1+CFG_OFFS_SRC_S16_GATHER_STRIDE] = source_bytesperpixel + source_skipbytes;
 
-	dmacfgblk[1+CFG_OFFS_SRC_S16_SCATTER_GRANULE_SIZE] = source_bytesperpixel + source_skipbytes;
-	dmacfgblk[1+CFG_OFFS_SRC_S16_SCATTER_STRIDE] = source_bytesperpixel + source_skipbytes;
+	((u16*)dmacfgblk)[CFG_OFFS_SRC_S16_SCATTER_GRANULE_SIZE/2] = destination_bytesperpixel * width;
+	((u16*)dmacfgblk)[CFG_OFFS_SRC_S16_SCATTER_STRIDE/2] = rowstride;
 }

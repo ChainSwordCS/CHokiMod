@@ -71,4 +71,5 @@ void initCustomDmaCfg(u8*);
 // void* dmacfgblk = Pointer to DMA Config Block
 // u8 source_bpp = Bits Per Pixel of the framebuffer we want to read from.
 // u8 interlaced = Do we want to output interlaced video? (1 = yes, 0 = no)
-void updateDmaCfgBpp(u8*,u8,u8);
+// u32 rowstride = Stride, as specified in the CaptureInfo
+void updateDmaCfgBpp(u8*,u8,u8,u32);

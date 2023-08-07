@@ -1161,11 +1161,19 @@ void newThreadMainFunction(void* __dummy_arg__)
         {
         	// test for whether the GPUDisplayCaptureInfo has meaningfully changed
         	int r = netfuncTestFramebuffer(&procid,&scr,capin,format);
-        	if(r & 0b01){
-        		updateDmaCfgBpp(dma_config[0], getFormatBpp(format[0]), cfgblk[5]);
-        	}
-        	if(r & 0b10){
-        		updateDmaCfgBpp(dma_config[1], getFormatBpp(format[1]), cfgblk[5]);
+
+        	switch(cfgblk[3])
+        	{
+        		case 1:
+        			updateDmaCfgBpp(dma_config[0], getFormatBpp(format[0]), cfgblk[5], capin.screencapture[0].framebuf_widthbytesize);
+        			break;
+        		case 2:
+        			updateDmaCfgBpp(dma_config[1], getFormatBpp(format[1]), cfgblk[5], capin.screencapture[1].framebuf_widthbytesize);
+        			break;
+        		default:
+        			updateDmaCfgBpp(dma_config[0], getFormatBpp(format[0]), cfgblk[5], capin.screencapture[0].framebuf_widthbytesize);
+        			updateDmaCfgBpp(dma_config[1], getFormatBpp(format[1]), cfgblk[5], capin.screencapture[1].framebuf_widthbytesize);
+        			break;
         	}
 
         	// tryMarioKartHotfix(&scrw);
@@ -1180,15 +1188,22 @@ void newThreadMainFunction(void* __dummy_arg__)
         	//
         	// Increasing this would lead to a theoretical speed increase,
         	// but probably not noticeable in practice.
-            for(int loopy = 2; loopy > 0; loopy--)
+            for(int loopy = 1; loopy > 0; loopy--)
             {
                 //soc->setPakSize(0);
             	tryStopDma(&dmahand);
             	int imgsize = 0;
 
             	if(isold == 0){ //New3DS-Specific
-            		//TODO: This should throw a data abort exception with 32bpp images. too lazy to fix it right now
-            		svcFlushProcessDataCache(0xFFFF8001, (u8*)screenbuf, capin.screencapture[scr].framebuf_widthbytesize * 400);
+
+            		int flush_size = (scr ? 400 : 320) * 240;
+            		int fmtbpp = getFormatBpp(format[scr]);
+            		if(fmtbpp == 32)
+            			flush_size = flush_size * 3;
+            		else
+            			flush_size = flush_size * (fmtbpp / 8);
+
+            		svcFlushProcessDataCache(0xFFFF8001, (u8*)screenbuf, (scr ? 400 : 320) * 240 * getFormatBpp(format[scr]));
             	}
 
             	// Halve the height variable if Interlacing. Obviously only do this once.
@@ -1244,7 +1259,7 @@ void newThreadMainFunction(void* __dummy_arg__)
                 // TODO: Does this even return a correct value? Even remotely?
                 siz = (capin.screencapture[scr].framebuf_widthbytesize * stride[scr]); // Size of the entire frame (in bytes)
                 bsiz = capin.screencapture[scr].framebuf_widthbytesize / 240; // Size of a single pixel in bytes (???)
-                scrw = capin.screencapture[scr].framebuf_widthbytesize / bsiz; // Screen "Width" (Usually 240)
+                scrw = 240; // screen "width." identical behavior to original code. lol, lmao
                 bits = 4 << bsiz; // ?
 
 
@@ -1300,6 +1315,7 @@ void newThreadMainFunction(void* __dummy_arg__)
 
 				// Likely inefficient, idk lol, I'll fix it later?
 
+				siz = (getFormatBpp(format[scr]) / 8) * scrw * stride[scr];
 
 				if(cfgblk[5])
 				{
