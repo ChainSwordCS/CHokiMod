@@ -118,7 +118,7 @@ void newThreadMainFunction(void*);
 
 // Helper functions for netfunc 1 and 2 (code organization reasons)
 inline int netfuncWaitForSettings(); // Rewritten from netfunc
-void makeTargaImage(double*,double*,int,u32*,u32*,int*); // Rewritten from netfunc
+void makeTargaImage(double*,double*,int,u32*,u32*,int*,u32*); // Rewritten from netfunc
 void makeJpegImage(double*,double*,int,u32*,u32*,int*,u8,u32*); // Rewritten from netfunc
 int netfuncTestFramebuffer(u32*, int*, GSPGPU_CaptureInfo, u32*); // Rewritten from netfunc
 
@@ -814,17 +814,46 @@ int allocateScreenbufMem(u32** myscreenbuf)
 	}
 }
 
-void makeTargaImage(double* timems_fc, double* timems_pf, int scr, u32* scrw, u32* bits, int* imgsize)
+void makeTargaImage(double* timems_fc, double* timems_pf, int scr, u32* scrw, u32* bits, int* imgsize, u32* myformat)
 {
 #if DEBUG_VERBOSE==1
 	*timems_fc = 0;
 	osTickCounterUpdate(&tick_ctr_1);
 #endif
 
-	init_tga_image(&img, (u8*)screenbuf, *scrw, stride[scr], *bits);
+	u32 newbits = *bits;
+
+	switch(myformat[scr] & 0b111)
+	{
+		case 0: // RGBA8
+			newbits = 32;
+			break;
+
+		case 1: // RGB8
+			newbits = 24;
+			break;
+
+		case 2: // RGB565
+			newbits = 17;
+			break;
+
+		case 3: // RGB5A1
+			newbits = 16;
+			break;
+
+		case 4: // RGBA4
+			newbits = 18;
+			break;
+
+		default:
+			// Invalid
+			break;
+	}
+
+	init_tga_image(&img, (u8*)screenbuf, *scrw, stride[scr], newbits);
 	img.image_type = TGA_IMAGE_TYPE_BGR_RLE;
 
-	// I don't know what this does. It might be unimplemented in ChokiStream anyway)
+	// horizontal offset. redundant in chirunomod.
 	img.origin_y = (scr * 400) + (stride[scr] * offs[scr]);
 
 	tga_write_to_FILE((soc->bufferptr + bufsoc_pak_data_offset), &img, imgsize);
@@ -1174,7 +1203,7 @@ void newThreadMainFunction(void* __dummy_arg__)
 						makeJpegImage(&timems_formatconvert, &timems_processframe, scr, &scrw, &bsiz, &imgsize, cfgblk[5], format);
 						break;
 					case 1: // Targa / TGA
-						makeTargaImage(&timems_formatconvert, &timems_processframe, scr, &scrw, &bits, &imgsize);
+						makeTargaImage(&timems_formatconvert, &timems_processframe, scr, &scrw, &bits, &imgsize, format);
 						break;
 					default:
 						break; // This case shouldn't occur.
