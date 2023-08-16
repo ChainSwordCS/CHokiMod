@@ -1195,15 +1195,7 @@ void newThreadMainFunction(void* __dummy_arg__)
             	int imgsize = 0;
 
             	if(isold == 0){ //New3DS-Specific
-
-            		int flush_size = (scr ? 400 : 320) * 240;
-            		int fmtbpp = getFormatBpp(format[scr]);
-            		if(fmtbpp == 32)
-            			flush_size = flush_size * 3;
-            		else
-            			flush_size = flush_size * (fmtbpp / 8);
-
-            		svcFlushProcessDataCache(0xFFFF8001, (u8*)screenbuf, (scr ? 400 : 320) * 240 * getFormatBpp(format[scr]));
+            		svcFlushProcessDataCache(0xFFFF8001, (u8*)screenbuf, capin.screencapture[scr].framebuf_widthbytesize * 400);
             	}
 
             	// Halve the height variable if Interlacing. Obviously only do this once.
