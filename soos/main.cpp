@@ -1328,6 +1328,9 @@ void newThreadMainFunction(void* __dummy_arg__)
 					interlace_px_offset = 0;
 				}
 
+				// hacky fix for DMA size weirdness
+				siz += (getFormatBpp(format[scr])/8) * (scr ? 5104 : 6386) - (scr ? 0 : 2);
+
 				int r = svcStartInterProcessDma(&dmahand,0xFFFF8001,screenbuf,srcprochand,(srcaddr+interlace_px_offset),siz,dma_config[scr]);
 
 				//int r = GX_DisplayTransfer((u32*)srcaddr,(240 << 16) + 400,(u32*)screenbuf,(240 << 16) + 400,*((u32*)gputransferflag));
