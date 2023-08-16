@@ -47,7 +47,7 @@ Please note, the PC HorizonScreen application in this repository is old and obso
   - ChainSwordCS - Documentation and reverse-engineering of HzMod, development of ChokiStream
   
 - ### Original Code
-  - Sono - for creating the HzMod project and the code from which CHokiMod was forked.
+  - Sono - for creating the HzMod project and the code from which ChirunoMod was forked.
   
   - #### Additional credits for original HorizonM / HzMod
     - Minnow - figuring out how Base processes can be used
@@ -84,7 +84,7 @@ Note: This branch (the current Main branch) needs to be compiled with legacy lib
 
 # License
 
-Copyright (c) 2022 ChainSwordCS (https://chainswordcs.com), (chainswordcs@gmail.com)<br>
+Copyright (c) 2022-2023 ChainSwordCS (https://chainswordcs.com), (chainswordcs@gmail.com)<br>
 `ChirunoMod` is licensed under the `GNU GPLv3` license. See `LICENSE` for details.
 
 `HzMod` code and project are licensed under `GNU GPLv3` license.<br>
