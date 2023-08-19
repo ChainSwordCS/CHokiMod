@@ -1329,7 +1329,15 @@ void newThreadMainFunction(void* __dummy_arg__)
 				}
 
 				// hacky fix for DMA size weirdness
-				siz += (getFormatBpp(format[scr])/8) * (scr ? 5104 : 6386) - (scr ? 0 : 2);
+				if(isold)
+				{
+					siz += (getFormatBpp(format[scr])/8) * (scr ? 624 : 784);
+				}
+				else
+				{
+					siz += (getFormatBpp(format[scr])/8) * (scr ? 5104 : 6386) - (scr ? 0 : 2);
+				}
+
 
 				int r = svcStartInterProcessDma(&dmahand,0xFFFF8001,screenbuf,srcprochand,(srcaddr+interlace_px_offset),siz,dma_config[scr]);
 
@@ -1451,7 +1459,7 @@ int main()
 		setvbuf(stdout, nullptr, _IONBF, 0);
 		setvbuf(stderr, nullptr, _IONBF, 0);
     }
-    printf("Hello World? Does this work? lol\n");
+    printf("ChirunoMod is starting...\n");
 #endif
     
     memset(&pat, 0, sizeof(pat));
