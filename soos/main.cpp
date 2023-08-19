@@ -1328,15 +1328,8 @@ void newThreadMainFunction(void* __dummy_arg__)
 					interlace_px_offset = 0;
 				}
 
-				// hacky fix for DMA size weirdness
-				if(isold)
-				{
-					siz += (getFormatBpp(format[scr])/8) * (scr ? 624 : 784);
-				}
-				else
-				{
-					siz += (getFormatBpp(format[scr])/8) * (scr ? 5104 : 6386) - (scr ? 0 : 2);
-				}
+				// workaround for DMA Siz Bug (refer to docs)
+				siz += (getFormatBpp(format[scr])/8) * (16 * stride[scr] - 16);
 
 
 				int r = svcStartInterProcessDma(&dmahand,0xFFFF8001,screenbuf,srcprochand,(srcaddr+interlace_px_offset),siz,dma_config[scr]);
