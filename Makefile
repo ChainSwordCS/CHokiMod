@@ -1,6 +1,3 @@
-DATESTRING	:=	$(shell date +%Y)-$(shell date +%m)-$(shell date +%d)
-BUILDOUT    :=  chokimod-build-out
-
 #---------------------------------------------------------------------------------
 .SUFFIXES:
 #---------------------------------------------------------------------------------
@@ -29,16 +26,17 @@ include $(DEVKITARM)/3ds_rules
 #     - icon.png
 #     - <libctru folder>/default_icon.png
 #---------------------------------------------------------------------------------
-TARGET		    :=	$(notdir $(CURDIR))
-BUILD		    :=	chokimod-build
+
+TARGET=ChirunoMod
+BUILD		    :=	chirunomod-build
 SOURCES		    :=	soos
 DATA		    :=	data
 INCLUDES	    :=	inc
-APP_TITLE       :=  CHokiMod
-APP_DESCRIPTION :=  HzMod continuation
-APP_AUTHOR      :=  ChainSwordCS
-APP_PRODUCT_CODE:=  CTR-N-AHZA
-APP_UNIQUE_ID   :=  0xCF00F
+APP_TITLE       :=  ChirunoMod
+APP_DESCRIPTION :=  Chiruno Sys Module
+APP_AUTHOR      :=  Sono, ChainSwordCS
+APP_PRODUCT_CODE:=  CTR-N-ACHA
+APP_UNIQUE_ID   :=  0xCF009
 
 APP_TITLE       :=  $(shell echo "$(APP_TITLE)" | cut -c1-128)
 APP_DESCRIPTION :=  $(shell echo "$(APP_DESCRIPTION)" | cut -c1-256)
@@ -53,23 +51,21 @@ ARCH	:=	-march=armv6k -mtune=mpcore -mfloat-abi=hard
 
 CFLAGS	:=	-g -Wall -Wno-format -O0 -mword-relocations \
 			-fomit-frame-pointer -ffast-math \
-			$(ARCH) \
-			$(3ds-pkg-config -3ds-zlib -3ds-libjpeg-turbo -libctru -lm --cflags)
+			$(ARCH)
 
-CFLAGS	+=	$(INCLUDE) -D__3DS__
+CFLAGS	+=	$(INCLUDE) -DARM11 -D_3DS
 
 CXXFLAGS	:= $(CFLAGS) -fno-rtti -std=gnu++11
 
 ASFLAGS	:=	-g $(ARCH)
 LDFLAGS	=	-specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
 
-LIBS	:=  $(3ds-pkg-config -3ds-zlib -3ds-libjpeg-turbo --libs) -lcitro2d -lcitro3d -lctru -lm -lz -lturbojpeg
-
+LIBS	:= -lturbojpeg -lz -lctru -lm
 #---------------------------------------------------------------------------------
 # list of directories containing libraries, this must be the top level containing
 # include and lib
 #---------------------------------------------------------------------------------
-LIBDIRS	:= $(CTRULIB) $(DEVKITPRO)/portlibs/armv6k $(PORTLIBS)
+LIBDIRS	:= $(CTRULIB) $(DEVKITPRO)/portlibs/armv6k
 
 
 #---------------------------------------------------------------------------------
@@ -79,7 +75,8 @@ LIBDIRS	:= $(CTRULIB) $(DEVKITPRO)/portlibs/armv6k $(PORTLIBS)
 ifneq ($(BUILD),$(notdir $(CURDIR)))
 #---------------------------------------------------------------------------------
 
-export OUTPUT	:=	$(CURDIR)/$(BUILDOUT)/$(TARGET)
+export OUTPUT	:=	$(CURDIR)/$(TARGET)
+
 export TOPDIR	:=	$(CURDIR)
 
 export VPATH	:=	$(foreach dir,$(SOURCES),$(CURDIR)/$(dir)) \
@@ -143,8 +140,7 @@ $(BUILD):
 #---------------------------------------------------------------------------------
 clean:
 	@echo clean ...
-	@rm -rf $(BUILD) $(BUILDOUT)/$(TARGET).3dsx $(BUILDOUT)/$(OUTPUT).smdh $(BUILDOUT)/$(TARGET).elf $(BUILDOUT)/$(TARGET).3ds $(BUILDOUT)/$(TARGET).cia
-
+	@rm -rf $(BUILD) $(TARGET).3dsx $(OUTPUT).smdh $(TARGET).elf $(TARGET).3ds $(TARGET).cia
 
 #---------------------------------------------------------------------------------
 else

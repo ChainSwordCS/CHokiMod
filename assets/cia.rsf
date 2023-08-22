@@ -1,16 +1,16 @@
 BasicInfo:
   Title                   : $(APP_TITLE)
   ProductCode             : $(APP_PRODUCT_CODE)
-  Logo                    : None # Nintendo / Licensed / Distributed / iQue / iQueForSystem / Homebrew / HomebrewLegacy
-  ContentType             : Application # I assume this is required...
+  Logo                    : None # Nintendo / Licensed / Distributed / iQue / iQueForSystem
+  ContentType             : Application # Likely required IIRC
 
 RomFs:
   RootPath: $(APP_ROMFS)
 
 TitleInfo:
-  Category                : Base # This can't be set to Application.
+  Category                : Base # Required; Don't change
   UniqueId                : $(APP_UNIQUE_ID)
-  Version                 : 2 # Changing this fucks with the Title ID, FYI. (IIRC)
+  Version                 : 2 # Changing this messes with the Title ID
 
 Option:
   UseOnSD                 : false # true if App is to be installed to SD
@@ -34,7 +34,7 @@ AccessControlInfo:
   #ExtSaveDataId                : 0x300 # only set this when the ID is different to the UniqueId
 
   # FS:USER Archive Access Permissions
-  # Honestly these shouldn't all be necessary but it's fine and it works.
+  # Uncomment as required
   FileSystemAccess:
    - CategorySystemApplication
    - CategoryHardwareCheck
@@ -71,10 +71,10 @@ AccessControlInfo:
   # Process Settings
   MemoryType                    : Base # Application/System/Base
   SystemMode                    : 64MB # 64MB(Default)/96MB/80MB/72MB/32MB
-  IdealProcessor                : 1 # Thinking about other processors lol
-  AffinityMask                  : 1 # Shouldn't be 15. Try 1 or 3 etc.
-  Priority                      : 20 # Was 20. Try 48 but I forget why. 16 is default(?)
-  MaxCpu                        : 0x9E # Try 158 but I forget why. 0x9E is default. 0 = Let System Decide.
+  IdealProcessor                : 1 # Probably don't change
+  AffinityMask                  : 15 # (Don't change.) Shouldn't really be 15? 0 breaks, 1 breaks, 3 works...
+  Priority                      : 20 # (Don't change.) Was 20. Try 48 also. Default is 16
+  MaxCpu                        : 0x9E # (Don't change.) 0x9E is default. 0 = Let System Decide
   HandleTableSize               : 0x200 # Default
   DisableDebug                  : false
   EnableForceDebug              : false
@@ -85,7 +85,7 @@ AccessControlInfo:
   CanShareDeviceMemory          : true
   RunnableOnSleep               : true
   SpecialMemoryArrange          : false
-  ResourceLimitCategory         : Other # I don't know if this is a setting but it doesn't break so
+  ResourceLimitCategory         : Other # Don't change?
 
   # New3DS Exclusive Process Settings
   SystemModeExt                 : 124MB # Legacy(Default)/124MB/178MB  Legacy:Use Old3DS SystemMode
@@ -97,10 +97,9 @@ AccessControlInfo:
   IORegisterMapping:
    - 1ff00000-1ff7ffff    # DSP memory
   MemoryMapping: 
-   - 1f000000-1f5fffff:rw # VRAM (Maybe try changing "rw" to "r", but more than likely will break.)
+   - 1f000000-1f5fffff:rw # VRAM (Don't change probably)
 
-  # Accessible SVCs, <Name>:<ID> , https://www.3dbrew.org/wiki/Kernel_ABI
-  # Note that we prob need all of these. And keep them in numerical order. List is up to date.
+  # Accessible SVCs, <Name>:<ID>, https://www.3dbrew.org/wiki/Kernel_ABI
   SystemCallAccess: 
     ControlMemory: 1
     QueryMemory: 2
@@ -212,164 +211,42 @@ AccessControlInfo:
 
   # Service List
   # Maximum 34 services (32 if firmware is prior to 9.6.0)
-  # Consider adding...
-  # act:u boss:U cam:u cecd:u cfg:u frd:u ir:USER ir:u ldr:ro mic:u ndm:u news:u nfc:u nim:aoc nwm::UDS pxi:dev qtm:u y2r:u
-  # This may or may not break. Not sure.
-  # 
-  # Previously set to:
-  # - APT:S
-  # - ac:u
-  # - am:net
-  # - csnd:SND
-  # - dsp::DSP
-  # - fs:USER
-  # - gsp::Gpu
-  # - hid:USER
-  # - http:C
-  # - ir:rst
-  # - mcu::HWC
-  # - ns:s
-  # - ptm:sysm
-  # - soc:U
-  # - ssl:C
-  # 
-  # Current iteration is copied from BootNTR's repo as reference.
-  # 
-  # Final note.
-  # For sake of compatibility with firmware < 9.6.0, limit this list to 32 or less.
-  # I feel like this must have an impact...
-  # 
-  # What I commented out:
-  # - APT:U # Unknown, exactly... I feel like we don't need this.
-  # - am:net # Application Manager
-  # - boss:U # SpotPass related. Don't need.
-  # - cam:u # Camera Services
-  # - cecd:u # StreetPass related. Don't need.
-  # - cfg:u # Config Service, Don't need.
-  # - csnd:SND # Sound-related. Don't need.
-  # - dsp::DSP # Sound-related. Don't need.
-  # - frd:u # Friend services. Why.
-  # - gsp::Lcd # Probably don't need.
-  # - hid:USER # May not actually need. HID shared memory exists.
-  # - ir:rst # Infrared-related stuff
-  # - ir:u
-  # - ir:USER
-  # - mic:u
-  # - news:s
-  # - ns:s # Honestly probably not needed for this.
-  # - nwm::EXT # NWM, sorta unknown
-  # - nwm::UDS # NWM Local-WLAN Service. Not needed?
-  # - ptm:u # Not needed.
-  # - pxi:dev
-  #
-  # ChainSwordCS(2022-08-04 9:15 PM):
-  # Actually, these are just permissions.
-  # Having too few hurts us more than having too many.
-  # Current number is 25.
   ServiceAccessControl:
    - APT:S # APT Service, System level. Needed for snooping on other applications.
-   - ac:i # AC Services (Wifi-related); ac:i for more permissions (might need for DHCP, UPnP, idk...)
+   - ac:u # AC Services (Wifi); try ac:i for more permissions, but not needed and may break.
    - am:net
-   - boss:U
-   - cam:u
-   - cdc:HID # HID Codec Service. I added this, I don't know if it's needed.
-   - cecd:u
-   - cfg:nor # Config NVRAM Service (Interface for SPI::NOR, accessing WiFi NVRAM/SPI Flash)
-   - cfg:u
-   - cfg:i
-   - fs:USER # Fine to leave on. File system access stuff.
-   - gsp::Gpu # GSP GPU Service. Most likely very needed.
-   - gsp::Lcd
-   - hid:USER
-   - http:C # HTTP stuff. Perhaps not needed?
-   - i2c::MCU
-   - mcu::HWC # Maybe used for the Notification LED?
-   - mic:u
-   - ndm:u # I don't know.
-   - ns:s
-   - nwm::EXT
-   - nwm::UDS
-   - nwm::SOC # NWM, socket stuff. May not be needed, IDK.
-   - pm:app
-   - ptm:sysm # Actually used to CheckNew3DS, and ConfigureNew3DSCPU
-   - ptm:u
-   - soc:U # Sockets. I could include soc:P for Privileged, but I don't know if it's at all necessary.
-   - ssl:C # SSL stuff. Perhaps not needed?
-   - y2r:u # Related to processing colors. A Camera service. IDK exactly.
+   - csnd:SND
+   - dsp::DSP
+   - fs:USER # Don't change
+   - gsp::Gpu # Don't change
+   - hid:USER # Don't change
+   - http:C # HTTP stuff. Don't change.
+   #- ir:rst # Needed for New-3DS ZL,ZR, and C-Stick
+   - mcu::HWC # Used for the Notification LED
+   - ns:s # Don't change
+   - ptm:sysm # Used for CheckNew3DS and ConfigureNew3DSCPU (if those are used in the code)
+   - soc:U # Socket stuff. Try soc:P for Privileged, but not needed and may break.
+   - ssl:C # SSL stuff. Don't change.
+
 
 SystemControlInfo:
-  SaveDataSize: 0KB # Change if the app uses savedata (Is "0K" acceptable syntax? Forget it...)
-  RemasterVersion: 2 # don't change
-  StackSize: 0x8000 # The default is 0x40000, but we're a background process so....
+  SaveDataSize: 0KB # Change if the app uses savedata
+  RemasterVersion: 2 # Don't change.
+  StackSize: 0x8000
 
   # Modules that run services listed above should be included below
   # Maximum 48 dependencies
   # <module name>:<module titleid>
-  # 
-  # Consider adding...
-  # boss: 0x0004013000003402
-  # camera: 0x0004013000001602
-  # cecd: 0x0004013000002602
-  # cfg: 0x0004013000001702
-  # codec: 0x0004013000001802
-  # dlp: 0x0004013000002802
-  # friends: 0x0004013000003202
-  # gpio: 0x0004013000001b02
-  # ir: 0x0004013000003302
-  # mic: 0x0004013000002002
-  # ndm: 0x0004013000002b02
-  # news: 0x0004013000003502
-  # nfc: 0x0004013000004002
-  # nim: 0x0004013000002c02
-  # nwm: 0x0004013000002d02
-  # pdn: 0x0004013000002102
-  # ps: 0x0004013000003102
-  # ptm: 0x0004013000002202
-  # qtm: 0x0004013020004202
-  # ro: 0x0004013000003702
-  # spi: 0x0004013000002302
-  # 
-  # I just removed...
-  # csnd: 0x0004013000002702
-  # dsp: 0x0004013000001a02
-  # am: 0x0004013000001502
-  # 
-  # ChainSwordCS (2022-08-04 9:27 PM):
-  # This section too. Screw it.
-  # We have plenty of room, we're not hitting the maximum of 48.
-  # Even if this did impact performance in any meaningful way,
-  # Performing but badly is better than not working at all?
-  # 
+  # Just... don't change these unless you actually add to the list above. -ChainSwordCS (2022-08-25)
   Dependency: 
     ac: 0x0004013000002402
     am: 0x0004013000001502
-    boss: 0x0004013000003402
-    camera: 0x0004013000001602
-    cecd: 0x0004013000002602
-    cfg: 0x0004013000001702
-    codec: 0x0004013000001802
     csnd: 0x0004013000002702
-    dlp: 0x0004013000002802
     dsp: 0x0004013000001a02
-    friends: 0x0004013000003202
-    gpio: 0x0004013000001b02
     gsp: 0x0004013000001c02
     hid: 0x0004013000001d02
     http: 0x0004013000002902
     i2c: 0x0004013000001e02
-    ir: 0x0004013000003302
     mcu: 0x0004013000001f02
-    mic: 0x0004013000002002
-    ndm: 0x0004013000002b02
-    news: 0x0004013000003502
-    nfc: 0x0004013000004002
-    nim: 0x0004013000002c02
-    nwm: 0x0004013000002d02
-    pdn: 0x0004013000002102
-    ps: 0x0004013000003102
-    ptm: 0x0004013000002202
-    qtm: 0x0004013020004202
-    ro: 0x0004013000003702
     socket: 0x0004013000002e02
-    spi: 0x0004013000002302
     ssl: 0x0004013000002f02

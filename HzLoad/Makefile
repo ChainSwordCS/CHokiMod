@@ -1,6 +1,3 @@
-DATESTRING	:=	$(shell date +%Y)-$(shell date +%m)-$(shell date +%d)
-BUILDOUT    :=  CHzLoad-build-out
-
 #---------------------------------------------------------------------------------
 .SUFFIXES:
 #---------------------------------------------------------------------------------
@@ -29,25 +26,25 @@ include $(DEVKITARM)/3ds_rules
 #     - icon.png
 #     - <libctru folder>/default_icon.png
 #---------------------------------------------------------------------------------
-TARGET		    :=	$(notdir $(CURDIR))
+TARGET		    :=	ChLoad
 BUILD		    :=	build
 SOURCES		    :=	soos
 DATA		    :=	data
 INCLUDES	    :=	inc
-APP_TITLE       :=  HzLoad
-APP_DESCRIPTION :=  HzMod / CHokiMod Loader
-APP_AUTHOR      :=  ChainSwordCS, Sono
-APP_PRODUCT_CODE:=  CTR-N-AHLA
-APP_UNIQUE_ID   :=  0xCFAAF
+APP_TITLE       :=  ChLoad
+APP_DESCRIPTION :=  ChirunoMod + HzMod Loader
+APP_AUTHOR      :=  Sono, ChainSwordCS
+APP_PRODUCT_CODE:=  CTR-N-ACLA
+APP_UNIQUE_ID   :=  0xCFA9F
 ICON            :=  assets/logo.png
 BANNER          :=  assets/banner.png
 
 ifneq ($(strip $(HIMEM)),)
-TARGET		    :=	$(notdir $(CURDIR))_HIMEM
+TARGET		    :=	ChLoad_HIMEM
 BUILD		    :=	build_HIMEM
-APP_TITLE       :=  HzHiLoad
-APP_DESCRIPTION :=  HorizonM HIMEM Loader
-APP_UNIQUE_ID   :=  0xDFAAF
+APP_TITLE       :=  ChHiLoad
+APP_DESCRIPTION :=  ChirunoMod + HzMod HIMEM Loader
+APP_UNIQUE_ID   :=  0xDFA9F
 ICON            :=  assets/logo_HIMEM.png
 BANNER          :=  assets/banner_HIMEM.png
 endif
@@ -78,7 +75,7 @@ CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++11
 ASFLAGS	:=	-g $(ARCH)
 LDFLAGS	=	-specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
 
-LIBS	:=  -lctru -lm -lcitro2d -lcitro3d
+LIBS	:= -lctru -lm
 
 #---------------------------------------------------------------------------------
 # list of directories containing libraries, this must be the top level containing
@@ -94,7 +91,7 @@ LIBDIRS	:= $(CTRULIB)
 ifneq ($(BUILD),$(notdir $(CURDIR)))
 #---------------------------------------------------------------------------------
 
-export OUTPUT	:=	$(CURDIR)/$(BUILDOUT)/$(TARGET)
+export OUTPUT	:=	$(CURDIR)/$(TARGET)
 export TOPDIR	:=	$(CURDIR)
 
 export VPATH	:=	$(foreach dir,$(SOURCES),$(CURDIR)/$(dir)) \
