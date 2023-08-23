@@ -1435,13 +1435,12 @@ inline void tryMarioKartHotfix(u32* scrw)
 inline void netfuncTestFramebuffer(u32* procid, int* scr)
 {
 	//test for changed framebuffers
-	if(capin.screencapture[*scr].format != format[*scr])
+	if(capin.screencapture[0].format != format[0] || capin.screencapture[1].format != format[1])
 	{
 		PatStay(0xFFFF00); // Notif LED = Teal
 
-		//format[0] = capin.screencapture[0].format;
-		//format[1] = capin.screencapture[1].format;
-		format[*scr] = capin.screencapture[*scr].format;
+		format[0] = capin.screencapture[0].format;
+		format[1] = capin.screencapture[1].format;
 
 		tryStopDma();
 
