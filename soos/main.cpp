@@ -99,10 +99,10 @@ void CPPCrashHandler();
 // Image Processing Functions added by me
 void lazyConvert16to32andInterlace(u32,u32); // Finished, works. (Destructive implementation)
 void convert16to24andInterlace(u32,u32); // Needs a rewrite (currently unused)
-void fastConvert16to32andInterlace2_rgb565(u32); // Finished, works. (Destructive implementation)
-void convert16to24_rgb5a1(u32); // Finished, works.
-void convert16to24_rgb565(u32); // Finished, works.
-void convert16to24_rgba4(u32); // Finished, works.
+void fastConvert16to32andInterlace2_rgb565(u32,u32); // Finished, works. (Destructive implementation)
+void convert16to24_rgb5a1(u32,u32); // Finished, works.
+void convert16to24_rgb565(u32,u32); // Finished, works.
+void convert16to24_rgba4(u32,u32); // Finished, works.
 void dummyinterlace24(u32,u32); // Very unfinished, broken, do not use.
 
 // Other big functions added by me
@@ -113,7 +113,7 @@ void sendDebugFrametimeStats(double,double,double*,double); // It works, and I'm
 // Helper functions, added by me.
 inline void cvt1632i_row1_rgb565(u32,u32*); // Unfinished
 inline void cvt1632i_row2_rgb565(u32,u32*); // Unfinished
-inline void cvt1624_help1(u32,u8**,u8**);
+inline void cvt1624_help1(u32,u8**,u8**,u32);
 inline void cvt1624_help2_forrgba4(u8*,u8*);
 inline void cvt1624_help2_forrgb5a1(u8*,u8*);
 inline void cvt1624_help2_forrgb565(u8*,u8*);
@@ -752,10 +752,10 @@ inline void cvt1632i_row2_rgb565(u32 pxnum, u32* fbuf)
 // Note: Destructive implementation. Every other row is trashed and not saved.
 // Therefore it is necessary to DMA the framebuffer again every time we do this.
 // It's a tradeoff, it is what it is, but it's fast(ish) baby
-void fastConvert16to32andInterlace2_rgb565(u32 stride)
+void fastConvert16to32andInterlace2_rgb565(u32 stride, u32 myscrw)
 {
 	u32 i = 0;
-	u32 max = 120*stride;
+	u32 max = (myscrw/2)*stride;
 	u32* fbuf = screenbuf; // This is just always this value. lol
 
 	if(interlace_px_offset == 0)
@@ -779,10 +779,10 @@ void fastConvert16to32andInterlace2_rgb565(u32 stride)
 }
 
 // Helper function 1
-inline void cvt1624_help1(u32 mywidth, u8** endof24bimg, u8** endof16bimg)
+inline void cvt1624_help1(u32 mywidth, u8** endof24bimg, u8** endof16bimg, u32 myscrw)
 {
-	*endof24bimg = (u8*)screenbuf + (240*mywidth*3) - 3; // -1
-	*endof16bimg = (u8*)screenbuf + (240*mywidth*2) - 2; // -1
+	*endof24bimg = (u8*)screenbuf + (myscrw*mywidth*3) - 3; // -1
+	*endof16bimg = (u8*)screenbuf + (myscrw*mywidth*2) - 2; // -1
 	//*sparebuffersiz = (mywidth*240*4) - (mywidth*240*3);
 }
 
@@ -823,11 +823,11 @@ inline void cvt1624_help2_forrgb565(u8* myaddr1, u8* myaddr2)
 
 // This is Progressive! (Not Interlaced)
 // Also, this works on Old-3DS.
-void convert16to24_rgb5a1(u32 scrbfwidth)
+void convert16to24_rgb5a1(u32 scrbfwidth, u32 myscrw)
 {
 	u8* buf16; // Copy FROM here, starting at the end of the 16bpp buffer
 	u8* buf24; // Copy TO here, starting at the end of the 24bpp buffer
-	cvt1624_help1(scrbfwidth, &buf24, &buf16); // calc variables
+	cvt1624_help1(scrbfwidth, &buf24, &buf16, myscrw); // calc variables
 
 	while(buf16 + 1 < buf24)
 	{
@@ -839,11 +839,11 @@ void convert16to24_rgb5a1(u32 scrbfwidth)
 
 // Progressive (Not Interlaced)
 // Works on Old-3DS
-void convert16to24_rgb565(u32 scrbfwidth)
+void convert16to24_rgb565(u32 scrbfwidth, u32 myscrw)
 {
 	u8* buf16;
 	u8* buf24;
-	cvt1624_help1(scrbfwidth, &buf24, &buf16);
+	cvt1624_help1(scrbfwidth, &buf24, &buf16, myscrw);
 
 	while(buf16 + 1 < buf24)
 	{
@@ -855,11 +855,11 @@ void convert16to24_rgb565(u32 scrbfwidth)
 
 // Progressive (Not Interlaced)
 // Works on Old-3DS
-void convert16to24_rgba4(u32 scrbfwidth)
+void convert16to24_rgba4(u32 scrbfwidth, u32 myscrw)
 {
 	u8* buf16;
 	u8* buf24;
-	cvt1624_help1(scrbfwidth, &buf24, &buf16);
+	cvt1624_help1(scrbfwidth, &buf24, &buf16, myscrw);
 
 	while(buf16 + 1 < buf24)
 	{
@@ -1321,34 +1321,31 @@ inline void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* sc
 			forceInterlaced = -1; // Function not yet implemented
 			tjpf = TJPF_RGBX;
 			*bsiz = 4;
-			*scrw = 240;
 			break;
 
 		case 1: // RGB8
 			forceInterlaced = -1; // Function not yet implemented
 			tjpf = TJPF_RGB;
 			*bsiz = 3;
-			*scrw = 240;
 			break;
 
 		case 2: // RGB565
 			forceInterlaced = 0;
 			if(cfgblk[5] == 1) // Interlaced
 			{
-				fastConvert16to32andInterlace2_rgb565(stride[scr]);
+				fastConvert16to32andInterlace2_rgb565(stride[scr], *scrw);
 				//lazyConvert16to32andInterlace(2,siz_2);
 				tjpf = TJPF_RGBX;
 				*bsiz = 4;
-				*scrw = 120;
+				*scrw = *scrw / 2;
 				//*scrw = *scrw / 2; // Account for Mario Kart 7. Usually 120, but in that one case it's 128.
 				subtype_aka_flags += 0b00100000 + (interlace_px_offset?0:0b01000000);
 			}
 			else
 			{
-				convert16to24_rgb565(stride[scr]);
+				convert16to24_rgb565(stride[scr], *scrw);
 				tjpf = TJPF_RGB;
 				*bsiz = 3;
-				*scrw = 240;
 			}
 			break;
 
@@ -1359,16 +1356,15 @@ inline void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* sc
 				lazyConvert16to32andInterlace(3,siz_2);
 				tjpf = TJPF_RGBX;
 				*bsiz = 4;
-				*scrw = 120;
+				*scrw = *scrw / 2;
 				//*scrw = *scrw / 2; // MK7
 				subtype_aka_flags += 0b00100000 + (interlace_px_offset?0:0b01000000);
 			}
 			else
 			{
-				convert16to24_rgb5a1(stride[scr]);
+				convert16to24_rgb5a1(stride[scr], *scrw);
 				tjpf = TJPF_RGB;
 				*bsiz = 3;
-				*scrw = 240;
 			}
 			break;
 
@@ -1379,16 +1375,15 @@ inline void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* sc
 				lazyConvert16to32andInterlace(4,siz_2);
 				tjpf = TJPF_RGBX;
 				*bsiz = 4;
-				*scrw = 120;
+				*scrw = *scrw / 2;
 				//*scrw = *scrw / 2; // MK7
 				subtype_aka_flags += 0b00100000 + (interlace_px_offset?0:0b01000000);
 			}
 			else
 			{
-				convert16to24_rgba4(stride[scr]);
+				convert16to24_rgba4(stride[scr], *scrw);
 				tjpf = TJPF_RGB;
 				*bsiz = 3;
-				*scrw = 240;
 			}
 			break;
 
