@@ -1262,8 +1262,31 @@ inline void makeTargaImage(double* timems_fc, double* timems_pf, int scr, u32* s
 	osTickCounterUpdate(&tick_ctr_1);
 #endif
 
+	u32 bits2 = *bits;
+
+    switch(format[scr] & 0b111)
+	{
+    	case 0:
+    		bits2 = 32;
+    		break;
+    	case 1:
+    		bits2 = 24;
+    		break;
+		case 2: // RGB565
+			bits2 = 17;
+			break;
+		case 3: // RGB5A1
+			bits2 = 16;
+			break;
+		case 4: // RGBA4
+			bits2 = 18;
+			break;
+		default:
+			break;
+	}
+
 	// Note: interlacing not yet implemented here.
-	init_tga_image(&img, (u8*)screenbuf, *scrw, stride[scr], *bits);
+	init_tga_image(&img, (u8*)screenbuf, *scrw, stride[scr], bits2);
 	img.image_type = TGA_IMAGE_TYPE_BGR_RLE;
 	img.origin_y = (scr * 400) + (stride[scr] * offs[scr]);
 	tga_write_to_FILE((soc->bufferptr + bufsoc_pak_data_offset), &img, imgsize);
