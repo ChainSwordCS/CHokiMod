@@ -1193,10 +1193,12 @@ inline int netfuncWaitForSettings()
 							return 1;
 
 						case 0x05: // Request to use Interlacing (yes or no)
-							if(j == 0)
-								cfgblk[5] = 0;
-							else
-								cfgblk[5] = 1;
+							if(!isold) {
+								if(j == 0)
+									cfgblk[5] = 0;
+								else
+									cfgblk[5] = 1;
+							}
 							return 1;
 
 						case 0x06: // Force hotfix for Mario Kart 7 (on or off; breaks compatibility with all other games)
