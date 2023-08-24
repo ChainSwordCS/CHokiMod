@@ -1601,12 +1601,15 @@ void netfuncOld3DS(void* __dummy_arg__)
                 if(offs[scr] >= limit[scr])
                 	offs[scr] = 0;
 
-                if(cfgblk[3] == 01) // Top Screen Only
-                	scr = 0;
-                else if(cfgblk[3] == 02) // Bottom Screen Only
-                	scr = 1;
-                else if(cfgblk[3] == 03) // Both Screens
-                	scr = !scr;
+                if(interlace_px_offset == 0 || cfgblk[5] == 0)
+                {
+					if(cfgblk[3] == 01) // Top Screen Only
+						scr = 0;
+					else if(cfgblk[3] == 02) // Bottom Screen Only
+						scr = 1;
+					else if(cfgblk[3] == 03) // Both Screens
+						scr = !scr;
+                }
                 //else if(cfgblk[0] == 04)
                 // Planning to add more complex functionality with prioritizing one
                 // screen over the other, like NTR. Maybe.
@@ -1794,12 +1797,15 @@ void netfuncNew3DS(void* __dummy_arg__)
 						break; // This case shouldn't occur.
                 }
 
-                if(cfgblk[3] == 01) // Top Screen Only
-                	scr = 0;
-                else if(cfgblk[3] == 02) // Bottom Screen Only
-                	scr = 1;
-                else if(cfgblk[3] == 03) // Both Screens
-                	scr = !scr;
+                if(interlace_px_offset == 0 || cfgblk[5] == 0)
+                {
+					if(cfgblk[3] == 01) // Top Screen Only
+						scr = 0;
+					else if(cfgblk[3] == 02) // Bottom Screen Only
+						scr = 1;
+					else if(cfgblk[3] == 03) // Both Screens
+						scr = !scr;
+                }
                 //else if(cfgblk[0] == 04)
                 // Planning to add more complex functionality with prioritizing one
                 // screen over the other, like NTR. Maybe.
