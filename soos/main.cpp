@@ -1510,6 +1510,12 @@ inline void netfuncTestFramebuffer(u32* procid, int* scr)
 	return;
 }
 
+u32 siz = 0x80;
+u32 bsiz = 1;
+u32 scrw = 2;
+u32 bits = 8;
+int scr = 0;
+
 void netfuncOld3DS(void* __dummy_arg__)
 {
 
@@ -1521,11 +1527,6 @@ void netfuncOld3DS(void* __dummy_arg__)
 	double timems_writetosocbuf = 0;
 	double timems_formatconvert = 0;
 
-	u32 siz = 0x80;
-	u32 bsiz = 1;
-	u32 scrw = 1;
-	u32 bits = 8;
-	int scr = 0;
 	u32 procid = 0;
 	bool doDMA = true;
 
@@ -1723,11 +1724,6 @@ void netfuncNew3DS(void* __dummy_arg__)
 	double timems_processframe = 0;
 	double timems_writetosocbuf = 0;
 	double timems_formatconvert = 0;
-	u32 siz = 0x80;
-	u32 bsiz = 1;
-	u32 scrw = 1;
-	u32 bits = 8;
-	int scr = 0;
 	u32 procid = 0;
 	bool doDMA = true;
 
