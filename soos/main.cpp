@@ -1572,7 +1572,7 @@ void netfuncOld3DS(void* __dummy_arg__)
         	//
         	// Increasing this would lead to a theoretical speed increase,
         	// but probably not noticeable in practice.
-            for(int loopy = 2; loopy > 0; loopy--)
+            for(int loopy = 1; loopy > 0; loopy--)
             {
                 //soc->setPakSize(0);
             	tryStopDma();
@@ -1775,7 +1775,7 @@ void netfuncNew3DS(void* __dummy_arg__)
         	//
         	// Increasing this would lead to a theoretical speed increase,
         	// but probably not noticeable in practice.
-            for(int loopy = 2; loopy > 0; loopy--)
+            for(int loopy = 1; loopy > 0; loopy--)
             {
                 //soc->setPakSize(0);
             	tryStopDma();
