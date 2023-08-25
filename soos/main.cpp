@@ -119,7 +119,7 @@ void newThreadMainFunction(void*);
 // Helper functions for netfunc 1 and 2 (code organization reasons)
 inline int netfuncWaitForSettings(); // Rewritten from netfunc
 void makeTargaImage(double*,double*,int,u32*,u32*,int*,u32*); // Rewritten from netfunc
-void makeJpegImage(double*,double*,int,u32*,u32*,int*,u8,u32*); // Rewritten from netfunc
+void makeJpegImage(double*,double*,int,u32*,u32*,int*,u32*,bool,bool); // Rewritten from netfunc
 int netfuncTestFramebuffer(u32*, int*, GSPGPU_CaptureInfo, u32*); // Rewritten from netfunc
 
 
@@ -447,14 +447,10 @@ static tjhandle jencode = nullptr;
 static TickCounter tick_ctr_1;
 static TickCounter tick_ctr_2_dma;
 
-// If this is zero:     we are converting odd-numbered rows.
-// If this is non-zero: we are converting even-numbered rows.
-//
-// This variable is separate from the row index numbers.
-// Rows of pixels will generally be indexed starting at 1 and ending at 240 (or 120)
-//
-// TODO! Please fully obsolete this; it's dumb and already partially obsolete.
-static int interlace_px_offset = 0;
+// This only applies to Interlaced mode.
+// false = odd rows (1-239, DMA start position is normal)
+// true  = even rows (2-240, DMA start position is offset)
+static bool interlacedRowSwitch = false;
 
 // Based on (and slightly modified from) devkitpro/libctru source
 //
@@ -871,7 +867,7 @@ void makeTargaImage(double* timems_fc, double* timems_pf, int scr, u32* scrw, u3
     return;
 }
 
-void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* scrw, u32* bsiz, int* imgsize, u8 isinterlaced, u32* myformat)
+void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* scrw, u32* bsiz, int* imgsize, u32* myformat, bool isinterlaced, bool interlacedRowSwitch)
 {
     u8 nativepixelformat = myformat[scr] & 0b111;
     u8 subtype_aka_flags = 0b00000000 + (scr * 0b00010000) + nativepixelformat;
@@ -880,7 +876,7 @@ void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* scrw, u32
 
     if(isinterlaced)
     {
-        subtype_aka_flags += 0b00100000 + (interlace_px_offset?0:0b01000000);
+        subtype_aka_flags += 0b00100000 + (interlacedRowSwitch?0:0b01000000);
     }
 
 #if DEBUG_VERBOSE==1
@@ -1207,7 +1203,7 @@ void newThreadMainFunction(void* __dummy_arg__)
                 switch(cfgblk[4])
                 {
                 case 0: // JPEG
-                    makeJpegImage(&timems_formatconvert, &timems_processframe, scr, &scrw, &bsiz, &imgsize, cfgblk[5], format);
+                    makeJpegImage(&timems_formatconvert, &timems_processframe, scr, &scrw, &bsiz, &imgsize, format, (cfgblk[5]?true:false), interlacedRowSwitch);
                     break;
                 case 1: // Targa / TGA
                     makeTargaImage(&timems_formatconvert, &timems_processframe, scr, &scrw, &bits, &imgsize, format);
@@ -1312,27 +1308,16 @@ void newThreadMainFunction(void* __dummy_arg__)
                 if(cfgblk[5])
                 {
                     siz = siz / 2;
-
-                    // Increment before use
-                    if(interlace_px_offset == 0)
-                    {
-                        interlace_px_offset = getFormatBpp(format[scr]) / 8;
-                    }
-                    else
-                    {
-                        interlace_px_offset = 0;
-                    }
-                }
-                else
-                {
-                    interlace_px_offset = 0;
+                    interlacedRowSwitch = !interlacedRowSwitch;
+                    if(interlacedRowSwitch)
+                        srcaddr += getFormatBpp(format[scr])/8;
                 }
 
                 // workaround for DMA Siz Bug (refer to docs)
                 siz += (getFormatBpp(format[scr])/8) * (16 * stride[scr] - 16);
 
 
-                int r = svcStartInterProcessDma(&dmahand,0xFFFF8001,screenbuf,srcprochand,(srcaddr+interlace_px_offset),siz,dma_config[scr]);
+                int r = svcStartInterProcessDma(&dmahand,0xFFFF8001,screenbuf,srcprochand,srcaddr,siz,dma_config[scr]);
 
                 //int r = GX_DisplayTransfer((u32*)srcaddr,(240 << 16) + 400,(u32*)screenbuf,(240 << 16) + 400,*((u32*)gputransferflag));
 
