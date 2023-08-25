@@ -22,22 +22,12 @@
  */
 
 
-
-// Compile Flags!
-//
-// this makes me so unfathomably upset. you can fix it and open a pull request if you wish
-// i'd rather never think of this ever again. i hate makefile logic and syntax (and also my life)
-
 // Debug Log Levels!
 // Disable all for marginally better performance.
 #define DEBUG_BASIC 1 //   Only log the most important and critical errors.
 #define DEBUG_VERBOSE 0 // Log many more unnecessary details, including live performance profiling data sent to ChokiStream.
 
-// Soon to be obsolete.
-#define DEBUG_O3DSNEWINTERLACE 0
-
-// UNFINISHED. Will not function as intended.
-// Use experimental UDP instead of TCP.
+// Use experimental UDP instead of TCP. (Unfinished; doesn't work)
 #define DEBUG_USEUDP 0
 
 extern "C"
@@ -101,26 +91,24 @@ extern "C"
     }\
         }
 
-// Functions from original codebase.
 int checkwifi();
 int pollsock(int,int,int);
 void CPPCrashHandler();
 
-// Other big functions added by me
 inline int setCpuResourceLimit(u32); // Unfinished, doesn't work.
-void waitforDMAtoFinish(void*); // Don't use this. This is only used by a separate thread, started from within netfunc.
-void debugPrint(u8, const char*); // Essentially shorthand for puts(), with respect to debug log level.
-void sendDebugFrametimeStats(double,double,double*,double); // It works, and I'm still adding to it.
-int allocateScreenbufMem(u32**); // Only called in specific contexts from main()
+void waitforDMAtoFinish(void*);
+void debugPrint(u8, const char*);
+void sendDebugFrametimeStats(double,double,double*,double);
+int allocateScreenbufMem(u32**);
 
 // netfunc
 void newThreadMainFunction(void*);
 
-// Helper functions for netfunc 1 and 2 (code organization reasons)
-inline int netfuncWaitForSettings(); // Rewritten from netfunc
-void makeTargaImage(double*,double*,int,u32*,u32*,int*,u32*); // Rewritten from netfunc
-void makeJpegImage(double*,double*,int,u32*,u32*,int*,u32*,bool,bool); // Rewritten from netfunc
-int netfuncTestFramebuffer(u32*, int*, GSPGPU_CaptureInfo, u32*); // Rewritten from netfunc
+// Helper functions for netfunc
+inline int netfuncWaitForSettings();
+void makeTargaImage(double*,double*,int,u32*,u32*,int*,u32*);
+void makeJpegImage(double*,double*,int,u32*,u32*,int*,u32*,bool,bool);
+int netfuncTestFramebuffer(u32*, int*, GSPGPU_CaptureInfo, u32*);
 
 
 int main(); // So you can call main from main (:
@@ -159,8 +147,6 @@ public:
 
     typedef struct
     {
-        //u32 packettype : 8;
-        //u32 size : 24;
         u8 data[0];
     } packet;
 
@@ -189,8 +175,6 @@ public:
         delete[] bufferptr;
     }
 
-    // TODO: consider making these functions 'inline'
-
     u8 getPakType()
     {
         return bufferptr[0];
@@ -206,13 +190,11 @@ public:
         return bufferptr[2];
     }
 
-    // Retrieve the packet size, derived from the byte array
     u32 getPakSize()
     {
         return *( (u32*)(bufferptr+4) );
     }
 
-    // Write to packet size, in the byte array
     void setPakSize(u32 input)
     {
         *( (u32*)(bufferptr+4) ) = input;
@@ -256,7 +238,7 @@ public:
 
         // Copy data to the buffer
 
-        u32 offs = bufsoc_pak_data_offset; // Starting offset
+        u32 offs = bufsoc_pak_data_offset;
         while(reads_remaining)
         {
             ret = recv(socketid, &(bufferptr[offs]), reads_remaining, flags);
@@ -270,7 +252,7 @@ public:
 
     int wribuf(int flags = 0)
     {
-        u32 mustwri = getPakSize() + 8;
+        u32 mustwri = getPakSize() + bufsoc_pak_data_offset;
         int offs = 0;
         int ret = 0;
 
@@ -330,29 +312,26 @@ public:
 
     int errformat(char* c, ...)
     {
-        //packet* p = pack();
-
         int len = 0;
 
         va_list args;
         va_start(args, c);
 
         // Is this line of code broken? I give up
-        //len = vsprintf((char*)p->data + 1, c, args);
         len = vsprintf((char*)(bufferptr+bufsoc_pak_data_offset), c, args);
 
         va_end(args);
 
         if(len < 0)
         {
-            puts("out of memory"); //???
+            puts("out of memory");
             return -1;
         }
 
         //printf("Packet error %i: %s\n", p->packettype, p->data + 1);
         setPakType(0xFF);
         setPakSubtype(0x00);
-        setPakSize(len); // Is "len + 2" necessary?
+        setPakSize(len);
 
         return wribuf();
     }
@@ -541,7 +520,7 @@ void debugPrint(u8 log_level, const char *debug_string)
 
 void sendDebugFrametimeStats(double ms_compress, double ms_writesocbuf, double* ms_dma, double ms_convert)
 {
-    const u32 charbuflimit = 100 + sizeof(char); // ? I don't even know what this means but whatever.
+    const u32 charbuflimit = 100 + sizeof(char);
     char str1[charbuflimit];
     char str2[charbuflimit];
     char str3[charbuflimit];
@@ -614,7 +593,6 @@ inline int netfuncWaitForSettings()
             {
             case 0x02: // Init (New ChirunoMod Packet Specification)
                 cfgblk[0] = 1;
-                // TODO: Maybe put sane defaults in here, or in the variable init code.
                 return 1;
 
             case 0x03: // Disconnect (new packet spec)
@@ -679,20 +657,15 @@ inline int netfuncWaitForSettings()
                     return 1;
 
                 case 0x05: // Request to use Interlacing (yes or no)
-                    //
-                    // Note: If o3DS switches between Interlaced and non-Interlaced,
-                    // we want to re-allocate our framebuffer.
-                    // o3DS Interlacing does frames at full-width (and obviously half-height)
-                    //
-                    //
                     if(j == 0 && cfgblk[5] != 0)
                     {
                         cfgblk[5] = 0;
 
+                        // If o3DS toggles Interlaced, signal to re-allocate framebuffer.
                         if(isold)
                         {
                             return 9;
-                        }
+                    }
                     }
                     else if(j == 1 && cfgblk[5] != 1)
                     {
@@ -703,13 +676,6 @@ inline int netfuncWaitForSettings()
                             return 9;
                         }
                     }
-                    return 1;
-
-                case 0x06: // Force hotfix for Mario Kart 7 (on or off; breaks compatibility with all other games)
-                    if(j == 0)
-                        cfgblk[6] = 0;
-                    else
-                        cfgblk[6] = 1;
                     return 1;
 
                 default:
@@ -852,7 +818,7 @@ void makeTargaImage(double* timems_fc, double* timems_pf, int scr, u32* scrw, u3
     // horizontal offset. redundant in chirunomod.
     img.origin_y = (scr * 400) + (stride[scr] * offs[scr]);
 
-    tga_write_to_FILE((soc->bufferptr + bufsoc_pak_data_offset), &img, imgsize);
+    tga_write_to_FILE((soc->bufferptr+bufsoc_pak_data_offset), &img, imgsize);
 
 #if DEBUG_VERBOSE==1
     osTickCounterUpdate(&tick_ctr_1);
@@ -860,7 +826,7 @@ void makeTargaImage(double* timems_fc, double* timems_pf, int scr, u32* scrw, u3
 #endif
 
     u8 subtype_aka_flags = 0b00001000 + (scr * 0b00010000) + (format[scr] & 0b111);
-    soc->setPakType(01); // Image
+    soc->setPakType(01);
     soc->setPakSubtype(subtype_aka_flags);
     soc->setPakSize(*imgsize);
 
@@ -872,7 +838,6 @@ void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* scrw, u32
     u8 nativepixelformat = myformat[scr] & 0b111;
     u8 subtype_aka_flags = 0b00000000 + (scr * 0b00010000) + nativepixelformat;
     int tjpixelformat = 0;
-    //u32 siz_2 = (capin.screencapture[scr].framebuf_widthbytesize * stride[scr]);
 
     if(isinterlaced)
     {
@@ -915,10 +880,6 @@ void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* scrw, u32
         break;
 
     default:
-        // Invalid format, should never happen, but put a failsafe here anyway.
-        //
-        // This failsafe is just taken from the 24-bit code. I don't know if that's the
-        // safest or not, it's just a placeholder. -C
         tjpixelformat = TJPF_RGB;
         //*bsiz = 3;
         break;
@@ -929,20 +890,9 @@ void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* scrw, u32
     *timems_fc = osTickCounterRead(&tick_ctr_1);
 #endif
 
-    // TODO: Important!
-    // For some unknown reason, Mario Kart 7 requires the "width" (height)
-    // to be 128 when interlaced. And possibly 256 or something similar
-    // when not interlaced. No I don't know why.
-    // But I would love to get to the bottom of it.
-    // If I can't, I'll add a debug feature to force-override the number.
-
-    // Experimental option: to try and save time, don't even keep a framebuffer ourselves (but this doesn't save much time in practice)
-    //u8* experimentaladdr1 = (u8*)capin.screencapture[scr].framebuf0_vaddr + (siz * offs[scr]);
-    u8* experimentaladdr1 = (u8*)screenbuf;
-
     u8* destaddr = soc->bufferptr + bufsoc_pak_data_offset;
 
-    if(!tjCompress2(jencode, experimentaladdr1, *scrw, (*bsiz) * (*scrw), stride[scr], tjpixelformat, &destaddr, (u32*)imgsize, TJSAMP_420, cfgblk[1], TJFLAG_NOREALLOC | TJFLAG_FASTDCT))
+    if(!tjCompress2(jencode, destaddr, *scrw, (*bsiz) * (*scrw), stride[scr], tjpixelformat, &destaddr, (u32*)imgsize, TJSAMP_420, cfgblk[1], TJFLAG_NOREALLOC | TJFLAG_FASTDCT))
     {
 #if DEBUG_VERBOSE==1
         osTickCounterUpdate(&tick_ctr_1);
@@ -960,19 +910,6 @@ void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* scrw, u32
     soc->setPakType(01); //Image
     soc->setPakSubtype(subtype_aka_flags);
     return;
-}
-
-// This is implemented in a really dumb way i think
-inline void tryMarioKartHotfix(u32* scrw)
-{
-    if(cfgblk[6] == 1)
-    {
-        *scrw = 256;
-    }
-    else
-    {
-        *scrw = 240;
-    }
 }
 
 u8 getFormatBpp(u32 my_format)
@@ -1172,9 +1109,6 @@ void newThreadMainFunction(void* __dummy_arg__)
                 break;
             }
 
-            // tryMarioKartHotfix(&scrw);
-
-
             // Note: We control how often this loop runs
             // compared to how often the capture info is checked,
             // by changing the loopcnt variable. (Renamed to loopy, lol.)
@@ -1190,22 +1124,20 @@ void newThreadMainFunction(void* __dummy_arg__)
                 tryStopDma(&dmahand);
                 int imgsize = 0;
 
-                if(isold == 0){ //New3DS-Specific
+                if(isold == 0){
                     svcFlushProcessDataCache(0xFFFF8001, (u8*)screenbuf, capin.screencapture[scr].framebuf_widthbytesize * 400);
                 }
 
-                // Halve the height variable if Interlacing. Obviously only do this once.
+                // interlaced
                 if(cfgblk[5])
-                {
                     scrw = scrw / 2;
-                }
 
                 switch(cfgblk[4])
                 {
-                case 0: // JPEG
+                case 0:
                     makeJpegImage(&timems_formatconvert, &timems_processframe, scr, &scrw, &bsiz, &imgsize, format, (cfgblk[5]?true:false), interlacedRowSwitch);
                     break;
-                case 1: // Targa / TGA
+                case 1:
                     makeTargaImage(&timems_formatconvert, &timems_processframe, scr, &scrw, &bits, &imgsize, format);
                     break;
                 default:
@@ -1216,39 +1148,27 @@ void newThreadMainFunction(void* __dummy_arg__)
                 //printf("screen size in bytes = %i\n", bsiz);
                 //printf("interlace_px_offset = %i\n", interlace_px_offset);
 
+                // increment screen fraction / part on o3DS
                 if(isold){
-#if DEBUG_O3DSNEWINTERLACE==0
-                    // Screen-chunk index ranges from 0 to 7 (Old-3DS only)
                     u8 b = 0b00001000 + (offs[scr]);
                     soc->setPakSubtypeB(b);
-                    // Current progress through one complete frame
-                    // (Only applicable to Old-3DS)
                     offs[scr]++;
-                    if(offs[scr] >= limit[scr]){
+                    if(offs[scr] >= limit[scr])
                         offs[scr] = 0;
-                    }
-#endif
                 }
 
-
+                // screen switch
                 if(cfgblk[3] == 01) // Top Screen Only
                     scr = 0;
                 else if(cfgblk[3] == 02) // Bottom Screen Only
                     scr = 1;
                 else if(cfgblk[3] == 03) // Both Screens
                     scr = !scr;
-                //else if(cfgblk[0] == 04)
-                // Planning to add more complex functionality with prioritizing one
-                // screen over the other, like NTR. Maybe.
 
-
-                // TODO: This code will be redundant in the future, if not already.
-                //
-                // TODO: Does this even return a correct value? Even remotely?
                 siz = (capin.screencapture[scr].framebuf_widthbytesize * stride[scr]); // Size of the entire frame (in bytes)
-                bsiz = capin.screencapture[scr].framebuf_widthbytesize / 240; // Size of a single pixel in bytes (???)
-                scrw = 240; // screen "width." identical behavior to original code. lol, lmao
-                bits = 4 << bsiz; // ?
+                bsiz = capin.screencapture[scr].framebuf_widthbytesize / 240; // bytes per pixel (dumb)
+                scrw = 240; // sure
+                bits = 4 << bsiz; // bpp (dumb)
 
 
                 Handle prochand = 0;
@@ -1257,51 +1177,9 @@ void newThreadMainFunction(void* __dummy_arg__)
                 u32 srcprochand = prochand ? prochand : 0xFFFF8001;
                 u8* srcaddr = (u8*)capin.screencapture[scr].framebuf0_vaddr + (siz * offs[scr]);
 
-                //u8 fm = format[scr] & 0b0111;
-                //u8 formatsbyte = (fm << 4) + fm; //0b01110111;
-
-                //u8 gputransferflag[4] = {0b00100000,formatsbyte,0,0};
-
 #if DEBUG_VERBOSE==1
                 osTickCounterUpdate(&tick_ctr_2_dma);
 #endif
-
-                // Theory: the Mario Kart 7 bug happens here. "siz" is the Stride, the number of bytes to go forward
-                // before starting to copy pixel data for the next row.
-                // (Counterintuitively, not the same as the variable which has historically been named "stride"...)
-                //
-                // But anyway, the value that the game is reporting is not being respected correctly.
-                // I'm calculating it manually based on bitdepth, but that doesn't take into account
-                // the extra bytes that may be between each row (as in Mario Kart 7, I believe.)
-                //
-                // ...some of that is actually probably wrong... whatever.
-                // TLDR: use "capin.screencapture[scr].framebuf_widthbytesize" somewhere to fix the bug.
-                //
-                // It may benefit me to solve this with custom DMA configuration
-
-
-                // TODO: suboptimal mem allocation for these vars
-                //int bytesperpixel;
-                //if(format == 0)
-                //    bytesperpixel = 4;
-                //else
-                //    bytesperpixel = 3;
-
-                // real
-                //int stride_real = capin.screencapture[scr].framebuf_widthbytesize - (240 * bytesperpixel);
-
-                // hardcoded mk7 hotfix
-                //stride_real = 16*3;
-
-                // burstSize (Source config block)
-                //*(u16*)(dmaconf+16) = 240 * bytesperpixel;
-                // burstStride (Source config block)
-                //*(u16*)(dmaconf+18) = stride_real;
-
-                //*(u16*)(dmaconf+20) = stride[scr];
-                //*(u16*)(dmaconf+22) = stride[scr];
-
-                // Likely inefficient, idk lol, I'll fix it later?
 
                 siz = (getFormatBpp(format[scr]) / 8) * scrw * stride[scr];
 
@@ -1318,8 +1196,6 @@ void newThreadMainFunction(void* __dummy_arg__)
 
 
                 int r = svcStartInterProcessDma(&dmahand,0xFFFF8001,screenbuf,srcprochand,srcaddr,siz,dma_config[scr]);
-
-                //int r = GX_DisplayTransfer((u32*)srcaddr,(240 << 16) + 400,(u32*)screenbuf,(240 << 16) + 400,*((u32*)gputransferflag));
 
                 if(r < 0)
                 {
@@ -1360,12 +1236,7 @@ void newThreadMainFunction(void* __dummy_arg__)
 #endif
                 }
 
-                // Limit this thread to do other things. (On Old-3DS)
                 // TODO: Fine-tune Old-3DS performance.
-                //
-                // Note to self, removing this entirely will break things.
-                // Except maybe in extreme cases, like if priority equals 0x3F,
-                // but this remains untested for now...
                 if(isold){
                     svcSleepThread(5e6);
                     // 5 x 10 ^ 6 nanoseconds (iirc)
@@ -1762,7 +1633,6 @@ int main()
 
     mcuExit();
 
-    // new code consideration
     // APT_PrepareToCloseApplication(false);
 
     return 0;
