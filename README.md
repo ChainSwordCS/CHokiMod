@@ -41,10 +41,10 @@ Please note, the PC HorizonScreen application in this repository is old and obso
     - Saigyou R. (The Spriters Resource) - Stage backgrounds from "Touhou Fuujinroku (Mountain of Faith)" (IIRC the Final Stage background with the moon was used)
     - Ryan914 and MaidenTREE (The Spriters Resource) - Extra Stage background from "Touhou Gensoukyou (Lotus Land Story)" (Pixel stars were used)
   
-- ### ChokiStream Credits (Indirect help with this project)
-  - Eiim - Documentation and reverse-engineering of HzMod, development of ChokiStream
-  - herronjo - Documentation and reverse-engineering of HzMod, development of ChokiStream
-  - ChainSwordCS - Documentation and reverse-engineering of HzMod, development of ChokiStream
+- ### Chokistream Credits (Indirect help with this project)
+  - Eiim - Documentation and reverse-engineering of HzMod, development of Chokistream
+  - herronjo - Documentation and reverse-engineering of HzMod, development of Chokistream
+  - ChainSwordCS - Documentation and reverse-engineering of HzMod, development of Chokistream
   
 - ### Original Code
   - Sono - for creating the HzMod project and the code from which ChirunoMod was forked.
