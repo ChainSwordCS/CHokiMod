@@ -11,18 +11,20 @@ A utility background process for the Nintendo 3DS, purpose-built for screen-stre
 
 ## Getting started
 
-Get the latest stable release of [Chokistream](https://github.com/Eiim/Chokistream) to run on PC.
+Get the latest stable release of [Chokistream](https://github.com/Eiim/Chokistream/releases) to run on PC.
 
 On 3DS, use FBI to install the `.cia` files...
 
-Install [ChLoad.cia](https://github.com/ChainSwordCS/ChirunoMod/blob/nightly-v4/HzLoad/ChLoad.cia) which is the loader. If you are using an Old-3DS (not a "New" 3DS/XL or "New" 2DS XL) and you're going to play games which use the High Memory Mode (Super Smash Bros, etc.) then also install [ChLoad_HIMEM.cia](https://github.com/ChainSwordCS/ChirunoMod/blob/nightly-v4/HzLoad/ChLoad_HIMEM.cia).
+Install [`ChLoad.cia`](HzLoad/ChLoad.cia) which is the loader. If you are using an Old-3DS (not a "New" 3DS/XL or "New" 2DS XL) and you're going to play games which use the High Memory Mode (Super Smash Bros, etc.) then also install [`ChLoad_HIMEM.cia`](HzLoad/ChLoad_HIMEM.cia).
 
 #### For the main ChirunoMod application, you have a few options:
-- The [latest Stable release](https://github.com/ChainSwordCS/ChirunoMod/releases) is strongly recommended, and specifically the standard version [ChirunoMod.cia](https://github.com/ChainSwordCS/ChirunoMod/releases/download/v0.2/ChirunoMod.cia) is recommended.
-- There are two extra variations: "ChirunoMod_nodebug.cia" has no debug logging but isn't recommended because there is hardly any performance improvement, and "ChirunoMod_verbosedebug.cia" has much more debug logging and records frame-time statistics in the PC-side log but generally runs slower.
-- Unstable semi-nightly releases of all three variants can be found in the root directory of this repository. These are experimental, and may not function as intended.
+- The [latest Stable release](https://github.com/ChainSwordCS/ChirunoMod/releases) is strongly recommended, and specifically `ChirunoMod.cia`.
+- There are two alternate cias:
+  - `ChirunoMod_nodebug.cia` omits all debug logging for a tiny performance boost and slightly smaller size. This isn't recommended because the performance improvement is basically unnoticeable.
+  - `ChirunoMod_verbosedebug.cia` has much more debug logging and records frame-time statistics in the PC-side log, but it generally runs a bit slower.
+- Nightly builds can be found in the root directory of this repository, namely [`ChirunoMod.cia`](ChirunoMod.cia). Nightly builds are usually less stable, and may not function as intended. Note: for the most part, only `ChirunoMod.cia` is compiled on a regular basis.
 
-Please note, the PC HorizonScreen application in this repository is old and obsolete. Additionally, modern versions of ChirunoMod are incompatible with any client other than Chokistream (as of Feb. 2023) due to changes in the network packet header format.
+###### Please note, the PC HorizonScreen application in this repository is old and obsolete. Additionally, all release versions of ChirunoMod are strictly incompatible with HorizonScreen.
 
 > //TODO the rest of the readme
 
@@ -33,13 +35,6 @@ Please note, the PC HorizonScreen application in this repository is old and obso
   - herronjo - Assistance with code logic and commenting.
   - savvychipmunk57 - Assistance with code logic and commenting.
   - bol0gna - Assistance with code logic and commenting.
-  - #### ChirunoMod Logo assets
-    - Cell9 - [NTR rocket graphic](https://github.com/44670/BootNTR/blob/master/resources/icon.png)
-    - Mister Man (The Spriters Resource) - Mario sprites from Super Mario World
-    - WordedPuppet (The Spriters Resource) - Cirno sprites from "Touhou Kaeizuka (Phantasmagoria of Flower View)"
-    - gabrielwoj (The Spriters Resource) - Projectile sprites from "Touhou Koumakyou (The Embodiment of Scarlet Devil)"
-    - Saigyou R. (The Spriters Resource) - Stage backgrounds from "Touhou Fuujinroku (Mountain of Faith)" (IIRC the Final Stage background with the moon was used)
-    - Ryan914 and MaidenTREE (The Spriters Resource) - Extra Stage background from "Touhou Gensoukyou (Lotus Land Story)" (Pixel stars were used)
   
 - ### Chokistream Credits (Indirect help with this project)
   - Eiim - Documentation and reverse-engineering of HzMod, development of Chokistream
@@ -58,29 +53,53 @@ Please note, the PC HorizonScreen application in this repository is old and obso
     - NekoWasHere @ Reddit - betatesting
     - JayLine_ @ Reddit - betatesting
 
+- ### ChirunoMod Logo assets
+  - Cell9 - [NTR rocket graphic](https://github.com/44670/BootNTR/blob/master/resources/icon.png)
+  - Mister Man (The Spriters Resource) - Mario sprites from Super Mario World
+  - WordedPuppet (The Spriters Resource) - Cirno sprites from "Touhou Kaeizuka (Phantasmagoria of Flower View)"
+  - gabrielwoj (The Spriters Resource) - Projectile sprites from "Touhou Koumakyou (The Embodiment of Scarlet Devil)"
+  - Saigyou R. (The Spriters Resource) - Stage backgrounds from "Touhou Fuujinroku (Mountain of Faith)" (IIRC the Final Stage background with the moon was used)
+  - Ryan914 and MaidenTREE (The Spriters Resource) - Extra Stage background from "Touhou Gensoukyou (Lotus Land Story)" (Pixel stars were used)
+
 ## Build Instructions
 
 If you'd like to grab a nightly build, a CIA file that's updated nearly every commit is in the root directory of this repository. [ChirunoMod.cia](ChirunoMod.cia)
 
-I generally wouldn't recommend setting up a build environment unless you are contributing code to the project, etc.
+It's not recommended to set up a build environment and build the project manually. Really you should only do it if you're contributing code.
 
-### Build Requirements
-* [DevKitPro](https://devkitpro.org/wiki/Getting_Started)
-* Legacy versions of libraries (below)
-  * DevKitARM r46
-  * libctru 1.2.1
-  * 3ds-libjpeg-turbo 2.1.2-2 (Current version as of writing)
-  * 3ds-zlib (libzip) 1.2.11-2 (Current version as of writing)
-* [makerom](https://github.com/3DSGuy/Project_CTR/releases?q=makerom&expanded=true), in DevKitPro's / MSYS2's PATH.
+### Prerequisites
 
-Note: This branch (the current Main branch) needs to be compiled with legacy libraries. If using Windows, an archive of the libraries can be downloaded from here: https://chainswordcs.com/dl/hzmod_dependencies_2017_v1.zip
+* git
+* [makerom](https://github.com/3DSGuy/Project_CTR/releases?q=makerom) in PATH
+* Legacy versions of devkitARM and libctru (detailed below)
+* Libraries: 3ds-libjpeg-turbo and 3ds-zlib (should be automatically handled by devkitPro)
 
-###### Alternatively, archives of libctru can be found here: https://wii.leseratte10.de/devkitPro/libctru/2017/<br />and the extra libraries can be found here: https://wii.leseratte10.de/devkitPro/3ds/<br />Please try to choose the same version as I included in hzmod_dependencies_2017_v1.zip<br /> // Off the top of my head, I forget exactly what versions I used. Slightly newer or older may work too.
+Currently, all active branches need to be compiled with a legacy version of the libctru library and the devkitARM toolchain. Specifically:
+* devkitARM r46
+* libctru 1.2.1
 
-* `makerom.exe` must be in the PATH or the root of the repository
-* Contents of the `devkitarm-r46` folder should be moved to `C:devkitPro:devkitARM` (Please copy or rename the up-to-date devkitARM folder so it can be restored if you need)
-* Contents of the `libctru-1.2.1` folder should be moved to `C:devkitPro:libctru` (Same precaution as above)
-* The `portlibs` folder can be copied over and merged with the existing folder `C:devkitPro:portlibs`. 2017 libctru/devkitarm uses "armv6k", while current libctru/devkitarm uses "3ds".
+An archive containing these can be downloaded here (Windows only): <https://chainswordcs.com/dl/hzmod_dependencies_2017_v1.zip>
+
+Installation (tailored to Windows users):
+1. Contents of the `devkitarm-r46` folder should be moved to `C:devkitPro:devkitARM` (Please copy or rename the up-to-date devkitARM folder so it can be restored if you need)
+2. Contents of the `libctru-1.2.1` folder should be moved to `C:devkitPro:libctru` (Same precaution as above)
+3. The `portlibs` folder can be copied over and merged with the existing folder `C:devkitPro:portlibs`. 2017 libctru/devkitARM uses "armv6k", whereas current libctru/devkitARM uses "3ds".
+
+Alternatively, archives of libctru can be found here: <https://wii.leseratte10.de/devkitPro/libctru/2017/>
+
+### Building
+
+ChirunoMod
+
+1. Clone the repository with `git clone https://github.com/ChainSwordCS/ChirunoMod.git`
+2. If desired, change debug variables at the top of `/soos/main.cpp` to enable verbose debug logging or disable debug logging altogether.
+3. Run `make`.
+4. The compiled file is `ChirunoMod.cia`. Copy that to the 3DS and install it using FBI or another cia installer homebrew.
+
+ChLoad (HzLoad)
+
+1. Switch to the current versions of devkitARM and libctru.
+2. Navigate to the `/HzLoad/` directory. Run `make` to compile `ChLoad.cia`, or `make HIMEM=1` to compile `ChLoad_HIMEM.cia`.
 
 # License
 
