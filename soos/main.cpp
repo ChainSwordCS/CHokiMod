@@ -108,7 +108,7 @@ void newThreadMainFunction(void*);
 inline int netfuncWaitForSettings();
 void makeTargaImage(double*,double*,int,u32*,u32*,int*,u32*);
 void makeJpegImage(double*,double*,int,u32*,u32*,int*,u32*,bool,bool);
-int netfuncTestFramebuffer(u32*, int*, GSPGPU_CaptureInfo, u32*);
+int netfuncTestFramebuffer(u32*, GSPGPU_CaptureInfo, GSPGPU_CaptureInfo);
 
 
 int main(); // So you can call main from main (:
@@ -391,6 +391,7 @@ static u32 kUp = 0;
 // GPU 'Capture Info' object.
 // Data about framebuffers from the GSP.
 static GSPGPU_CaptureInfo capin;
+static GSPGPU_CaptureInfo oldcapin;
 
 // Whether or not this is running on an 'Old' 3DS
 static int isold = 1;
@@ -919,61 +920,41 @@ u8 getFormatBpp(u32 my_format)
     }
 }
 
-// Test For Changed Framebuffers!
-//
-// Returns a bitmask indicating which DMA-Config-blocks need to update.
-//
-// in Decimal terms:
-// 0 = neither
-// 1 = config 1 (top screen)
-// 2 = config 2 (bottom screen)
-// 3 = both
-//
-int netfuncTestFramebuffer(u32* procid, int* scr, GSPGPU_CaptureInfo new_captureinfo, u32* my_format)
+// If framebuffers changed, do APT stuff (if necessary)
+int netfuncTestFramebuffer(u32* procid, GSPGPU_CaptureInfo new_captureinfo, GSPGPU_CaptureInfo old_captureinfo)
 {
-    int is_changed = 0;
-    int returnvalue = 0;
+    bool is_changed = false;
 
-    if(new_captureinfo.screencapture[0].format != my_format[0])
+    for(int s = 0; s < 2; s++)
     {
-        is_changed = 1;
-
-        u8 bpp1 = getFormatBpp(new_captureinfo.screencapture[0].format);
-        u8 bpp2 = getFormatBpp(my_format[0]);
-
-        if(bpp1 != bpp2)
+        if(new_captureinfo.screencapture[s].framebuf0_vaddr != old_captureinfo.screencapture[s].framebuf0_vaddr)
         {
-            returnvalue += 0b00000001;
+            old_captureinfo.screencapture[s].framebuf0_vaddr = new_captureinfo.screencapture[s].framebuf0_vaddr;
+            is_changed = true;
+        }
+        if(new_captureinfo.screencapture[s].framebuf_widthbytesize != old_captureinfo.screencapture[s].framebuf_widthbytesize)
+        {
+            old_captureinfo.screencapture[s].framebuf_widthbytesize = new_captureinfo.screencapture[s].framebuf_widthbytesize;
+            is_changed = true;
+        }
+        if(new_captureinfo.screencapture[s].format != old_captureinfo.screencapture[s].format)
+        {
+            old_captureinfo.screencapture[s].format = new_captureinfo.screencapture[s].format;
+            is_changed = true;
         }
     }
-    if(new_captureinfo.screencapture[1].format != my_format[1])
-    {
-        is_changed = 1;
-
-        u8 bpp3 = getFormatBpp(new_captureinfo.screencapture[1].format);
-        u8 bpp4 = getFormatBpp(my_format[1]);
-
-        if(bpp3 != bpp4)
-        {
-            returnvalue += 0b00000010;
-        }
-    }
-
-
 
     if(is_changed)
     {
         PatStay(0xFFFF00); // Notif LED = Teal
-
-        my_format[0] = new_captureinfo.screencapture[0].format;
-        my_format[1] = new_captureinfo.screencapture[1].format;
 
         tryStopDma(&dmahand);
 
         *procid = 0;
 
         //test for VRAM
-        if( (u32)(new_captureinfo.screencapture[0].framebuf0_vaddr) >= 0x1F000000 && (u32)(new_captureinfo.screencapture[0].framebuf0_vaddr) < 0x1F600000 )
+        if( (u32)(new_captureinfo.screencapture[0].framebuf0_vaddr) >= 0x1F000000 && (u32)(new_captureinfo.screencapture[0].framebuf0_vaddr) < 0x1F600000 \
+                && (u32)(new_captureinfo.screencapture[1].framebuf0_vaddr) >= 0x1F000000 && (u32)(new_captureinfo.screencapture[1].framebuf0_vaddr) < 0x1F600000 )
         {
             // nothing to do?
             // If the framebuffer is in VRAM, we don't have to do anything special(...?)
@@ -1015,7 +996,7 @@ int netfuncTestFramebuffer(u32* procid, int* scr, GSPGPU_CaptureInfo new_capture
         }
         PatStay(0x00FF00); // Notif LED = Green
     }
-    return returnvalue;
+    return is_changed?1:0;
 }
 
 // "netfunc" v2.1
@@ -1075,6 +1056,15 @@ void newThreadMainFunction(void* __dummy_arg__)
         if(!soc) break;
     }
 
+    // properly initialize oldcapin first
+    while(true)
+    {
+        if(GSPGPU_ImportDisplayCaptureInfo(&capin) >= 0)
+            if(GSPGPU_ImportDisplayCaptureInfo(&oldcapin) >= 0)
+                break;
+    }
+    oldcapin.screencapture[0].framebuf0_vaddr = 0;
+
     // Infinite loop unless it crashes or is halted by another application.
     while(threadrunning)
     {
@@ -1106,21 +1096,27 @@ void newThreadMainFunction(void* __dummy_arg__)
 
         if(GSPGPU_ImportDisplayCaptureInfo(&capin) >= 0)
         {
-            // test for whether the GPUDisplayCaptureInfo has meaningfully changed
-            netfuncTestFramebuffer(&procid,&scr,capin,format);
+            int fbchange = netfuncTestFramebuffer(&procid,capin,oldcapin);
 
-            switch(cfgblk[3])
+            if(fbchange)
             {
-            case 1:
-                updateDmaCfgBpp(dma_config[0], getFormatBpp(format[0]), cfgblk[5], capin.screencapture[0].framebuf_widthbytesize);
-                break;
-            case 2:
-                updateDmaCfgBpp(dma_config[1], getFormatBpp(format[1]), cfgblk[5], capin.screencapture[1].framebuf_widthbytesize);
-                break;
-            default:
-                updateDmaCfgBpp(dma_config[0], getFormatBpp(format[0]), cfgblk[5], capin.screencapture[0].framebuf_widthbytesize);
-                updateDmaCfgBpp(dma_config[1], getFormatBpp(format[1]), cfgblk[5], capin.screencapture[1].framebuf_widthbytesize);
-                break;
+                switch(cfgblk[3])
+                {
+                case 1:
+                    format[0] = capin.screencapture[0].format & 0b111;
+                    updateDmaCfgBpp(dma_config[0], getFormatBpp(format[0]), cfgblk[5], capin.screencapture[0].framebuf_widthbytesize);
+                    break;
+                case 2:
+                    format[1] = capin.screencapture[1].format & 0b111;
+                    updateDmaCfgBpp(dma_config[1], getFormatBpp(format[1]), cfgblk[5], capin.screencapture[1].framebuf_widthbytesize);
+                    break;
+                default:
+                    format[0] = capin.screencapture[0].format & 0b111;
+                    format[1] = capin.screencapture[1].format & 0b111;
+                    updateDmaCfgBpp(dma_config[0], getFormatBpp(format[0]), cfgblk[5], capin.screencapture[0].framebuf_widthbytesize);
+                    updateDmaCfgBpp(dma_config[1], getFormatBpp(format[1]), cfgblk[5], capin.screencapture[1].framebuf_widthbytesize);
+                    break;
+                }
             }
 
             tryStopDma(&dmahand);
