@@ -892,7 +892,7 @@ void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* scrw, u32
 
     u8* destaddr = soc->bufferptr + bufsoc_pak_data_offset;
 
-    if(!tjCompress2(jencode, destaddr, *scrw, (*bsiz) * (*scrw), stride[scr], tjpixelformat, &destaddr, (u32*)imgsize, TJSAMP_420, cfgblk[1], TJFLAG_NOREALLOC | TJFLAG_FASTDCT))
+    if(!tjCompress2(jencode, (u8*)screenbuf, *scrw, (*bsiz) * (*scrw), stride[scr], tjpixelformat, &destaddr, (u32*)imgsize, TJSAMP_420, cfgblk[1], TJFLAG_NOREALLOC | TJFLAG_FASTDCT))
     {
 #if DEBUG_VERBOSE==1
         osTickCounterUpdate(&tick_ctr_1);
