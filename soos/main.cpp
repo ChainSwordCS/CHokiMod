@@ -1056,7 +1056,7 @@ void newThreadMainFunction(void* __dummy_arg__)
     // Infinite loop unless it crashes or is halted by another application.
     while(threadrunning)
     {
-        if(soc->avail())
+        while(soc->avail())
         { // ?
 
             int ret_nwfs = netfuncWaitForSettings();
@@ -1064,6 +1064,7 @@ void newThreadMainFunction(void* __dummy_arg__)
             {
                 delete soc;
                 soc = nullptr;
+                break;
             }
             else if(ret_nwfs == 9)
             {
