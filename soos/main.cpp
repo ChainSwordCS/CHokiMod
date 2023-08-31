@@ -565,7 +565,7 @@ void sendDebugFrametimeStats(double ms_compress, double ms_writesocbuf, double* 
 
 // Returns -1 on an error, and expects the calling function to close the socket.
 // Returns 1 on success.
-inline int netfuncWaitForSettings()
+int netfuncWaitForSettings()
 {
     while(1)
     {
@@ -1053,9 +1053,32 @@ void newThreadMainFunction(void* __dummy_arg__)
 
     PatStay(0x00FF00); // Notif LED = Green
 
+    while(cfgblk[0] == 0)
+    {
+        if(soc->avail())
+        {
+            int ret_nwfs = netfuncWaitForSettings();
+            if(ret_nwfs < 0)
+            {
+                delete soc;
+                soc = nullptr;
+            }
+            else if(ret == 9)
+            {
+                debugPrint(1, "o3DS toggled Interlaced setting, reallocating screenbuf...");
+                free(screenbuf);
+                screenbuf = nullptr;
+                yield(); // does this help
+                allocateScreenbufMem(&screenbuf);
+            }
+        }
+        if(!soc) break;
+    }
+
     // Infinite loop unless it crashes or is halted by another application.
     while(threadrunning)
     {
+        if(!soc) break;
         while(soc->avail())
         { // ?
 
@@ -1081,12 +1104,10 @@ void newThreadMainFunction(void* __dummy_arg__)
         sendDebugFrametimeStats(timems_processframe,timems_writetosocbuf,&timems_dmaasync,timems_formatconvert);
 #endif
 
-        // If index 0 of the config block is non-zero (we are signaled by the PC to init)
-        // And this ImportDisplayCaptureInfo function doesn't error...
-        if(cfgblk[0] && GSPGPU_ImportDisplayCaptureInfo(&capin) >= 0)
+        if(GSPGPU_ImportDisplayCaptureInfo(&capin) >= 0)
         {
             // test for whether the GPUDisplayCaptureInfo has meaningfully changed
-            int r = netfuncTestFramebuffer(&procid,&scr,capin,format);
+            netfuncTestFramebuffer(&procid,&scr,capin,format);
 
             switch(cfgblk[3])
             {
@@ -1102,138 +1123,125 @@ void newThreadMainFunction(void* __dummy_arg__)
                 break;
             }
 
-            // Note: We control how often this loop runs
-            // compared to how often the capture info is checked,
-            // by changing the loopcnt variable. (Renamed to loopy, lol.)
-            // By default, the ratio was 1:1
-            //
-            // If loopy = 2, the ratio is 2:1 (do this twice for every one time we test framebuffers)
-            //
-            // Increasing this would lead to a theoretical speed increase,
-            // but probably not noticeable in practice.
-            for(int loopy = 1; loopy > 0; loopy--)
+            tryStopDma(&dmahand);
+            int imgsize = 0;
+
+            if(isold == 0){
+                svcFlushProcessDataCache(0xFFFF8001, (u8*)screenbuf, capin.screencapture[scr].framebuf_widthbytesize * 400);
+            }
+
+            // interlaced
+            if(cfgblk[5])
+                scrw = scrw / 2;
+
+            switch(cfgblk[4])
             {
-                //soc->setPakSize(0);
-                tryStopDma(&dmahand);
-                int imgsize = 0;
+            case 0:
+                makeJpegImage(&timems_formatconvert, &timems_processframe, scr, &scrw, &bsiz, &imgsize, format, (cfgblk[5]?true:false), interlacedRowSwitch);
+                break;
+            case 1:
+                makeTargaImage(&timems_formatconvert, &timems_processframe, scr, &scrw, &bits, &imgsize, format);
+                break;
+            default:
+                break; // This case shouldn't occur.
+            }
 
-                if(isold == 0){
-                    svcFlushProcessDataCache(0xFFFF8001, (u8*)screenbuf, capin.screencapture[scr].framebuf_widthbytesize * 400);
-                }
+            //printf("height (scrw) = %i\n", scrw);
+            //printf("screen size in bytes = %i\n", bsiz);
+            //printf("interlace_px_offset = %i\n", interlace_px_offset);
 
-                // interlaced
-                if(cfgblk[5])
-                    scrw = scrw / 2;
+            // increment screen fraction / part on o3DS
+            if(isold){
+                u8 b = 0b00001000 + (offs[scr]);
+                soc->setPakSubtypeB(b);
+                offs[scr]++;
+                if(offs[scr] >= limit[scr])
+                    offs[scr] = 0;
+            }
 
-                switch(cfgblk[4])
-                {
-                case 0:
-                    makeJpegImage(&timems_formatconvert, &timems_processframe, scr, &scrw, &bsiz, &imgsize, format, (cfgblk[5]?true:false), interlacedRowSwitch);
-                    break;
-                case 1:
-                    makeTargaImage(&timems_formatconvert, &timems_processframe, scr, &scrw, &bits, &imgsize, format);
-                    break;
-                default:
-                    break; // This case shouldn't occur.
-                }
+            // screen switch
+            if(cfgblk[3] == 01) // Top Screen Only
+                scr = 0;
+            else if(cfgblk[3] == 02) // Bottom Screen Only
+                scr = 1;
+            else if(cfgblk[3] == 03) // Both Screens
+                scr = !scr;
 
-                //printf("height (scrw) = %i\n", scrw);
-                //printf("screen size in bytes = %i\n", bsiz);
-                //printf("interlace_px_offset = %i\n", interlace_px_offset);
-
-                // increment screen fraction / part on o3DS
-                if(isold){
-                    u8 b = 0b00001000 + (offs[scr]);
-                    soc->setPakSubtypeB(b);
-                    offs[scr]++;
-                    if(offs[scr] >= limit[scr])
-                        offs[scr] = 0;
-                }
-
-                // screen switch
-                if(cfgblk[3] == 01) // Top Screen Only
-                    scr = 0;
-                else if(cfgblk[3] == 02) // Bottom Screen Only
-                    scr = 1;
-                else if(cfgblk[3] == 03) // Both Screens
-                    scr = !scr;
-
-                siz = (capin.screencapture[scr].framebuf_widthbytesize * stride[scr]); // Size of the entire frame (in bytes)
-                bsiz = capin.screencapture[scr].framebuf_widthbytesize / 240; // bytes per pixel (dumb)
-                scrw = 240; // sure
-                bits = 4 << bsiz; // bpp (dumb)
+            siz = (capin.screencapture[scr].framebuf_widthbytesize * stride[scr]); // Size of the entire frame (in bytes)
+            bsiz = capin.screencapture[scr].framebuf_widthbytesize / 240; // bytes per pixel (dumb)
+            scrw = 240; // sure
+            bits = 4 << bsiz; // bpp (dumb)
 
 
-                Handle prochand = 0;
-                if(procid) if(svcOpenProcess(&prochand, procid) < 0) procid = 0;
+            Handle prochand = 0;
+            if(procid) if(svcOpenProcess(&prochand, procid) < 0) procid = 0;
 
-                u32 srcprochand = prochand ? prochand : 0xFFFF8001;
-                u8* srcaddr = (u8*)capin.screencapture[scr].framebuf0_vaddr + (siz * offs[scr]);
+            u32 srcprochand = prochand ? prochand : 0xFFFF8001;
+            u8* srcaddr = (u8*)capin.screencapture[scr].framebuf0_vaddr + (siz * offs[scr]);
 
 #if DEBUG_VERBOSE==1
-                osTickCounterUpdate(&tick_ctr_2_dma);
+            osTickCounterUpdate(&tick_ctr_2_dma);
 #endif
 
-                siz = (getFormatBpp(format[scr]) / 8) * scrw * stride[scr];
+            siz = (getFormatBpp(format[scr]) / 8) * scrw * stride[scr];
 
-                if(cfgblk[5])
-                {
-                    siz = siz / 2;
-                    interlacedRowSwitch = !interlacedRowSwitch;
-                    if(interlacedRowSwitch)
-                        srcaddr += getFormatBpp(format[scr])/8;
-                }
+            if(cfgblk[5])
+            {
+                siz = siz / 2;
+                interlacedRowSwitch = !interlacedRowSwitch;
+                if(interlacedRowSwitch)
+                    srcaddr += getFormatBpp(format[scr])/8;
+            }
 
-                // workaround for DMA Siz Bug (refer to docs)
-                siz += (getFormatBpp(format[scr])/8) * (16 * stride[scr] - 16);
+            // workaround for DMA Siz Bug (refer to docs)
+            siz += (getFormatBpp(format[scr])/8) * (16 * stride[scr] - 16);
 
 
-                int r = svcStartInterProcessDma(&dmahand,0xFFFF8001,screenbuf,srcprochand,srcaddr,siz,dma_config[scr]);
+            int ret_dma = svcStartInterProcessDma(&dmahand,0xFFFF8001,screenbuf,srcprochand,srcaddr,siz,dma_config[scr]);
 
-                if(r < 0)
-                {
-                    procid = 0;
-                    format[scr] = 0xF00FCACE; //invalidate
-                }
-                else
-                {
+            if(ret_dma < 0)
+            {
+                procid = 0;
+                format[scr] = 0xF00FCACE; //invalidate
+            }
+            else
+            {
 #if DEBUG_VERBOSE==1
-                    if(dmastatusthreadrunning == 0)
-                    {
-                        // Note: At lowest possible priority, results will be less consistent
-                        // and on average less accurate. But it still produces usable results
-                        // every once in a while, and this isn't a high-priority feature anyway.
-                        threadCreate(waitforDMAtoFinish, nullptr, 0x80, 0x3F, 0, true);
-                    }
-#endif
-                }
-
-                if(prochand)
+                if(dmastatusthreadrunning == 0)
                 {
-                    svcCloseHandle(prochand);
-                    prochand = 0;
+                    // Note: At lowest possible priority, results will be less consistent
+                    // and on average less accurate. But it still produces usable results
+                    // every once in a while, and this isn't a high-priority feature anyway.
+                    threadCreate(waitforDMAtoFinish, nullptr, 0x80, 0x3F, 0, true);
                 }
+#endif
+            }
 
-                // If size is 0, don't send the packet.
-                if(soc->getPakSize())
-                {
+            if(prochand)
+            {
+                svcCloseHandle(prochand);
+                prochand = 0;
+            }
+
+            // If size is 0, don't send the packet.
+            if(soc->getPakSize())
+            {
 #if DEBUG_VERBOSE==1
-                    osTickCounterUpdate(&tick_ctr_1);
+                osTickCounterUpdate(&tick_ctr_1);
 #endif
 
-                    soc->wribuf();
+                soc->wribuf();
 
 #if DEBUG_VERBOSE==1
-                    osTickCounterUpdate(&tick_ctr_1);
-                    timems_writetosocbuf = osTickCounterRead(&tick_ctr_1);
+                osTickCounterUpdate(&tick_ctr_1);
+                timems_writetosocbuf = osTickCounterRead(&tick_ctr_1);
 #endif
-                }
+            }
 
-                // TODO: Fine-tune Old-3DS performance.
-                if(isold){
-                    svcSleepThread(5e6);
-                    // 5 x 10 ^ 6 nanoseconds (iirc)
-                }
+            // TODO: Fine-tune Old-3DS performance.
+            if(isold){
+                svcSleepThread(5e6);
+                // 5 x 10 ^ 6 nanoseconds (iirc)
             }
         }
         else yield();
