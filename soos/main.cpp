@@ -643,38 +643,30 @@ inline int netfuncWaitForSettings()
                     return 1;
 
                 case 0x03: // Which Screen
-                    if(j < 1 || j > 3)
-                        cfgblk[3] = 1; // Default to top screen only
-                    else
+                    if(j != 0 && j < 4)
                         cfgblk[3] = j;
                     return 1;
 
                 case 0x04: // Image Format (JPEG or TGA?)
-                    if(j > 1)
-                        cfgblk[4] = 0;
-                    else
+                    if(j < 2)
                         cfgblk[4] = j;
                     return 1;
 
                 case 0x05: // Request to use Interlacing (yes or no)
-                    if(j == 0 && cfgblk[5] != 0)
-                    {
-                        cfgblk[5] = 0;
+                    j = j?1:0;
 
+                    if(isold)
+                    {
                         // If o3DS toggles Interlaced, signal to re-allocate framebuffer.
-                        if(isold)
+                        if(j != cfgblk[5])
                         {
-                            return 9;
-                    }
-                    }
-                    else if(j == 1 && cfgblk[5] != 1)
-                    {
-                        cfgblk[5] = 1;
-
-                        if(isold)
-                        {
+                            cfgblk[5] = j;
                             return 9;
                         }
+                    }
+                    else
+                    {
+                        cfgblk[5] = j;
                     }
                     return 1;
 
@@ -1295,8 +1287,11 @@ int main()
     mcuInit();
     nsInit();
 
-    // Isn't this already initialized to null?
     soc = nullptr;
+
+    // cfgblk sane defaults
+    cfgblk[1] = 70;
+    cfgblk[3] = 1;
 
 #if DEBUG_BASIC==1
     f = fopen("HzLog.log", "a");
