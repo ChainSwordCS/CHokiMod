@@ -1156,12 +1156,15 @@ void newThreadMainFunction(void* __dummy_arg__)
             }
 
             // screen switch
-            if(cfgblk[3] == 01) // Top Screen Only
-                scr = 0;
-            else if(cfgblk[3] == 02) // Bottom Screen Only
-                scr = 1;
-            else if(cfgblk[3] == 03) // Both Screens
-                scr = !scr;
+            if(interlacedRowSwitch == false || cfgblk[5] == 0)
+            {
+                if(cfgblk[3] == 1) // Top Screen Only
+                    scr = 0;
+                else if(cfgblk[3] == 2) // Bottom Screen Only
+                    scr = 1;
+                else if(cfgblk[3] == 3) // Both Screens
+                    scr = !scr;
+            }
 
             siz = (capin.screencapture[scr].framebuf_widthbytesize * stride[scr]); // Size of the entire frame (in bytes)
             bsiz = capin.screencapture[scr].framebuf_widthbytesize / 240; // bytes per pixel (dumb)
