@@ -106,7 +106,7 @@ void newThreadMainFunction(void*);
 
 // Helper functions for netfunc
 inline int netfuncWaitForSettings();
-void makeTargaImage(double*,double*,int,u32*,u32*,int*,u32*);
+void makeTargaImage(double*,double*,int,u32*,u32*,int*,u32*,bool,bool);
 void makeJpegImage(double*,double*,int,u32*,u32*,int*,u32*,bool,bool);
 void netfuncTestFramebuffer(u32*, GSPGPU_CaptureInfo, GSPGPU_CaptureInfo);
 
@@ -772,7 +772,7 @@ int allocateScreenbufMem(u32** myscreenbuf)
     }
 }
 
-void makeTargaImage(double* timems_fc, double* timems_pf, int scr, u32* scrw, u32* bits, int* imgsize, u32* myformat)
+void makeTargaImage(double* timems_fc, double* timems_pf, int scr, u32* scrw, u32* bits, int* imgsize, u32* myformat, bool isInterlaced, bool interlacedRowSwitch)
 {
 #if DEBUG_VERBOSE==1
     *timems_fc = 0;
@@ -822,6 +822,9 @@ void makeTargaImage(double* timems_fc, double* timems_pf, int scr, u32* scrw, u3
 #endif
 
     u8 subtype_aka_flags = 0b00001000 + (scr * 0b00010000) + (format[scr] & 0b111);
+    if(isInterlaced)
+        subtype_aka_flags += 0b00100000 + (interlacedRowSwitch?0:0b01000000);
+
     soc->setPakType(01);
     soc->setPakSubtype(subtype_aka_flags);
     soc->setPakSize(*imgsize);
@@ -1151,7 +1154,7 @@ void newThreadMainFunction(void* __dummy_arg__)
                 makeJpegImage(&timems_formatconvert, &timems_processframe, scr, &scrw, &bsiz, &imgsize, format, isStoredFrameInterlaced, interlacedRowSwitch);
                 break;
             case 1:
-                makeTargaImage(&timems_formatconvert, &timems_processframe, scr, &scrw, &bits, &imgsize, format);
+                makeTargaImage(&timems_formatconvert, &timems_processframe, scr, &scrw, &bits, &imgsize, format, isStoredFrameInterlaced, interlacedRowSwitch);
                 break;
             default:
                 break; // This case shouldn't occur.
