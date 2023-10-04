@@ -57,16 +57,30 @@ void updateDmaCfgBpp(u8* dmacfgblk, u8 source_bpp, u8 interlaced, u32 rowstride)
     const u8 destination_bytesperpixel = destination_bpp / 8;
 
     const u8 source_skipbytes = interlaced ? source_bytesperpixel : 0;
-    const u8 width = interlaced ? 120 : 240;
+
+    const u8 width = 240;
+    //const u8 width = interlaced ? 120 : 240;
 
     // Shortcut: These are all 16-bit integers, but touching the higher byte may be a waste of time.
 
     // TODO: Potentially rethink how this works and what is most optimal.
 
-    //printf("Interlaced stuff:");
-    //printf("source: %i bits (%i bytes)", source_bpp, source_bytesperpixel);
-    //printf("destination: %i bits (%i bytes)", destination_bpp, destination_bytesperpixel);
-    //printf("interlaced=%i ; skip %i bytes every pixel", interlaced, source_skipbytes);
+    //printf("\n");
+    //printf("updateDmaCfgBpp\n");
+    //printf("source: %i bits (%i bytes)\n", source_bpp, source_bytesperpixel);
+    //printf("destination: %i bits (%i bytes)\n", destination_bpp, destination_bytesperpixel);
+    //printf("interlaced=%i ; skip %i bytes every pixel\n", interlaced, source_skipbytes);
+    //printf("width=%i\n", width);
+
+    if(!interlaced)
+    {
+        //printf("rowstride=%i\n", rowstride);
+    }
+    else
+    {
+        //rowstride = rowstride/2;
+        //printf("rowstride/2=%i\n", rowstride);
+    }
 
     dmacfgblk[1+CFG_OFFS_DST_S16_GATHER_GRANULE_SIZE] = destination_bytesperpixel;
     dmacfgblk[1+CFG_OFFS_DST_S16_GATHER_STRIDE] = destination_bytesperpixel;
@@ -75,8 +89,13 @@ void updateDmaCfgBpp(u8* dmacfgblk, u8 source_bpp, u8 interlaced, u32 rowstride)
     ((u16*)dmacfgblk)[CFG_OFFS_DST_S16_SCATTER_STRIDE/2] = destination_bytesperpixel * width;
 
     dmacfgblk[1+CFG_OFFS_SRC_S16_GATHER_GRANULE_SIZE] = destination_bytesperpixel;
-    dmacfgblk[1+CFG_OFFS_SRC_S16_GATHER_STRIDE] = source_bytesperpixel + source_skipbytes;
+
+    if(interlaced)
+        dmacfgblk[1+CFG_OFFS_SRC_S16_GATHER_STRIDE] = source_bytesperpixel * 2;
+    else
+        dmacfgblk[1+CFG_OFFS_SRC_S16_GATHER_STRIDE] = source_bytesperpixel;
 
     ((u16*)dmacfgblk)[CFG_OFFS_SRC_S16_SCATTER_GRANULE_SIZE/2] = destination_bytesperpixel * width;
     ((u16*)dmacfgblk)[CFG_OFFS_SRC_S16_SCATTER_STRIDE/2] = rowstride;
+    //((u16*)dmacfgblk)[CFG_OFFS_SRC_S16_SCATTER_STRIDE/2] = source_bytesperpixel * width;
 }

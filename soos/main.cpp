@@ -108,7 +108,7 @@ void newThreadMainFunction(void*);
 inline int netfuncWaitForSettings();
 void makeTargaImage(double*,double*,int,u32*,u32*,int*,u32*);
 void makeJpegImage(double*,double*,int,u32*,u32*,int*,u32*,bool,bool);
-int netfuncTestFramebuffer(u32*, GSPGPU_CaptureInfo, GSPGPU_CaptureInfo);
+void netfuncTestFramebuffer(u32*, GSPGPU_CaptureInfo, GSPGPU_CaptureInfo);
 
 
 int main(); // So you can call main from main (:
@@ -431,6 +431,9 @@ static TickCounter tick_ctr_2_dma;
 // false = odd rows (1-239, DMA start position is normal)
 // true  = even rows (2-240, DMA start position is offset)
 static bool interlacedRowSwitch = false;
+
+static bool isStoredFrameInterlaced = false;
+static bool isDmaSetForInterlaced = false;
 
 // Based on (and slightly modified from) devkitpro/libctru source
 //
@@ -921,7 +924,7 @@ u8 getFormatBpp(u32 my_format)
 }
 
 // If framebuffers changed, do APT stuff (if necessary)
-int netfuncTestFramebuffer(u32* procid, GSPGPU_CaptureInfo new_captureinfo, GSPGPU_CaptureInfo old_captureinfo)
+void netfuncTestFramebuffer(u32* procid, GSPGPU_CaptureInfo new_captureinfo, GSPGPU_CaptureInfo old_captureinfo)
 {
     bool is_changed = false;
 
@@ -996,7 +999,7 @@ int netfuncTestFramebuffer(u32* procid, GSPGPU_CaptureInfo new_captureinfo, GSPG
         }
         PatStay(0x00FF00); // Notif LED = Green
     }
-    return is_changed?1:0;
+    return;
 }
 
 // "netfunc" v2.1
@@ -1012,7 +1015,7 @@ void newThreadMainFunction(void* __dummy_arg__)
 
     u32 siz = 0x80;
     u32 bsiz = 1;
-    u32 scrw = 1;
+    u32 scrw = 2;
     u32 bits = 8;
     int scr = 0;
     u32 procid = 0;
@@ -1063,7 +1066,14 @@ void newThreadMainFunction(void* __dummy_arg__)
             if(GSPGPU_ImportDisplayCaptureInfo(&oldcapin) >= 0)
                 break;
     }
-    oldcapin.screencapture[0].framebuf0_vaddr = 0;
+
+    if(cfgblk[5])
+        isDmaSetForInterlaced = true;
+    else
+        isDmaSetForInterlaced = false;
+
+    updateDmaCfgBpp(dma_config[0], getFormatBpp(format[0]), cfgblk[5], capin.screencapture[0].framebuf_widthbytesize);
+    updateDmaCfgBpp(dma_config[1], getFormatBpp(format[1]), cfgblk[5], capin.screencapture[1].framebuf_widthbytesize);
 
     // Infinite loop unless it crashes or is halted by another application.
     while(threadrunning)
@@ -1096,27 +1106,30 @@ void newThreadMainFunction(void* __dummy_arg__)
 
         if(GSPGPU_ImportDisplayCaptureInfo(&capin) >= 0)
         {
-            int fbchange = netfuncTestFramebuffer(&procid,capin,oldcapin);
+            netfuncTestFramebuffer(&procid,capin,oldcapin);
 
-            if(fbchange)
+
+            if(cfgblk[5])
+                isDmaSetForInterlaced = true;
+            else
+                isDmaSetForInterlaced = false;
+
+            switch(cfgblk[3])
             {
-                switch(cfgblk[3])
-                {
-                case 1:
-                    format[0] = capin.screencapture[0].format & 0b111;
-                    updateDmaCfgBpp(dma_config[0], getFormatBpp(format[0]), cfgblk[5], capin.screencapture[0].framebuf_widthbytesize);
-                    break;
-                case 2:
-                    format[1] = capin.screencapture[1].format & 0b111;
-                    updateDmaCfgBpp(dma_config[1], getFormatBpp(format[1]), cfgblk[5], capin.screencapture[1].framebuf_widthbytesize);
-                    break;
-                default:
-                    format[0] = capin.screencapture[0].format & 0b111;
-                    format[1] = capin.screencapture[1].format & 0b111;
-                    updateDmaCfgBpp(dma_config[0], getFormatBpp(format[0]), cfgblk[5], capin.screencapture[0].framebuf_widthbytesize);
-                    updateDmaCfgBpp(dma_config[1], getFormatBpp(format[1]), cfgblk[5], capin.screencapture[1].framebuf_widthbytesize);
-                    break;
-                }
+            case 1:
+                format[0] = capin.screencapture[0].format & 0b111;
+                updateDmaCfgBpp(dma_config[0], getFormatBpp(format[0]), isDmaSetForInterlaced?1:0, capin.screencapture[0].framebuf_widthbytesize);
+                break;
+            case 2:
+                format[1] = capin.screencapture[1].format & 0b111;
+                updateDmaCfgBpp(dma_config[1], getFormatBpp(format[1]), isDmaSetForInterlaced?1:0, capin.screencapture[1].framebuf_widthbytesize);
+                break;
+            default:
+                format[0] = capin.screencapture[0].format & 0b111;
+                format[1] = capin.screencapture[1].format & 0b111;
+                updateDmaCfgBpp(dma_config[0], getFormatBpp(format[0]), isDmaSetForInterlaced?1:0, capin.screencapture[0].framebuf_widthbytesize);
+                updateDmaCfgBpp(dma_config[1], getFormatBpp(format[1]), isDmaSetForInterlaced?1:0, capin.screencapture[1].framebuf_widthbytesize);
+                break;
             }
 
             tryStopDma(&dmahand);
@@ -1127,13 +1140,15 @@ void newThreadMainFunction(void* __dummy_arg__)
             }
 
             // interlaced
-            if(cfgblk[5])
+            if(isStoredFrameInterlaced)
+            {
                 scrw = scrw / 2;
+            }
 
             switch(cfgblk[4])
             {
             case 0:
-                makeJpegImage(&timems_formatconvert, &timems_processframe, scr, &scrw, &bsiz, &imgsize, format, (cfgblk[5]?true:false), interlacedRowSwitch);
+                makeJpegImage(&timems_formatconvert, &timems_processframe, scr, &scrw, &bsiz, &imgsize, format, isStoredFrameInterlaced, interlacedRowSwitch);
                 break;
             case 1:
                 makeTargaImage(&timems_formatconvert, &timems_processframe, scr, &scrw, &bits, &imgsize, format);
@@ -1184,12 +1199,17 @@ void newThreadMainFunction(void* __dummy_arg__)
 
             siz = (getFormatBpp(format[scr]) / 8) * scrw * stride[scr];
 
-            if(cfgblk[5])
+            if(isDmaSetForInterlaced)
             {
+                isStoredFrameInterlaced = true;
                 siz = siz / 2;
                 interlacedRowSwitch = !interlacedRowSwitch;
                 if(interlacedRowSwitch)
                     srcaddr += getFormatBpp(format[scr])/8;
+            }
+            else
+            {
+                isStoredFrameInterlaced = false;
             }
 
             // workaround for DMA Siz Bug (refer to docs)
