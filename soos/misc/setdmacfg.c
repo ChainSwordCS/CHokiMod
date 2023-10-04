@@ -30,7 +30,7 @@ inline void initCustomDmaCfg(u8* dmacfgblk)
     memset(dmacfgblk, 0, 0x18);
 
     dmacfgblk[CFG_OFFS_CHANNEL_SEL] = -1;
-    dmacfgblk[CFG_OFFS_FLAGS] = 0b11000000;
+    dmacfgblk[CFG_OFFS_FLAGS] = 0b11000100;
 
     dmacfgblk[CFG_OFFS_DST_PERIPHERAL_ID] = 0xFF;
     dmacfgblk[CFG_OFFS_DST_ALLOWED_BURST_SIZES] = 8|4|2|1;
