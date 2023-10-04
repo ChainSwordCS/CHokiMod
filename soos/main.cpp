@@ -226,15 +226,15 @@ public:
 
     int readbuf(int flags = 0)
     {
-        puts("attempting recv function call...");
+        //puts("attempting recv function call...");
         int ret = recv(socketid, bufferptr, 8, flags);
-        printf("incoming packet type = %i\nsubtype1 = %i\nsubtype2 = %i\nrecv function return value = %i\n",bufferptr[0],bufferptr[1],bufferptr[2],ret);
+        //printf("incoming packet type = %i\nsubtype1 = %i\nsubtype2 = %i\nrecv function return value = %i\n",bufferptr[0],bufferptr[1],bufferptr[2],ret);
 
         if(ret < 0) return -errno;
         if(ret < 8) return -1;
 
         u32 reads_remaining = getPakSize();
-        printf("incoming packet size = %i\nrecv return value = %i\n",reads_remaining,ret);
+        //printf("incoming packet size = %i\nrecv return value = %i\n",reads_remaining,ret);
 
         // Copy data to the buffer
 
