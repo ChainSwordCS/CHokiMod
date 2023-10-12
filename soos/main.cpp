@@ -1135,7 +1135,22 @@ void newThreadMainFunction(void* __dummy_arg__)
                 break;
             }
 
+            int dmaState = 0;
+            for(int i = 0; i < 60; i++) // Should cover all cases.
+            {
+                svcGetDmaState(&dmaState, dmahand);
+                if(dmaState == 4 || dmaState == 0) // 4 = DMASTATE_DONE; 0 = why dude
+                    break;
+                svcSleepThread(5e4); // Going higher (5e6, for example) may result in crashes.
+            }
+
             tryStopDma(&dmahand);
+
+#if DEBUG_BASIC==1
+            if(dmaState != 4 && dmaState != 0)
+                printf("DMA transfer not finished, stopping manually...\ndmaState=%i\n", dmaState);
+#endif
+
             int imgsize = 0;
 
             if(isold == 0){
