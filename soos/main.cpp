@@ -249,15 +249,18 @@ public:
     
     int readbuf(int flags = 0)
     {
-    	puts("attempting recv function call...");
         int ret = recv(socketid, bufferptr, 8, flags);
+#if DEBUG_VERBOSE==1
         printf("incoming packet type = %i\nsubtype1 = %i\nsubtype2 = %i\nrecv function return value = %i\n",bufferptr[0],bufferptr[1],bufferptr[2],ret);
+#endif
 
         if(ret < 0) return -errno;
         if(ret < 8) return -1;
 
         u32 reads_remaining = getPakSize();
+#if DEBUG_VERBOSE==1
         printf("incoming packet size = %i\nrecv return value = %i\n",reads_remaining,ret);
+#endif
         
         // Copy data to the buffer
 
@@ -1102,7 +1105,7 @@ inline int netfuncWaitForSettings()
 		if((kHeld & (KEY_SELECT | KEY_START)) == (KEY_SELECT | KEY_START))
 			return -1;
 
-#if DEBUG_BASIC==1
+#if DEBUG_VERBOSE==1
 		puts("Reading incoming packet...");
 #endif
 
