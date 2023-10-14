@@ -1580,7 +1580,22 @@ void netfuncOld3DS(void* __dummy_arg__)
             for(int loopy = 1; loopy > 0; loopy--)
             {
                 //soc->setPakSize(0);
-            	tryStopDma();
+
+                int dmaState = 0;
+                for(int i = 0; i < 60; i++)
+                {
+                    svcGetDmaState(&dmaState, dmahand);
+                    if(dmaState == 4 || dmaState == 0)
+                        break;
+                    svcSleepThread(5e4);
+                }
+
+                tryStopDma();
+
+#if DEBUG_BASIC==1
+                if(dmaState != 4 && dmaState != 0)
+                    printf("DMA transfer not finished, stopping manually...\ndmaState=%i\n", dmaState);
+#endif
 
                 int imgsize = 0;
 
@@ -1783,7 +1798,22 @@ void netfuncNew3DS(void* __dummy_arg__)
             for(int loopy = 1; loopy > 0; loopy--)
             {
                 //soc->setPakSize(0);
+
+                int dmaState = 0;
+                for(int i = 0; i < 60; i++)
+                {
+                    svcGetDmaState(&dmaState, dmahand);
+                    if(dmaState == 4 || dmaState == 0)
+                        break;
+                    svcSleepThread(5e4);
+                }
+
             	tryStopDma();
+
+#if DEBUG_BASIC==1
+            	if(dmaState != 4 && dmaState != 0)
+            	    printf("DMA transfer not finished, stopping manually...\ndmaState=%i\n", dmaState);
+#endif
 
             	//New3DS-Specific
             	svcFlushProcessDataCache(0xFFFF8001, (u8*)screenbuf, capin.screencapture[scr].framebuf_widthbytesize * 400);
