@@ -661,12 +661,14 @@ int netfuncWaitForSettings()
 
                     if(isold)
                     {
+                        /* interlacing is disabled on o3DS
                         // If o3DS toggles Interlaced, signal to re-allocate framebuffer.
                         if(j != cfgblk[5])
                         {
                             cfgblk[5] = j;
                             return 9;
                         }
+                        */
                     }
                     else
                     {
@@ -720,6 +722,7 @@ int allocateScreenbufMem(u32** myscreenbuf)
     debugPrint(1, "(re)allocating memory for screenbuf...");
     if(isold) // is Old-3DS
     {
+        /* interlacing is disabled on o3DS
         // If Interlaced
         if(cfgblk[5] == 1)
         {
@@ -731,12 +734,12 @@ int allocateScreenbufMem(u32** myscreenbuf)
         }
         else
         {
-            limit[0] = 8; // Capture the screen in 8 chunks
-            limit[1] = 8;
-            stride[0] = 50; // Screen / Framebuffer width (divided by 8)
-            stride[1] = 40;
-            screenbuf_siz = 50 * 240 * 3;
-        }
+        */
+        limit[0] = 8; // Capture the screen in 8 chunks
+        limit[1] = 8;
+        stride[0] = 50; // Screen / Framebuffer width (divided by 8)
+        stride[1] = 40;
+        screenbuf_siz = 50 * 240 * 3;
     }
     else
     {
@@ -1070,7 +1073,12 @@ void newThreadMainFunction(void* __dummy_arg__)
                 break;
     }
 
-    if(cfgblk[5])
+    // ?
+    format[0] = capin.screencapture[0].format & 0b111;
+    format[1] = capin.screencapture[1].format & 0b111;
+
+    // interlacing is disabled on o3DS and 24bpp frames
+    if(cfgblk[5] && !isold && (format[scr] != 1))
         isDmaSetForInterlaced = true;
     else
         isDmaSetForInterlaced = false;
@@ -1092,6 +1100,7 @@ void newThreadMainFunction(void* __dummy_arg__)
                 soc = nullptr;
                 break;
             }
+            /* interlacing is disabled on o3DS
             else if(ret_nwfs == 9)
             {
                 debugPrint(1, "o3DS toggled Interlaced setting, reallocating screenbuf...");
@@ -1100,6 +1109,7 @@ void newThreadMainFunction(void* __dummy_arg__)
                 yield(); // does this help
                 allocateScreenbufMem(&screenbuf);
             }
+            */
         }
         if(!soc) break;
 
@@ -1111,8 +1121,11 @@ void newThreadMainFunction(void* __dummy_arg__)
         {
             netfuncTestFramebuffer(&procid,capin,oldcapin);
 
+            format[0] = capin.screencapture[0].format & 0b111;
+            format[1] = capin.screencapture[1].format & 0b111;
 
-            if(cfgblk[5])
+            // interlacing is disabled on o3DS and 24bpp frames
+            if(cfgblk[5] && !isold && (getFormatBpp(format[scr]) != 24))
                 isDmaSetForInterlaced = true;
             else
                 isDmaSetForInterlaced = false;
@@ -1120,16 +1133,12 @@ void newThreadMainFunction(void* __dummy_arg__)
             switch(cfgblk[3])
             {
             case 1:
-                format[0] = capin.screencapture[0].format & 0b111;
                 updateDmaCfgBpp(dma_config[0], getFormatBpp(format[0]), isDmaSetForInterlaced?1:0, capin.screencapture[0].framebuf_widthbytesize);
                 break;
             case 2:
-                format[1] = capin.screencapture[1].format & 0b111;
                 updateDmaCfgBpp(dma_config[1], getFormatBpp(format[1]), isDmaSetForInterlaced?1:0, capin.screencapture[1].framebuf_widthbytesize);
                 break;
             default:
-                format[0] = capin.screencapture[0].format & 0b111;
-                format[1] = capin.screencapture[1].format & 0b111;
                 updateDmaCfgBpp(dma_config[0], getFormatBpp(format[0]), isDmaSetForInterlaced?1:0, capin.screencapture[0].framebuf_widthbytesize);
                 updateDmaCfgBpp(dma_config[1], getFormatBpp(format[1]), isDmaSetForInterlaced?1:0, capin.screencapture[1].framebuf_widthbytesize);
                 break;
@@ -1378,6 +1387,7 @@ int main()
         netfunc_thread_priority = 0x21;
         netfunc_thread_cpu = 1;
 
+        /* interlacing is disabled on o3DS
         // If Interlaced
         if(cfgblk[5] == 1)
         {
@@ -1389,12 +1399,13 @@ int main()
         }
         else
         {
-            limit[0] = 8; // Capture the screen in 8 chunks
-            limit[1] = 8;
-            stride[0] = 50; // Screen / Framebuffer width (divided by 8)
-            stride[1] = 40;
-            screenbuf_siz = 50 * 240 * 3;
-        }
+        */
+        limit[0] = 8; // Capture the screen in 8 chunks
+        limit[1] = 8;
+        stride[0] = 50; // Screen / Framebuffer width (divided by 8)
+        stride[1] = 40;
+        screenbuf_siz = 50 * 240 * 3;
+        //}
     }
     else // is New-3DS (or New-2DS)
     {
