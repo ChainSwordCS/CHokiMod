@@ -40,7 +40,9 @@ extern "C"
 #include "miscdef.h"
 //#include "service/screen.h"
 #include "service/mcu.h"
+#include "service/hid.h"
 #include "misc/pattern.h"
+#include "misc/yuvconvert.h"
 
 #include "tga/targa.h"
 #include <turbojpeg.h>
@@ -52,7 +54,7 @@ extern "C"
 
 
 
-#define yield() svcSleepThread(1e8)
+#define yield() svcSleepThread(2e9)
 
 #define hangmacro()\
 {\
@@ -66,8 +68,8 @@ extern "C"
     PatApply();\
     while(1)\
     {\
-        hidScanInput();\
-        if(hidKeysHeld() == (KEY_SELECT | KEY_START))\
+        hidScanInputDirectIO();\
+        if(getkHeld() == (KEY_SELECT | KEY_START))\
         {\
             goto killswitch;\
         }\
@@ -80,8 +82,8 @@ int checkwifi()
 {
     haznet = 0;
     u32 wifi = 0;
-    hidScanInput();
-    if(hidKeysHeld() == (KEY_SELECT | KEY_START)) return 0;
+    hidScanInputDirectIO();
+    if(getkHeld() == (KEY_SELECT | KEY_START)) return 0;
     if(ACU_GetWifiStatus(&wifi) >= 0 && wifi) haznet = 1;
     return haznet;
 }
@@ -141,6 +143,7 @@ public:
         int ret = recv(sock, &hdr, 4, flags);
         if(ret < 0) return -errno;
         if(ret < 4) return -1;
+        printf("readbuf hdr %08X\n", hdr);
         *(u32*)buf = hdr;
         
         packet* p = pack();
@@ -200,6 +203,11 @@ public:
         return (packet*)buf;
     }
     
+    /**
+     * v.2020 decomp todo:
+     * "warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]"
+     * lol. lmao
+     */
     int errformat(char* c, ...)
     {
         packet* p = pack();
@@ -208,20 +216,20 @@ public:
         
         va_list args;
         va_start(args, c);
-        len = vsprintf((char*)p->data + 1, c, args);
+        len = vsprintf((char*)p->data + 4, c, args);
         va_end(args);
         
         if(len < 0)
         {
-            puts("out of memory"); //???
+            puts("errformat: out of memory");
             return -1;
         }
         
-        //printf("Packet error %i: %s\n", p->packetid, p->data + 1);
+        printf("Packet error 0x%08X: %s\n", p->packetid|(p->size<<8), p->data + 4);
         
-        p->data[0] = p->packetid;
+        p->data[0] = p->packetid; // ?
         p->packetid = 1;
-        p->size = len + 2;
+        p->size = len + 6;
         
         return wribuf();
     }
@@ -302,14 +310,80 @@ static bufsoc* soc = nullptr;
 
 static bufsoc::packet* k = nullptr;
 
+static u32 bufsocsiz = 0;
+
 static Thread netthread = 0;
 static vu32 threadrunning = 0;
+static u32 netthread_unkvar; // v.2020 decomp todo
 
 static u32* screenbuf = nullptr;
 
 static tga_image img;
 static tjhandle jencode = nullptr;
 
+/**
+ * v.2020 decomp todo
+ */
+void FUN_00104d5c()
+{
+    // v.2020 decomp todo: is this correct?
+    delete k; //FUN_00127f0c(k);
+    k = nullptr;
+    //close(sock); // speculation
+    //close(soc->sock); // implied by "delete soc;"
+    delete soc;
+    soc = nullptr;
+}
+
+int ThreadJoin(Thread threadhandle)
+{
+    int r = 0;
+    if(threadhandle)
+    {
+        // v.2020 decomp todo
+        //if(*(u8*)(threadhandle + 0x11) == 0)
+        if(netthread_unkvar == 0)
+        {
+            // is this right?
+            s64 timeout = 0;
+            //s64 timeout = -1;
+            svcWaitSynchronization((u32)threadhandle, timeout);
+        }
+    }
+    return r;
+}
+
+/**
+ * v.2020 decomp todo:
+ * - code cleanup
+ * - does this even work? included here for completeness anyway.
+ */
+int dmaRemoteWrite(u32 dmahandle, u32 dstaddr, u32 handle2, u32 srcaddr, u32 size)
+{
+    int r;
+    u32 thisdmahandle = 0;
+    u8 thisdmaconf[0x18];
+    memset(thisdmaconf,0,0x18);
+    thisdmaconf[0] = -1;
+
+    r = svcFlushProcessDataCache(dmahandle,(void*)dstaddr,size);
+    if(r < 0) return r;
+    r = svcFlushProcessDataCache(handle2,(void*)srcaddr,size);
+    if(r < 0) return r;
+    r = svcStartInterProcessDma(&thisdmahandle, dmahandle, (void*)dstaddr, handle2, (void*)srcaddr, size, thisdmaconf);
+    if(r < 0) return r;
+    u32 thisdmastate = 0;
+    while(true)
+    {
+        svcGetDmaState(&thisdmastate, thisdmahandle);
+        if(thisdmastate & 0xfff00000) break;
+        svcSleepThread(20000);
+    }
+    svcStopDma(thisdmahandle);
+    svcCloseHandle(thisdmahandle);
+    svcInvalidateProcessDataCache(dmahandle,(void*)dstaddr,size);
+    return 0;
+}
 
 void netfunc(void* __dummy_arg__)
 {
@@ -323,11 +397,17 @@ void netfunc(void* __dummy_arg__)
     if(isold);// screenbuf = (u32*)k->data;
     else osSetSpeedupEnable(1);
     
-    k = soc->pack(); //Just In Case (tm)
+    /**
+     * see: https://www.3dbrew.org/wiki/SVC#KernelSetState
+     * Type 10 = ConfigureNew3DSCPU
+     * enable L2 Cache and 804MHz CPU clock speed
+     */
+    svcKernelSetState(10,0b11);
+    //svcKernelSetState(10,3,0);
     
     PatStay(0xFF00);
     
-    format[0] = 0xF00FCACE; //invalidate
+    format[0] = 0xFFFFFFFF; //invalidate
     
     u32 procid = 0;
     Handle dmahand = 0;
@@ -341,81 +421,106 @@ void netfunc(void* __dummy_arg__)
     PatPulse(0x7F007F);
     threadrunning = 1;
     
-    do
-    {
-        k->packetid = 2; //MODE
-        k->size = 4 * 4;
-        
-        u32* kdata = (u32*)k->data;
-        
-        kdata[0] = 1;
-        kdata[1] = 240 * 3;
-        kdata[2] = 1;
-        kdata[3] = 240 * 3;
-        soc->wribuf();
-    }
-    while(0);
-    
     while(threadrunning)
     {
+        if((kHeld & (KEY_SELECT | KEY_START)) == (KEY_SELECT | KEY_START))
+        {
+            puts("Thread kill by STARTSELECT");
+            break; // equivalent to "goto threadkill;"
+        }
+
         if(soc->avail())
         while(1)
         {
-            if((kHeld & (KEY_SELECT | KEY_START)) == (KEY_SELECT | KEY_START))
-            {
-                delete soc;
-                soc = nullptr;
-                break;
-            }
-            
-            puts("reading");
             cy = soc->readbuf();
             if(cy <= 0)
             {
                 printf("Failed to recvbuf: (%i) %s\n", errno, strerror(errno));
-                delete soc;
-                soc = nullptr;
-                break;
+                goto threadkill;
             }
             else
             {
-                printf("#%i 0x%X | %i\n", k->packetid, k->size, cy);
-                
                 reread:
                 switch(k->packetid)
                 {
                     case 0x00: //CONNECT
                     case 0x01: //ERROR
                         puts("forced dc");
-                        delete soc;
-                        soc = nullptr;
-                        break;
+                        goto threadkill;
+                        //break; // implied
                         
                     case 0x7E: //CFGBLK_IN
-                        memcpy(cfgblk + k->data[0], &k->data[4], min((u32)(0x100 - k->data[0]), (u32)(k->size - 4)));
+                        memcpy(cfgblk + k->data[0], &k->data[4], (u32)(k->size - 4));
                         break;
                         
-                    default:
-                        printf("Invalid packet ID: %i\n", k->packetid);
-                        delete soc;
-                        soc = nullptr;
+                    case 0x80: //NYI (Not Yet Implemented) (from v.2020 decomp)
+                        soc->errformat("NYI");
                         break;
+
+                    case 0x81: //DMA_IN (from v.2020 decomp)
+                        // v.2020 decomp todo: does this work?
+                        if(k->size < 9)
+                            soc->errformat("Invalid packet size 0x%X for DMA_IN", k->size);
+                        else
+                        {
+                            // v.2020 decomp todo: cleanup
+                            u32* kdata = (u32*)k->data;
+                            u32 processid = kdata[0];
+                            u32 addr = kdata[1];
+                            u32 dmainhandle = 0;
+                            int r = 0;
+                            if ((int)processid == -1)
+                              r = svcDuplicateHandle(&dmainhandle,0xffff8001);
+                            else
+                              r = svcOpenProcess(&dmainhandle, processid);
+                            if (r < 0) {
+                              soc->errformat("Failed to open process 0x%X: %08X", processid, r);
+                              dmainhandle = 0;
+                            }
+                            else {
+                                r = svcControlProcessMemory(dmainhandle, addr&0xfffff000, addr&0xfffff000, (k->size+0xff7)&0xfffff000, 6, 7);
+                                if (r < 0) {
+                                    svcCloseHandle(dmainhandle);
+                                    dmainhandle = 0;
+                                    soc->errformat("Failed to change memory perms for address 0x%08X: %08X", addr, r);
+                                }
+                                else {
+                                    r = dmaRemoteWrite(dmainhandle, addr, 0xffff8001, (u32)k->data+8, k->size-8);
+                                    svcCloseHandle(dmainhandle);
+                                    dmainhandle = 0;
+                                    if(r < 0)
+                                        soc->errformat("Failed to DMA to address 0x%08X: %08X",addr,r);
+                                }
+                            }
+                        }
+                        break;
+
+                    default:
+                        u32 hdr = k->packetid | (k->size << 8);
+                        soc->errformat("Invalid header: %08X\n", hdr);
+                        goto threadkill;
+                        //break; // implied
                 }
                 
                 break;
             }
         }
         
-        if(!soc) break;
+        if(!soc)
+        {
+            puts("Break thread due to lack of soc");
+            //equivalent to "goto threadkill;"
+            break;
+        }
         
         if(cfgblk[0] && GSPGPU_ImportDisplayCaptureInfo(&capin) >= 0)
         {
             //test for changed framebuffers
             if\
             (\
-                capin.screencapture[0].format != format[0]\
+                (capin.screencapture[0].format & 0xFFFFFF9F) != (format[0] & 0xFFFFFF9F)\
                 ||\
-                capin.screencapture[1].format != format[1]\
+                (capin.screencapture[1].format & 0xFFFFFF9F) != (format[1] & 0xFFFFFF9F)\
             )
             {
                 PatStay(0xFFFF00);
@@ -430,10 +535,21 @@ void netfunc(void* __dummy_arg__)
                 
                 u32* kdata = (u32*)k->data;
                 
-                kdata[0] = format[0];
-                kdata[1] = capin.screencapture[0].framebuf_widthbytesize;
-                kdata[2] = format[1];
-                kdata[3] = capin.screencapture[1].framebuf_widthbytesize;
+                // if TARGA, or top screen format is RGB8 (24bpp)
+                if((cfgblk[3] == 0) || ((format[0] & 7) == 1))
+                {
+                    kdata[0] = format[0];
+                    kdata[1] = capin.screencapture[0].framebuf_widthbytesize;
+                    kdata[2] = format[1];
+                    kdata[3] = capin.screencapture[1].framebuf_widthbytesize;
+                }
+                else
+                {
+                    kdata[0] = format[0] & 0xFFFFFFF8;
+                    kdata[1] = 960;
+                    kdata[2] = format[1] & 0xFFFFFFF8;
+                    kdata[3] = 960;
+                }
                 soc->wribuf();
                 
                 k->packetid = 0xFF;
@@ -441,26 +557,22 @@ void netfunc(void* __dummy_arg__)
                 *(GSPGPU_CaptureInfo*)k->data = capin;
                 soc->wribuf();
                 
-                
-                if(dmahand)
-                {
-                    svcStopDma(dmahand);
-                    svcCloseHandle(dmahand);
-                    dmahand = 0;
-                }
-                
                 procid = 0;
                 
                 
                 //test for VRAM
                 if\
                 (\
-                    (u32)capin.screencapture[0].framebuf0_vaddr >= 0x1F000000\
-                    &&\
                     (u32)capin.screencapture[0].framebuf0_vaddr <  0x1F600000\
                 )
                 {
                     //nothing to do?
+                    if(dmahand)
+                    {
+                        svcStopDma(dmahand);
+                        svcCloseHandle(dmahand);
+                        dmahand = 0;
+                    }
                 }
                 else //use APT fuckery, auto-assume application as all retail applets use VRAM framebuffers
                 {
@@ -473,14 +585,18 @@ void netfunc(void* __dummy_arg__)
                     PatApply();
                     
                     u64 progid = -1ULL;
-                    bool loaded = false;
+                    bool loaded = false; // misnomer; actually "isRegistered"
+                    u8 mediatype = 0;
                     
                     while(1)
                     {
                         loaded = false;
                         while(1)
                         {
-                            if(APT_GetAppletInfo((NS_APPID)0x300, &progid, nullptr, &loaded, nullptr, nullptr) < 0) break;
+                            NS_APPID appid;
+                            if(APT_GetAppletManInfo(APTPOS_NONE, nullptr, nullptr, nullptr, &appid) < 0) break;
+                            appid = (NS_APPID)(appid & 0xFFFF);
+                            if(APT_GetAppletInfo(appid, &progid, &mediatype, &loaded, nullptr, nullptr) < 0) break;
                             if(loaded) break;
                             
                             svcSleepThread(15e6);
@@ -488,26 +604,38 @@ void netfunc(void* __dummy_arg__)
                         
                         if(!loaded) break;
                         
+                        if(mediatype == 2) progid = 0; // Game Card
+
                         if(NS_LaunchTitle(progid, 0, &procid) >= 0) break;
                     }
                     
                     if(loaded);// svcOpenProcess(&prochand, procid);
-                    else format[0] = 0xF00FCACE; //invalidate
+                    else format[0] = 0xFFFFFFFF; //invalidate
                 }
                 
                 PatStay(0xFF00);
             }
             
-            int loopcnt = 2;
-            
-            while(--loopcnt)
+            do
             {
-                if(format[scr] == 0xF00FCACE)
+                if(cfgblk[0] == 0) break;
+
+                if(format[scr] == 0xFFFFFFFF)
                 {
-                    scr = !scr;
-                    continue;
+                    soc->errformat("Screen %i FOOFCACE",scr);
+                    printf("Screen #%i is F00FCACE\n",scr);
+                    break;
                 }
                 
+                siz = (capin.screencapture[scr].framebuf_widthbytesize * stride[scr]);
+                bsiz = capin.screencapture[scr].framebuf_widthbytesize / 240;
+                scrw = capin.screencapture[scr].framebuf_widthbytesize / bsiz;
+
+                bits = 4 << (bsiz & 0xFF);
+                if((format[scr] & 7) == 2) bits = 17;
+                if((format[scr] & 7) == 4) bits = 18;
+
+                k->packetid = 0xFF;
                 k->size = 0;
                 
                 if(dmahand)
@@ -515,16 +643,18 @@ void netfunc(void* __dummy_arg__)
                     svcStopDma(dmahand);
                     svcCloseHandle(dmahand);
                     dmahand = 0;
-                    if(!isold) svcFlushProcessDataCache(0xFFFF8001, (u8*)screenbuf, capin.screencapture[scr].framebuf_widthbytesize * 400);
                 }
                 
+                if(!isold) svcFlushProcessDataCache(0xFFFF8001, (u8*)screenbuf, capin.screencapture[scr].framebuf_widthbytesize * stride[scr]);
+
                 int imgsize = 0;
                 
-                if((format[scr] & 7) >> 1 || !cfgblk[3])
+                if(cfgblk[3] == 0)
                 {
-                    init_tga_image(&img, (u8*)screenbuf, scrw, stride[scr], bits);
+                    init_tga_image(&img, (u8*)screenbuf, (uint16_t)scrw, (uint16_t)stride[scr], (u8)bits);
                     img.image_type = TGA_IMAGE_TYPE_BGR_RLE;
                     img.origin_y = (scr * 400) + (stride[scr] * offs[scr]);
+                    imgsize = bufsocsiz;
                     tga_write_to_FILE(k->data, &img, &imgsize);
                     
                     k->packetid = 3; //DATA (Targa)
@@ -532,11 +662,60 @@ void netfunc(void* __dummy_arg__)
                 }
                 else
                 {
+                    int r = 0;
                     *(u32*)&k->data[0] = (scr * 400) + (stride[scr] * offs[scr]);
                     u8* dstptr = &k->data[8];
-                    if(!tjCompress2(jencode, (u8*)screenbuf, scrw, bsiz * scrw, stride[scr], format[scr] ? TJPF_RGB : TJPF_RGBX, &dstptr, (u32*)&imgsize, TJSAMP_420, cfgblk[3], TJFLAG_NOREALLOC | TJFLAG_FASTDCT))
+                    if((format[scr] & 7) == 1) // RGB8 (24bpp)
+                    {
+                        r = tjCompress2(jencode, (u8*)screenbuf, scrw, bsiz * scrw, stride[scr], TJPF_RGB, &dstptr, (u32*)&imgsize, TJSAMP_420, cfgblk[3], TJFLAG_NOREALLOC | TJFLAG_FASTDCT);
+                    }
+                    else
+                    {
+                        /** v.2020 decomp todo
+                         *
+                         * ???????????
+                         * how old is that version of libjpeg-turbo?
+                         * because i don't think this will work,
+                         * not with the 2017-ish version i thought HzMod would be using.
+                         * (setting aside known issues with HzMod v.2020)
+                         */
+                        int unkVar;
+                        if((format[scr] & 7) == 2) // RGB565 (16bpp)
+                        {
+                            yuvConvertFromRGB565(screenbuf, 240, scrw-240, stride[scr]);
+                            unkVar = stride[0] << 1;
+                        }
+                        else // RGB5A1 (16bpp), RGBA4 (16bpp), RGBA8 (32bpp)
+                        {
+                            // TODO: Known bug with RGB5A1 and RGBA8. Behavior unchanged for posterity.
+                            yuvConvertFromRGBA4(screenbuf, 240, scrw-240, stride[scr]);
+                            unkVar = stride[0] << 2;
+                        }
+                        int yuvstrides[3];
+                        yuvstrides[0] = 120;
+                        yuvstrides[1] = 120;
+                        yuvstrides[2] = 240;
+
+                        u8* yuvplanes[3];
+                        yuvplanes[0] = (u8*)(scrw * 1 + screenbuf);
+                        yuvplanes[1] = (u8*)(yuvplanes[0] + stride[0] * 30);
+                        yuvplanes[2] = (u8*)screenbuf;
+
+                        // I assume it's supposed to be the former, but the decomp says it's 3 not 2.
+                        TJSAMP subsamp = TJSAMP_420;
+                        //TJSAMP subsamp = TJSAMP_GRAY;
+
+                        *(u32*)&k->data[0] = stride[0] * offs[0];
+                        u8* dstptr = &k->data[8];
+                        r = tjCompressFromYUVPlanes(jencode, yuvplanes, 240, yuvstrides, stride[scr], subsamp, &dstptr, (u32*)&imgsize, cfgblk[3], TJFLAG_NOREALLOC | TJFLAG_FASTDCT);
+
+                    }
+
+                    if(r == 0)
+                    {
                         k->size = imgsize + 8;
-                    k->packetid = 4; //DATA (JPEG)
+                        k->packetid = 4; //DATA (JPEG)
+                    }
                 }
                 //k->size += 4;
                 
@@ -546,34 +725,37 @@ void netfunc(void* __dummy_arg__)
                 //screenDMA(&dmahand, screenbuf, 0x600000 + fboffs, siz, dmaconf);
                 //screenDMA(&dmahand, screenbuf, dbgo, siz, dmaconf);
                 
-                if(++offs[scr] == limit[scr]) offs[scr] = 0;
-                
-                scr = !scr;
-                
-                siz = (capin.screencapture[scr].framebuf_widthbytesize * stride[scr]);
-                
-                bsiz = capin.screencapture[scr].framebuf_widthbytesize / 240;
-                scrw = capin.screencapture[scr].framebuf_widthbytesize / bsiz;
-                bits = 4 << bsiz;
-                
-                if((format[scr] & 7) == 2) bits = 17;
-                if((format[scr] & 7) == 4) bits = 18;
+                if(++offs[scr] == limit[scr])
+                {
+                    offs[scr] = 0;
+                    //scr = !scr;
+                    if(isold) svcSleepThread(1000000);
+                }
                 
                 Handle prochand = 0;
-                if(procid) if(svcOpenProcess(&prochand, procid) < 0) procid = 0;
-                
-                if\
-                (\
-                    svcStartInterProcessDma\
-                    (\
-                        &dmahand, 0xFFFF8001, screenbuf, prochand ? prochand : 0xFFFF8001,\
-                        (u8*)capin.screencapture[scr].framebuf0_vaddr + (siz * offs[scr]), siz, dmaconf\
-                    )\
-                    < 0 \
-                )
+                if((procid) && (svcOpenProcess(&prochand, procid) < 0))
                 {
+                    printf("Failed to open process %i\n",procid);
                     procid = 0;
-                    format[scr] = 0xF00FCACE; //invalidate
+                }
+                
+                if(capin.screencapture[0].framebuf0_vaddr != 0)
+                {
+                    int r = 0;
+                    do
+                    {
+                        r = svcStartInterProcessDma\
+                            (\
+                                &dmahand, 0xFFFF8001, screenbuf, prochand ? prochand : 0xFFFF8001,\
+                                (u8*)capin.screencapture[scr].framebuf0_vaddr + (siz * offs[scr]), siz, dmaconf\
+                            );
+                        if(r > -1)
+                            break;
+
+                        printf("DMA fail %08X w/ handle %08X, screen #%i\n",r,prochand,scr);
+                        procid = 0;
+                        format[scr] = 0xFFFFFFFF; //invalidate
+                    } while(true); // is this right? and does this actually work?
                 }
                 
                 if(prochand)
@@ -593,12 +775,40 @@ void netfunc(void* __dummy_arg__)
                 if(dbgo >= 0x600000) dbgo = 0;
                 */
                 
-                if(isold) svcSleepThread(5e6);
+                //if(isold) svcSleepThread(5e6);
+            } while(offs[scr] != 0);
+        }
+        if(cfgblk[255] != 0)
+        {
+            k->packetid = 0xFF;
+            k->size = 0;
+            soc->wribuf();
+            if(cfgblk[255] == 0xFF)
+            {
+                /**
+                 * v.2020 decomp todo: not (yet?) implemented
+                 * this seems to be a libctru function,
+                 * and probably something gsp and/or GPU
+                 * (so, something GPU-related).
+                 */
+                //FUN_00123ff0(2,1);
+            }
+            else
+            {
+                /**
+                 * v.2020 decomp todo: not (yet?) implemented
+                 * unsure what any of this is.
+                 */
+                //u32 uVar9 = VectorSignedToFloat((uint)cfgblk[255],(byte)(in_fpscr >> 0x15) & 3);
+                //coprocessor_function(0xb,2,0,in_cr7,in_cr7,in_cr8);
+                //u32 slp = FUN_00103a50((int)uVar9,(int)((ulonglong)uVar9 >> 0x20));
+                //svcSleepThread(slp);
             }
         }
-        else yield();
     }
     
+    threadkill:
+
     memset(&pat.r[0], 0xFF, 16);
     memset(&pat.g[0], 0xFF, 16);
     memset(&pat.b[0], 0x00, 16);
@@ -610,12 +820,12 @@ void netfunc(void* __dummy_arg__)
     
     if(soc)
     {
-        delete soc;
-        soc = nullptr;
+        soc->errformat("Thread killed");
     }
     
     if(dmahand)
     {
+        puts("Stopping DMA");
         svcStopDma(dmahand);
         svcCloseHandle(dmahand);
     }
@@ -623,6 +833,7 @@ void netfunc(void* __dummy_arg__)
     //if(prochand) svcCloseHandle(prochand);
     //screenExit();
     
+    puts("Thread stopping...");
     threadrunning = 0;
 }
 
@@ -669,13 +880,19 @@ int main()
     
     isold = APPMEMTYPE <= 5;
     
+    const char* str3ds;
+    if(isold)
+        str3ds = "an old3DS";
+    else
+        str3ds = "a new3DS";
+    printf("APPMEMTYPE is %i, so we must be on %s\n",str3ds);
     
     if(isold)
     {
-        limit[0] = 8;
-        limit[1] = 8;
-        stride[0] = 50;
-        stride[1] = 40;
+        limit[0] = 25;
+        limit[1] = 20;
+        stride[0] = 16;
+        stride[1] = 16;
     }
     else
     {
@@ -692,7 +909,7 @@ int main()
     
     do
     {
-        u32 siz = isold ? 0x10000 : 0x200000;
+        u32 siz = 0x10000;
         ret = socInit((u32*)memalign(0x1000, siz), siz);
     }
     while(0);
@@ -714,6 +931,7 @@ int main()
     {
         makerave();
         svcSleepThread(2e9);
+        if(f) fflush(f);
         hangmacro();
     }
     
@@ -735,6 +953,7 @@ int main()
     
     if(haznet && errno == EINVAL)
     {
+        puts("Waiting for wifi to die");
         errno = 0;
         PatStay(0xFFFF);
         while(checkwifi()) yield();
@@ -782,83 +1001,122 @@ int main()
     
     while(1)
     {
-        hidScanInput();
-        kDown = hidKeysDown();
-        kHeld = hidKeysHeld();
-        kUp = hidKeysUp();
+        hidScanInputDirectIO();
+        kDown = getkDown();
+        kHeld = getkHeld();
         
         //printf("svcGetSystemTick: %016llX\n", svcGetSystemTick());
         
         if(kDown) PatPulse(0xFF);
-        if(kHeld == (KEY_SELECT | KEY_START)) break;
+        if((kHeld & (KEY_SELECT|KEY_START)) == (KEY_SELECT | KEY_START)) hangmacro();
         
+        /**
+         * ?
+         * see: https://www.3dbrew.org/wiki/NSS:TerminateTitle
+         * u64 programId = 0x2A02; // (?)
+         * u64 timeout = 0x40130; // (?)
+         * NS_TerminateProcessTID(0x2A02, 0x40130);
+         */
+        NS_TerminateProcessTID(0x2A02); // close enough?
+
         if(!soc)
         {
             if(!haznet)
             {
                 if(checkwifi()) goto netreset;
             }
-            else if(pollsock(sock, POLLIN) == POLLIN)
+            else
             {
-                int cli = accept(sock, (struct sockaddr*)&sai, &sizeof_sai);
-                if(cli < 0)
+                if(netthread)
                 {
-                    printf("Failed to accept client: (%i) %s\n", errno, strerror(errno));
-                    if(errno == EINVAL) goto netreset;
-                    PatPulse(0xFF);
-                }
-                else
-                {
-                    PatPulse(0xFF00);
-                    soc = new bufsoc(cli, isold ? 0xC000 : 0x70000);
-                    k = soc->pack();
-                    
-                    if(isold)
+                    if(threadrunning == 0)
                     {
-                        netthread = threadCreate(netfunc, nullptr, 0x2000, 0x21, 1, true);
+                        puts("Clearning up remnants");
                     }
                     else
                     {
-                        netthread = threadCreate(netfunc, nullptr, 0x4000, 8, 3, true);
+                        puts("Waiting for network thread to die");
+                        printf("ThreadJoin %08X\n", ThreadJoin(netthread));
                     }
-                    
-                    if(!netthread)
+                    threadrunning = 0;
+                    netthread = nullptr;
+                    if(errno)
                     {
-                        memset(&pat, 0, sizeof(pat));
-                        memset(&pat.r[0], 0xFF, 16);
-                        pat.ani = 0x102;
-                        PatApply();
+                        printf("Netreset (%i): %s\n",errno,strerror(errno));
+                        puts("Relooping netreset");
+                        goto netreset;
+                    }
+                    else
+                    {
+                        puts("Relooping");
+                        goto reloop;
+                    }
+                }
+                if(pollsock(sock, POLLIN) == POLLIN)
+                {
+                    int cli = accept(sock, (struct sockaddr*)&sai, &sizeof_sai);
+                    if(cli < 0)
+                    {
+                        PatPulse(0xFF);
+                        printf("Failed to accept client: (%i) %s\n", errno, strerror(errno));
+                        if(errno == EINVAL) goto netreset;
+                    }
+                    else
+                    {
+                        PatPulse(0xFF00);
+                        soc = new bufsoc(cli, isold ? 0xC000 : 0x70000);
+                        k = soc->pack();
+                        bufsocsiz = isold ? (0xC000 - 4) : (0x70000 - 4);
+
+                        if(isold)
+                        {
+                            netthread = threadCreate(netfunc, nullptr, 0x2000, 0x14, 1, true);
+                        }
+                        else
+                        {
+                            netthread = threadCreate(netfunc, nullptr, 0x4000, 0x10, 3, true);
+                        }
+
+                        if(!netthread)
+                        {
+                            memset(&pat, 0, sizeof(pat));
+                            memset(&pat.r[0], 0xFF, 16);
+                            pat.ani = 0x102;
+                            PatApply();
+
+                            svcSleepThread(2e9);
+                        }
+
                         
-                        svcSleepThread(2e9);
-                    }
-                    
-                    
-                    if(netthread)
-                    {
-                        while(!threadrunning) yield();
-                    }
-                    else
-                    {
-                        delete soc;
-                        soc = nullptr;
-                        hangmacro();
+                        if(netthread)
+                        {
+                            puts("Waiting for netthread to start");
+                            while(!threadrunning) yield();
+                            puts("Netthread started"); //puts("Netthread tarted");
+                        }
+                        else
+                        {
+                            FUN_00104d5c();
+                            hangmacro();
+                        }
                     }
                 }
-            }
-            else if(pollsock(sock, POLLERR) == POLLERR)
-            {
-                printf("POLLERR (%i) %s", errno, strerror(errno));
-                goto netreset;
             }
         }
         
         if(netthread && !threadrunning)
         {
-            //TODO todo?
+            puts("Fixing up after thread death");
+            if(soc)
+            {
+                puts("Killing orphaned socket connection");
+                FUN_00104d5c();
+            }
             netthread = nullptr;
-            goto reloop;
+            goto netreset;
         }
         
+        // non-functional; we don't interface with ir in v.2020
         if((kHeld & (KEY_ZL | KEY_ZR)) == (KEY_ZL | KEY_ZR))
         {
             u32* ptr = (u32*)0x1F000000;
@@ -873,20 +1131,36 @@ int main()
     
     PatStay(0xFF0000);
     
+    if(f) fflush(f);
+
     if(netthread)
     {
         threadrunning = 0;
         
-        volatile bufsoc** vsoc = (volatile bufsoc**)&soc;
-        while(*vsoc) yield(); //pls don't optimize kthx
+        puts("Waiting for thread kill");
+        int r = ThreadJoin(netthread);
+        printf("ThreadJoin %08X\n", r);
+        puts("assuming thread-kill");
     }
     
-    if(soc) delete soc;
-    else close(sock);
+    if(soc)
+    {
+        if(soc->sock != sock) // ?
+            close(sock);
+        FUN_00104d5c();
+        //delete soc;
+    }
+    else
+    {
+        close(sock);
+    }
     
+    puts("Closing leftover sockets...");
+    SOCU_CloseSockets();
     puts("Shutting down sockets...");
     SOCU_ShutdownSockets();
     
+    puts("socExit");
     socExit();
     
     //gxExit();
@@ -899,6 +1173,7 @@ int main()
     {
         fflush(f);
         fclose(f);
+        f = nullptr;
     }
     
     PatStay(0);

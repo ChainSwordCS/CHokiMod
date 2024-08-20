@@ -72,8 +72,8 @@ AccessControlInfo:
   MemoryType                    : Base # Application/System/Base
   SystemMode                    : 64MB # 64MB(Default)/96MB/80MB/72MB/32MB
   IdealProcessor                : 1
-  AffinityMask                  : 15
-  Priority                      : 20
+  AffinityMask                  : 3
+  Priority                      : 48
   MaxCpu                        : 0x9E # Default
   HandleTableSize               : 0x200
   DisableDebug                  : false
@@ -85,7 +85,7 @@ AccessControlInfo:
   CanShareDeviceMemory          : true
   RunnableOnSleep               : true
   SpecialMemoryArrange          : false
-  ResourceLimitCategory         : Other
+  ResourceLimitCategory         : Other # 3
 
   # New3DS Exclusive Process Settings
   SystemModeExt                 : 124MB # Legacy(Default)/124MB/178MB  Legacy:Use Old3DS SystemMode
@@ -96,6 +96,8 @@ AccessControlInfo:
   # Virtual Address Mappings
   IORegisterMapping:
    - 1ff00000-1ff7ffff    # DSP memory
+   - 1ef00000-1ef00fff    # GPU IO Registers
+   - 1ec46000-1ec46fff    # HID IO Registers
   MemoryMapping: 
    - 1f000000-1f5fffff:rw # VRAM
 
@@ -220,7 +222,6 @@ AccessControlInfo:
    - fs:USER
    - gsp::Gpu
    - hid:USER
-   - http:C
    - ir:rst
    - mcu::HWC
    - ns:s
