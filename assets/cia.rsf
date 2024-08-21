@@ -72,8 +72,8 @@ AccessControlInfo:
   MemoryType                    : Base # Application/System/Base
   SystemMode                    : 64MB # 64MB(Default)/96MB/80MB/72MB/32MB
   IdealProcessor                : 1
-  AffinityMask                  : 3
-  Priority                      : 48
+  AffinityMask                  : 15
+  Priority                      : 20 # hex? todo: change from 52 to 48 ?
   MaxCpu                        : 0x9E # Default
   HandleTableSize               : 0x200
   DisableDebug                  : false

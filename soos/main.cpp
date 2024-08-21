@@ -885,7 +885,7 @@ int main()
         str3ds = "an old3DS";
     else
         str3ds = "a new3DS";
-    printf("APPMEMTYPE is %i, so we must be on %s\n",str3ds);
+    printf("APPMEMTYPE is %i, so we must be on %s\n",APPMEMTYPE,str3ds);
     
     if(isold)
     {
