@@ -1,4 +1,3 @@
-#pragma once
 #include <3ds.h>
 #include <3ds/gpu/gx.h>
 
@@ -54,7 +53,6 @@ extern "C"
 //#include "service/screen.h"
 #include "service/mcu.h"
 #include "service/gx.h"
-#include "service/hid.h"
 #include "misc/pattern.h"
 #include "misc/setdmacfg.h"
 #include "imanip/imanip.h"
@@ -84,7 +82,8 @@ extern "C"
     PatApply();\
     while(1)\
     {\
-        if((getHidPadState() & (KEY_SELECT|KEY_START)) == (KEY_SELECT|KEY_START))\
+        hidScanInput();\
+        if(hidKeysHeld() == (KEY_SELECT | KEY_START))\
         {\
             goto killswitch;\
         }\
@@ -121,7 +120,8 @@ int checkwifi()
 {
     haznet = 0;
     u32 wifi = 0;
-    if((getHidPadState() & (KEY_SELECT|KEY_START)) == (KEY_SELECT|KEY_START)) return 0;
+    hidScanInput();
+    if(hidKeysHeld() == (KEY_SELECT | KEY_START)) return 0;
     if(ACU_GetWifiStatus(&wifi) >= 0 && wifi) haznet = 1;
     return haznet;
 }
@@ -384,7 +384,9 @@ extern "C" u32 __get_bytes_per_pixel(GSPGPU_FramebufferFormats format);
 
 const int port = 6464;
 
+static u32 kDown = 0;
 static u32 kHeld = 0;
+static u32 kUp = 0;
 
 // GPU 'Capture Info' object.
 // Data about framebuffers from the GSP.
@@ -571,7 +573,7 @@ int netfuncWaitForSettings()
 {
     while(1)
     {
-        if((getHidPadState() & (KEY_SELECT|KEY_START)) == (KEY_SELECT|KEY_START))
+        if((kHeld & (KEY_SELECT | KEY_START)) == (KEY_SELECT | KEY_START))
             return -1;
 
         debugPrint(1, "Reading incoming packet...");
@@ -1146,7 +1148,6 @@ void newThreadMainFunction(void* __dummy_arg__)
             for(int i = 0; i < 60; i++) // Should cover all cases.
             {
                 svcGetDmaState(&dmaState, dmahand);
-                dmaState = dmaState & 0xFF; // nintendo code moment
                 if(dmaState == 4 || dmaState == 0) // 4 = DMASTATE_DONE; 0 = why dude
                     break;
                 svcSleepThread(5e4); // Going higher (5e6, for example) may result in crashes.
@@ -1214,11 +1215,7 @@ void newThreadMainFunction(void* __dummy_arg__)
 
 
             Handle prochand = 0;
-            if(procid != 0)
-            {
-                if(svcOpenProcess(&prochand, procid) < 0)
-                    procid = 0;
-            }
+            if(procid) if(svcOpenProcess(&prochand, procid) < 0) procid = 0;
 
             u32 srcprochand = prochand ? prochand : 0xFFFF8001;
             u8* srcaddr = (u8*)capin.screencapture[scr].framebuf0_vaddr + (siz * offs[scr]);
@@ -1321,12 +1318,12 @@ void newThreadMainFunction(void* __dummy_arg__)
 }
 
 
-FILE* f = nullptr;
+static FILE* f = nullptr;
 
 ssize_t stdout_write(struct _reent* r, void* fd, const char* ptr, size_t len)
 {
     if(!f) return 0;
-    //fputs("[STDOUT] ", f);
+    fputs("[STDOUT] ", f);
     return fwrite(ptr, 1, len, f);
 }
 
@@ -1473,8 +1470,6 @@ int main()
         hangmacro();
     }
 
-    threadCreate(hidThread, nullptr, 0x800, 0x18, 3, true);
-
     netreset:
 
     if(sock)
@@ -1560,17 +1555,16 @@ int main()
 
     while(1)
     {
-        /*
-        if(getHidTimeLastUpdated() != hidTimeLastSynced)
-        {
-            hidTimeLastSynced = getHidTimeLastUpdated();
-            if(kHeld != getHidPadState())
-                PatPulse(0x0000FF);
-            kHeld = getHidPadState();
-        }
-        */
+        hidScanInput();
+        kDown = hidKeysDown();
+        kHeld = hidKeysHeld();
+        kUp = hidKeysUp();
 
-        if((getHidPadState() & (KEY_SELECT|KEY_START)) == (KEY_SELECT|KEY_START)) break;
+        // If any buttons are pressed, make the Notif LED pulse red
+        // (Annoying and waste of CPU time. -C)
+        if(kDown) PatPulse(0x0000FF);
+
+        if(kHeld == (KEY_SELECT | KEY_START)) break;
 
 
         if(!soc)
