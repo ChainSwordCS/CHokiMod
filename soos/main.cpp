@@ -1010,14 +1010,9 @@ int main()
         if(kDown) PatPulse(0xFF);
         if((kHeld & (KEY_SELECT|KEY_START)) == (KEY_SELECT | KEY_START)) hangmacro();
         
-        /**
-         * ?
-         * see: https://www.3dbrew.org/wiki/NSS:TerminateTitle
-         * u64 programId = 0x2A02; // (?)
-         * u64 timeout = 0x40130; // (?)
-         * NS_TerminateProcessTID(0x2A02, 0x40130);
-         */
-        NS_TerminateProcessTID(0x2A02); // close enough?
+		// see: https://www.3dbrew.org/wiki/NSS:TerminateTitle
+		// 00040130-00002A02 is NP Services (mp:u)
+        NS_TerminateProcessTID(0x0004013000002A02);
 
         if(!soc)
         {
