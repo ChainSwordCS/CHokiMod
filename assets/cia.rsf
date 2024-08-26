@@ -222,6 +222,7 @@ AccessControlInfo:
    - fs:USER
    - gsp::Gpu
    - hid:USER
+   - http:C # seems to be required for the way we use ACU_GetWifiStatus if compiled with libctru 1.2.1 (?)
    - ir:rst
    - mcu::HWC
    - ns:s

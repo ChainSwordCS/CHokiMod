@@ -840,14 +840,14 @@ void netfunc(void* __dummy_arg__)
 
 static FILE* f = nullptr;
 
-ssize_t stdout_write(struct _reent* r, int fd, const char* ptr, size_t len)
+ssize_t stdout_write(struct _reent* r, void* fd, const char* ptr, size_t len)
 {
     if(!f) return 0;
     fputs("[STDOUT] ", f);
     return fwrite(ptr, 1, len, f);
 }
 
-ssize_t stderr_write(struct _reent* r, int fd, const char* ptr, size_t len)
+ssize_t stderr_write(struct _reent* r, void* fd, const char* ptr, size_t len)
 {
     if(!f) return 0;
     fputs("[STDERR] ", f);
@@ -865,7 +865,7 @@ int main()
     soc = nullptr;
     
     f = fopen("/HzLog.log", "w");
-    if(f <= 0) f = nullptr;
+    if((int)f <= 0) f = nullptr;
     else
     {
         devoptab_list[STD_OUT] = &devop_stdout;
