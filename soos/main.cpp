@@ -71,6 +71,7 @@ extern "C"
         hidScanInputDirectIO();\
         if(getkHeld() == (KEY_SELECT | KEY_START))\
         {\
+        	fprintf(stderr, "[dbg] STARTSELECT signaled, exiting hangmacro()\n");\
             goto killswitch;\
         }\
         yield();\
@@ -964,7 +965,7 @@ int main()
         cy = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
         if(cy <= 0)
         {
-            printf("socket error: (%i) %s\n", errno, strerror(errno));
+            fprintf(stderr, "socket error: (%i) %s\n", errno, strerror(errno));
             hangmacro();
         }
         
@@ -977,7 +978,7 @@ int main()
         
         if(bind(sock, (struct sockaddr*)&sao, sizeof(sao)) < 0)
         {
-            printf("bind error: (%i) %s\n", errno, strerror(errno));
+            fprintf(stderr, "bind error: (%i) %s\n", errno, strerror(errno));
             hangmacro();
         }
         
@@ -985,7 +986,7 @@ int main()
         
         if(listen(sock, 1) < 0)
         {
-            printf("listen error: (%i) %s\n", errno, strerror(errno));
+            fprintf(stderr, "listen error: (%i) %s\n", errno, strerror(errno));
             hangmacro();
         }
     }
@@ -1008,7 +1009,11 @@ int main()
         //printf("svcGetSystemTick: %016llX\n", svcGetSystemTick());
         
         if(kDown) PatPulse(0xFF);
-        if((kHeld & (KEY_SELECT|KEY_START)) == (KEY_SELECT | KEY_START)) hangmacro();
+        if((kHeld & (KEY_SELECT|KEY_START)) == (KEY_SELECT | KEY_START))
+        {
+            fprintf(stderr, "STARTSELECT signaled, exiting main()\n");
+            break; //hangmacro();
+        }
         
 		// see: https://www.3dbrew.org/wiki/NSS:TerminateTitle
 		// 00040130-00002A02 is NP Services (mp:u)
