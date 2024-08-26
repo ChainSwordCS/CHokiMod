@@ -702,13 +702,9 @@ void netfunc(void* __dummy_arg__)
                         yuvplanes[1] = (u8*)(yuvplanes[0] + stride[0] * 30);
                         yuvplanes[2] = (u8*)screenbuf;
 
-                        // I assume it's supposed to be the former, but the decomp says it's 3 not 2.
-                        TJSAMP subsamp = TJSAMP_420;
-                        //TJSAMP subsamp = TJSAMP_GRAY;
-
                         *(u32*)&k->data[0] = stride[0] * offs[0];
                         u8* dstptr = &k->data[8];
-                        r = tjCompressFromYUVPlanes(jencode, yuvplanes, 240, yuvstrides, stride[scr], subsamp, &dstptr, (u32*)&imgsize, cfgblk[3], TJFLAG_NOREALLOC | TJFLAG_FASTDCT);
+                        r = tjCompressFromYUVPlanes(jencode, yuvplanes, 240, yuvstrides, stride[scr], TJSAMP_422, &dstptr, (u32*)&imgsize, cfgblk[3], TJFLAG_NOREALLOC | TJFLAG_FASTDCT);
 
                     }
 
