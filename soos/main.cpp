@@ -101,6 +101,16 @@ int pollsock(int sock, int wat, int timeout = 0)
     return 0;
 }
 
+static int netfunc_sock;
+
+typedef struct
+{
+    u32 packetid : 8;
+    u32 size : 24;
+    u8 data[0];
+} packet;
+
+// Deprecated. Should be ready to remove.
 class bufsoc
 {
 public:
@@ -307,11 +317,11 @@ static int sock = 0;
 static struct sockaddr_in sai;
 static socklen_t sizeof_sai = sizeof(sai);
 
-static bufsoc* soc = nullptr;
+//static bufsoc* soc = nullptr;
 
-static bufsoc::packet* k = nullptr;
+static packet* k = nullptr;
 
-static u32 bufsocsiz = 0;
+static u32 packet_max_siz = 0;
 
 static Thread netthread = 0;
 static vu32 threadrunning = 0;
@@ -323,17 +333,91 @@ static tga_image img;
 static tjhandle jencode = nullptr;
 
 /**
+ * Basically copied from bufsoc::readbuf()
+ *
+ * v.2020 decomp todo: cleanup
+ */
+int readbuf(int flags = 0)
+{
+    u32 hdr = 0;
+    int ret = recv(netfunc_sock, &hdr, 4, flags);
+    if(ret < 0) return -errno;
+    if(ret < 4) return -1;
+
+    printf("readbuf hdr %08X\n", hdr);
+    *(u32*)k = hdr;
+
+    int mustwri = k->size;
+    int offs = 0;
+    while(mustwri)
+    {
+        ret = recv(netfunc_sock, k->data + offs, mustwri, flags);
+        if(ret <= 0) return -errno;
+        mustwri -= ret;
+        offs += ret;
+    }
+    //recvsize = offs;
+    return offs;
+}
+
+int wribuf(int flags = 0)
+{
+    int ret = send(netfunc_sock, (u8*)k, 4, flags);
+    if(ret < 0) return -errno;
+
+    int mustwri = k->size;
+    int offs = 0;
+
+    while(mustwri)
+    {
+        if(mustwri >> 12)
+            ret = send(netfunc_sock, k->data + offs, 0x1000, flags);
+        else
+            ret = send(netfunc_sock, k->data + offs, mustwri, flags);
+        if(ret < 0) return -errno;
+        mustwri -= ret;
+        offs += ret;
+    }
+
+    return offs + 4;
+}
+
+/**
+ * Basically copied from bufsoc::errformat()
+ *
+ * v.2020 decomp todo: cleanup
+ */
+int errformat(char* c, ...)
+{
+    va_list args;
+    va_start(args, c);
+    int len = vsprintf((char*)k->data + 4, c, args);
+    va_end(args);
+
+    if(len < 0)
+    {
+        puts("errformat: out of memory");
+        return -1;
+    }
+
+    printf("Packet error 0x%08X: %s\n", *(u32*)k, k->data + 4);
+
+    *(u32*)k->data = *(u32*)k;
+    k->packetid = 1;
+    k->size = len + 6;
+
+    return wribuf();
+}
+
+/**
  * v.2020 decomp todo
  */
 void FUN_00104d5c()
 {
-    // v.2020 decomp todo: is this correct?
-    delete k; //FUN_00127f0c(k);
+    free(k);
     k = nullptr;
-    //close(sock); // speculation
-    //close(soc->sock); // implied by "delete soc;"
-    delete soc;
-    soc = nullptr;
+    close(netfunc_sock);
+    netfunc_sock = 0;
 }
 
 int ThreadJoin(Thread threadhandle)
@@ -430,10 +514,10 @@ void netfunc(void* __dummy_arg__)
             break; // equivalent to "goto threadkill;"
         }
 
-        if(soc->avail())
+        if((pollsock(netfunc_sock, POLLIN) & POLLIN) == POLLIN)
         while(1)
         {
-            cy = soc->readbuf();
+            cy = readbuf();
             if(cy <= 0)
             {
                 printf("Failed to recvbuf: (%i) %s\n", errno, strerror(errno));
@@ -455,13 +539,13 @@ void netfunc(void* __dummy_arg__)
                         break;
                         
                     case 0x80: //NYI (Not Yet Implemented) (from v.2020 decomp)
-                        soc->errformat("NYI");
+                        errformat("NYI");
                         break;
 
                     case 0x81: //DMA_IN (from v.2020 decomp)
                         // v.2020 decomp todo: does this work?
                         if(k->size < 9)
-                            soc->errformat("Invalid packet size 0x%X for DMA_IN", k->size);
+                            errformat("Invalid packet size 0x%X for DMA_IN", k->size);
                         else
                         {
                             // v.2020 decomp todo: cleanup
@@ -475,7 +559,7 @@ void netfunc(void* __dummy_arg__)
                             else
                               r = svcOpenProcess(&dmainhandle, processid);
                             if (r < 0) {
-                              soc->errformat("Failed to open process 0x%X: %08X", processid, r);
+                              errformat("Failed to open process 0x%X: %08X", processid, r);
                               dmainhandle = 0;
                             }
                             else {
@@ -483,22 +567,22 @@ void netfunc(void* __dummy_arg__)
                                 if (r < 0) {
                                     svcCloseHandle(dmainhandle);
                                     dmainhandle = 0;
-                                    soc->errformat("Failed to change memory perms for address 0x%08X: %08X", addr, r);
+                                    errformat("Failed to change memory perms for address 0x%08X: %08X", addr, r);
                                 }
                                 else {
                                     r = dmaRemoteWrite(dmainhandle, addr, 0xffff8001, (u32)k->data+8, k->size-8);
                                     svcCloseHandle(dmainhandle);
                                     dmainhandle = 0;
                                     if(r < 0)
-                                        soc->errformat("Failed to DMA to address 0x%08X: %08X",addr,r);
+                                        errformat("Failed to DMA to address 0x%08X: %08X",addr,r);
                                 }
                             }
                         }
                         break;
 
                     default:
-                        u32 hdr = k->packetid | (k->size << 8);
-                        soc->errformat("Invalid header: %08X\n", hdr);
+                        u32 hdr = *(u32*)k;
+                        errformat("Invalid header: %08X\n", hdr);
                         goto threadkill;
                         //break; // implied
                 }
@@ -507,7 +591,7 @@ void netfunc(void* __dummy_arg__)
             }
         }
         
-        if(!soc)
+        if(!netfunc_sock)
         {
             puts("Break thread due to lack of soc");
             //equivalent to "goto threadkill;"
@@ -551,12 +635,12 @@ void netfunc(void* __dummy_arg__)
                     kdata[2] = format[1] & 0xFFFFFFF8;
                     kdata[3] = 960;
                 }
-                soc->wribuf();
+                wribuf();
                 
                 k->packetid = 0xFF;
                 k->size = sizeof(capin);
                 *(GSPGPU_CaptureInfo*)k->data = capin;
-                soc->wribuf();
+                wribuf();
                 
                 procid = 0;
                 
@@ -623,7 +707,7 @@ void netfunc(void* __dummy_arg__)
 
                 if(format[scr] == 0xFFFFFFFF)
                 {
-                    soc->errformat("Screen %i FOOFCACE",scr);
+                    errformat("Screen %i FOOFCACE",scr);
                     printf("Screen #%i is F00FCACE\n",scr);
                     break;
                 }
@@ -655,7 +739,7 @@ void netfunc(void* __dummy_arg__)
                     init_tga_image(&img, (u8*)screenbuf, (uint16_t)scrw, (uint16_t)stride[scr], (u8)bits);
                     img.image_type = TGA_IMAGE_TYPE_BGR_RLE;
                     img.origin_y = (scr * 400) + (stride[scr] * offs[scr]);
-                    imgsize = bufsocsiz;
+                    imgsize = packet_max_siz;
                     tga_write_to_FILE(k->data, &img, &imgsize);
                     
                     k->packetid = 3; //DATA (Targa)
@@ -761,7 +845,7 @@ void netfunc(void* __dummy_arg__)
                     prochand = 0;
                 }
                 
-                if(k->size) soc->wribuf();
+                if(k->size) wribuf();
                 /*
                 k->packetid = 0xFF;
                 k->size = 4;
@@ -779,7 +863,7 @@ void netfunc(void* __dummy_arg__)
         {
             k->packetid = 0xFF;
             k->size = 0;
-            soc->wribuf();
+            wribuf();
             if(cfgblk[255] == 0xFF)
             {
                 /**
@@ -815,9 +899,9 @@ void netfunc(void* __dummy_arg__)
     pat.ani = 0x0406;
     PatApply();
     
-    if(soc)
+    if(netfunc_sock)
     {
-        soc->errformat("Thread killed");
+        errformat("Thread killed");
     }
     
     if(dmahand)
@@ -858,17 +942,17 @@ int main()
     mcuInit();
     nsInit();
     
-    soc = nullptr;
-    
+    netfunc_sock = 0;
+
     f = fopen("/HzLog.log", "w");
     if((int)f <= 0) f = nullptr;
     else
     {
         devoptab_list[STD_OUT] = &devop_stdout;
-		devoptab_list[STD_ERR] = &devop_stderr;
+        devoptab_list[STD_ERR] = &devop_stderr;
 
-		setvbuf(stdout, nullptr, _IONBF, 0);
-		setvbuf(stderr, nullptr, _IONBF, 0);
+        setvbuf(stdout, nullptr, _IONBF, 0);
+        setvbuf(stderr, nullptr, _IONBF, 0);
     }
     
     memset(&pat, 0, sizeof(pat));
@@ -1011,11 +1095,11 @@ int main()
             break; //hangmacro();
         }
         
-		// see: https://www.3dbrew.org/wiki/NSS:TerminateTitle
-		// 00040130-00002A02 is NP Services (mp:u)
+        // see: https://www.3dbrew.org/wiki/NSS:TerminateTitle
+        // 00040130-00002A02 is NP Services (mp:u)
         NS_TerminateProcessTID(0x0004013000002A02);
 
-        if(!soc)
+        if(!netfunc_sock)
         {
             if(!haznet)
             {
@@ -1051,7 +1135,7 @@ int main()
                 if(pollsock(sock, POLLIN) == POLLIN)
                 {
                     int cli = accept(sock, (struct sockaddr*)&sai, &sizeof_sai);
-                    if(cli < 0)
+                    if(cli <= 0)
                     {
                         PatPulse(0xFF);
                         printf("Failed to accept client: (%i) %s\n", errno, strerror(errno));
@@ -1060,9 +1144,11 @@ int main()
                     else
                     {
                         PatPulse(0xFF00);
-                        soc = new bufsoc(cli, isold ? 0xC000 : 0x70000);
-                        k = soc->pack();
-                        bufsocsiz = isold ? (0xC000 - 4) : (0x70000 - 4);
+
+                        netfunc_sock = cli;
+                        // todo: error-checking here. (not present in v.2020 code)
+                        k = (packet*)malloc(isold ? 0xC000 : 0x70000);
+                        packet_max_siz = isold ? (0xC000 - 4) : (0x70000 - 4);
 
                         if(isold)
                         {
@@ -1079,10 +1165,8 @@ int main()
                             memset(&pat.r[0], 0xFF, 16);
                             pat.ani = 0x102;
                             PatApply();
-
-                            svcSleepThread(2e9);
+                            yield();
                         }
-
                         
                         if(netthread)
                         {
@@ -1103,7 +1187,7 @@ int main()
         if(netthread && !threadrunning)
         {
             puts("Fixing up after thread death");
-            if(soc)
+            if(netfunc_sock)
             {
                 puts("Killing orphaned socket connection");
                 FUN_00104d5c();
@@ -1139,12 +1223,11 @@ int main()
         puts("assuming thread-kill");
     }
     
-    if(soc)
+    if(netfunc_sock)
     {
-        if(soc->sock != sock) // ?
+        if(netfunc_sock != sock)
             close(sock);
         FUN_00104d5c();
-        //delete soc;
     }
     else
     {
