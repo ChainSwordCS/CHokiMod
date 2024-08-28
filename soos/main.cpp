@@ -866,13 +866,7 @@ void netfunc(void* __dummy_arg__)
             wribuf();
             if(cfgblk[255] == 0xFF)
             {
-                /**
-                 * v.2020 decomp todo: not (yet?) implemented
-                 * this seems to be a libctru function,
-                 * and probably something gsp and/or GPU
-                 * (so, something GPU-related).
-                 */
-                //FUN_00123ff0(2,1);
+                gspWaitForEvent(GSPGPU_EVENT_VBlank0,true);
             }
             else
             {
