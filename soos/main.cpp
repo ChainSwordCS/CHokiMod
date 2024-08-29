@@ -933,6 +933,7 @@ static const devoptab_t devop_stderr = { "stderr", 0, nullptr, nullptr, stderr_w
 
 int main()
 {
+    hidExit(); // libctru moment
     mcuInit();
     nsInit();
     

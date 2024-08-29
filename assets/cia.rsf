@@ -73,7 +73,7 @@ AccessControlInfo:
   SystemMode                    : 64MB # 64MB(Default)/96MB/80MB/72MB/32MB
   IdealProcessor                : 1
   AffinityMask                  : 15
-  Priority                      : 20 # hex? todo: change from 52 to 48 ?
+  Priority                      : 16 # add 32 to get true Main Thread Priority
   MaxCpu                        : 0x9E # Default
   HandleTableSize               : 0x200
   DisableDebug                  : false
@@ -222,7 +222,6 @@ AccessControlInfo:
    - fs:USER
    - gsp::Gpu
    - hid:USER
-   - http:C # seems to be required for the way we use ACU_GetWifiStatus if compiled with libctru 1.2.1 (?)
    - ir:rst
    - mcu::HWC
    - ns:s
