@@ -73,7 +73,7 @@ AccessControlInfo:
   SystemMode                    : 64MB # 64MB(Default)/96MB/80MB/72MB/32MB
   IdealProcessor                : 1 # Probably don't change
   AffinityMask                  : 15 # (Don't change.) Shouldn't really be 15? 0 breaks, 1 breaks, 3 works...
-  Priority                      : 20 # (Don't change.) Was 20. Try 48 also. Default is 16
+  Priority                      : 16
   MaxCpu                        : 0x9E # (Don't change.) 0x9E is default. 0 = Let System Decide
   HandleTableSize               : 0x200 # Default
   DisableDebug                  : false
@@ -96,6 +96,8 @@ AccessControlInfo:
   # Virtual Address Mappings
   IORegisterMapping:
    - 1ff00000-1ff7ffff    # DSP memory
+   - 1ef00000-1ef00fff    # GPU IO Registers
+   - 1ec46000-1ec46fff    # HID IO Registers
   MemoryMapping: 
    - 1f000000-1f5fffff:rw # VRAM (Don't change probably)
 

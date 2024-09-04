@@ -53,6 +53,7 @@ extern "C"
 //#include "service/screen.h"
 #include "service/mcu.h"
 #include "service/gx.h"
+#include "service/hid.h"
 #include "misc/pattern.h"
 #include "misc/setdmacfg.h"
 #include "imanip/imanip.h"
@@ -66,7 +67,9 @@ extern "C"
 
 #include "utils.hpp"
 
-
+extern u32 kDown;
+extern u32 kHeld;
+//extern u32 kUp;
 
 #define yield() svcSleepThread(1e8)
 
@@ -82,8 +85,8 @@ extern "C"
     PatApply();\
     while(1)\
     {\
-        hidScanInput();\
-        if(hidKeysHeld() == (KEY_SELECT | KEY_START))\
+        hidScanInputDirectIO();\
+        if(kHeld == (KEY_SELECT | KEY_START))\
         {\
             goto killswitch;\
         }\
@@ -120,8 +123,8 @@ int checkwifi()
 {
     haznet = 0;
     u32 wifi = 0;
-    hidScanInput();
-    if(hidKeysHeld() == (KEY_SELECT | KEY_START)) return 0;
+    hidScanInputDirectIO();
+    if(kHeld == (KEY_SELECT | KEY_START)) return 0;
     if(ACU_GetWifiStatus(&wifi) >= 0 && wifi) haznet = 1;
     return haznet;
 }
@@ -383,10 +386,6 @@ void CPPCrashHandler()
 extern "C" u32 __get_bytes_per_pixel(GSPGPU_FramebufferFormats format);
 
 const int port = 6464;
-
-static u32 kDown = 0;
-static u32 kHeld = 0;
-static u32 kUp = 0;
 
 // GPU 'Capture Info' object.
 // Data about framebuffers from the GSP.
@@ -957,17 +956,15 @@ void netfuncTestFramebuffer(u32* procid, GSPGPU_CaptureInfo new_captureinfo, GSP
     {
         PatStay(0xFFFF00); // Notif LED = Teal
 
-        tryStopDma(&dmahand);
-
         *procid = 0;
 
         //test for VRAM
-        if( (u32)(new_captureinfo.screencapture[0].framebuf0_vaddr) >= 0x1F000000 && (u32)(new_captureinfo.screencapture[0].framebuf0_vaddr) < 0x1F600000 \
-                && (u32)(new_captureinfo.screencapture[1].framebuf0_vaddr) >= 0x1F000000 && (u32)(new_captureinfo.screencapture[1].framebuf0_vaddr) < 0x1F600000 )
+        if( (u32)(new_captureinfo.screencapture[0].framebuf0_vaddr) < 0x1F600000 )
         {
             // nothing to do?
             // If the framebuffer is in VRAM, we don't have to do anything special(...?)
             // (Such is the case for all retail applets, apparently.)
+            tryStopDma(&dmahand);
         }
         else //use APT fuckery, auto-assume this is an application
         {
@@ -982,6 +979,7 @@ void netfuncTestFramebuffer(u32* procid, GSPGPU_CaptureInfo new_captureinfo, GSP
 
             u64 progid = -1ULL;
             bool loaded = false;
+            u8 mediatype = 0;
 
             while(1)
             {
@@ -989,7 +987,11 @@ void netfuncTestFramebuffer(u32* procid, GSPGPU_CaptureInfo new_captureinfo, GSP
                 loaded = false;
                 while(1)
                 {
-                    if(APT_GetAppletInfo((NS_APPID)0x300, &progid, nullptr, &loaded, nullptr, nullptr) < 0)
+                    NS_APPID appid;
+                    if(APT_GetAppletManInfo(APTPOS_NONE, nullptr, nullptr, nullptr, &appid) < 0)
+                        break;
+                    appid = (NS_APPID)(appid & 0xFFFF);
+                    if(APT_GetAppletInfo(appid, &progid, &mediatype, &loaded, nullptr, nullptr) < 0)
                         break;
                     if(loaded)
                         break;
@@ -997,6 +999,8 @@ void netfuncTestFramebuffer(u32* procid, GSPGPU_CaptureInfo new_captureinfo, GSP
                 }
                 if(!loaded)
                     break;
+                if(mediatype == 2)
+                    progid = 0; // Game Card
                 if(NS_LaunchTitle(progid, 0, procid) >= 0)
                     break;
             }
@@ -1339,6 +1343,8 @@ static const devoptab_t devop_stderr = { "stderr", 0, nullptr, nullptr, stderr_w
 
 int main()
 {
+    hidExit(); // for some old versions of libctru
+
     mcuInit();
     nsInit();
 
@@ -1350,7 +1356,8 @@ int main()
 
 #if DEBUG_BASIC==1
     f = fopen("HzLog.log", "a");
-    if(f != NULL)
+    if((int)f <= 0) f = nullptr;
+    else
     {
         devoptab_list[STD_OUT] = &devop_stdout;
         devoptab_list[STD_ERR] = &devop_stderr;
@@ -1384,7 +1391,7 @@ int main()
         soc_service_buf_siz = 0x10000;
         bufsoc_siz = 0xC000; // Consider trying 0x10000, but that may do nothing but waste memory.
         netfunc_thread_stack_siz = 0x2000;
-        netfunc_thread_priority = 0x21;
+        netfunc_thread_priority = 0x14;
         netfunc_thread_cpu = 1;
 
         /* interlacing is disabled on o3DS
@@ -1409,7 +1416,7 @@ int main()
     }
     else // is New-3DS (or New-2DS)
     {
-        soc_service_buf_siz = 0x200000;
+        soc_service_buf_siz = 0x10000; //0x200000
         bufsoc_siz = 0x70000;
         netfunc_thread_stack_siz = 0x4000;
 
@@ -1555,10 +1562,7 @@ int main()
 
     while(1)
     {
-        hidScanInput();
-        kDown = hidKeysDown();
-        kHeld = hidKeysHeld();
-        kUp = hidKeysUp();
+        hidScanInputDirectIO();
 
         // If any buttons are pressed, make the Notif LED pulse red
         // (Annoying and waste of CPU time. -C)
