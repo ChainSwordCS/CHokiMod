@@ -999,8 +999,9 @@ void netfuncTestFramebuffer(u32* procid, GSPGPU_CaptureInfo new_captureinfo, GSP
                 }
                 if(!loaded)
                     break;
-                if(mediatype == 2)
-                    progid = 0; // Game Card
+                // see: https://github.com/ChainSwordCS/ChirunoMod/issues/11
+                //if(mediatype == 2)
+                //    progid = 0; // Game Card
                 if(NS_LaunchTitle(progid, 0, procid) >= 0)
                     break;
             }
