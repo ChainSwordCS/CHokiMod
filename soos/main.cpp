@@ -954,8 +954,6 @@ void netfuncTestFramebuffer(u32* procid, GSPGPU_CaptureInfo new_captureinfo, GSP
 
     if(is_changed)
     {
-        PatStay(0xFFFF00); // Notif LED = Teal
-
         *procid = 0;
 
         //test for VRAM
@@ -1007,8 +1005,8 @@ void netfuncTestFramebuffer(u32* procid, GSPGPU_CaptureInfo new_captureinfo, GSP
             }
             if(!loaded)
                 format[0] = 0xF00FCACE; //invalidate
+            PatStay(0x00FF00); // Notif LED = Green
         }
-        PatStay(0x00FF00); // Notif LED = Green
     }
     return;
 }
@@ -1094,6 +1092,8 @@ void newThreadMainFunction(void* __dummy_arg__)
     // Infinite loop unless it crashes or is halted by another application.
     while(threadrunning)
     {
+        PatStay(0x00FF00); // Notif LED = Green
+
         if(!soc) break;
         while(soc->avail())
         { // ?
@@ -1548,16 +1548,11 @@ int main()
 #endif
     }
 
-
     if(!isold) // is New-3DS
     {
         osSetSpeedupEnable(1);
     }
 
-    reloop:
-
-
-    PatPulse(0xFF40FF);
     if(haznet) PatStay(0xCCFF00); // Notif LED = 100% Green, 75% Blue
     else PatStay(0x00FFFF); // Notif LED = Yellow
 
@@ -1565,12 +1560,7 @@ int main()
     {
         hidScanInputDirectIO();
 
-        // If any buttons are pressed, make the Notif LED pulse red
-        // (Annoying and waste of CPU time. -C)
-        if(kDown) PatPulse(0x0000FF);
-
         if(kHeld == (KEY_SELECT | KEY_START)) break;
-
 
         if(!soc)
         {
@@ -1588,11 +1578,9 @@ int main()
                     printf("Failed to accept client: (%i) %s\n", errno, strerror(errno));
 #endif
                     if(errno == EINVAL) goto netreset;
-                    PatPulse(0x0000FF); // Notif LED = Red
                 }
                 else
                 {
-                    PatPulse(0x00FF00); // Notif LED = Green
                     soc = new bufsoc(cli, bufsoc_siz);
                     k = soc->pack();
 
@@ -1638,7 +1626,8 @@ int main()
         if(netthread && !threadrunning)
         {
             netthread = nullptr;
-            //goto reloop;
+            if(haznet) PatStay(0xCCFF00); // Notif LED = 100% Green, 75% Blue
+            else PatStay(0x00FFFF); // Notif LED = Yellow
         }
 
         // VRAM Corruption function :)
