@@ -51,25 +51,23 @@ int main()
     
     if(hidKeysHeld() & (KEY_X | KEY_B))
     {
-        if(mcuInit() >= 0)
-        {
-            u8 blk[0x64];
-            memset(blk, 0, sizeof(blk));
-            blk[2] = 0xFF;
-            mcuWriteRegister(0x2D, blk, sizeof(blk));
-            mcuExit();
-        }
+        // do nothing
     }
     else
 #endif
     {
         u32 pid;
         Result ret = NS_LaunchTitle(0x000401300CF00F02ULL, 0, &pid);
+#if _HIMEM
         if(ret < 0)
+#else
+        if((ret < 0) || (hidKeysHeld() & KEY_START))
+#endif
         {
             gfxInitDefault();
             consoleInit(GFX_BOTTOM, 0);
-            printf("\nLaunchTitle failed: %08X\nPlease refer to 3DS error codes for details\n\nPress SELECT to exit", ret);
+            printf("\nLaunchTitle (%i) failed: %08X\nPlease refer to 3DS error codes for details\n\nPress SELECT to exit", pid, ret);
+            gfxFlushBuffers();
             while(aptMainLoop())
             {
                 hidScanInput();
