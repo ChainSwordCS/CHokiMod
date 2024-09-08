@@ -31,6 +31,14 @@ Result mcuWriteRegister(u8 reg, void* data, u32 size)
 
 int main()
 {
+    hidScanInput();
+    u32 r = hidKeysHeld();
+    u64 titleid;
+    if(r & KEY_Y)
+        titleid = 0x000401300CF00F02ULL; // HzMod
+    else
+        titleid = 0x000401300CF00902ULL; // ChirunoMod
+    
 #if _HIMEM
     
     srvPublishToSubscriber(0x204, 0);
@@ -45,12 +53,10 @@ int main()
     nsInit();
     
 #ifndef _HIMEM
-    NS_TerminateProcessTID(0x000401300CF00F02ULL, 0); // shutdown HzMod
-    NS_TerminateProcessTID(0x000401300CF00F09ULL, 0); // ChirunoMod too
+    // shutdown HzMod and ChirunoMod if they happen to be running
+    NS_TerminateProcessTID(0x000401300CF00F02ULL);
+    NS_TerminateProcessTID(0x000401300CF00F09ULL);
 #endif
-
-    hidScanInput();
-    u32 r = hidKeysHeld();
 
 #ifndef _HIMEM
     if(r & KEY_X) // Do this thing and don't boot
@@ -70,20 +76,14 @@ int main()
         u32 pid;
         Result ret;
 
-    	if(r & KEY_Y) // Boot legacy HzMod (original Title ID of course)
-    	{
-    		ret = NS_LaunchTitle(0x000401300CF00F02ULL, 0, &pid);
-    	}
-    	else // Otherwise, continue to boot my fork, ChirunoMod
-    	{
-    		ret = NS_LaunchTitle(0x000401300CF00902ULL, 0, &pid);
-    	}
+        ret = NS_LaunchTitle(titleid, 0, &pid);
 
         if(ret < 0)
         {
             gfxInitDefault();
             consoleInit(GFX_BOTTOM, 0);
-            printf("\nLaunchTitle failed: %08X\nPlease refer to 3DS error codes for details\n\nPress SELECT to exit", ret);
+            printf("\nLaunchTitle (%i) failed: %08X\nPlease refer to 3DS error codes for details\n\nPress SELECT to exit", pid, ret);
+            gfxFlushBuffers();
             while(aptMainLoop())
             {
                 hidScanInput();
