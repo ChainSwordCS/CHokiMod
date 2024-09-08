@@ -58,11 +58,7 @@ int main()
     {
         u32 pid;
         Result ret = NS_LaunchTitle(0x000401300CF00F02ULL, 0, &pid);
-#if _HIMEM
         if(ret < 0)
-#else
-        if((ret < 0) || (hidKeysHeld() & KEY_START))
-#endif
         {
             gfxInitDefault();
             consoleInit(GFX_BOTTOM, 0);
