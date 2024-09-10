@@ -66,7 +66,7 @@ It's not recommended to set up a build environment and build the project manuall
 
 * git
 * [makerom](https://github.com/3DSGuy/Project_CTR/releases?q=makerom) in PATH
-* bannertool in PATH
+* [bannertool](https://www.gamebrew.org/wiki/Bannertool_3DS) in PATH (alternative link: https://github.com/Epicpkmn11/bannertool)
 * Legacy versions of devkitARM and libctru (detailed below)
 * Libraries: 3ds-libjpeg-turbo and 3ds-zlib (should be automatically handled by devkitPro)
 
@@ -76,12 +76,12 @@ Currently, all active branches need to be compiled with a legacy version of the 
 
 An archive containing these can be downloaded here (Windows only): <https://chainswordcs.com/dl/hzmod_dependencies_2017_v1.zip>
 
+Alternatively, archives of libctru, devkitARM, and related things can be found here: <https://wii.leseratte10.de/devkitPro/>
+
 Installation (tailored to Windows users):
 1. Contents of the `devkitarm-r46` folder should be moved to `C:/devkitPro/devkitARM` (Please copy or rename the up-to-date devkitARM folder so it can be restored if you need)
 2. Contents of the `libctru-1.2.1` folder should be moved to `C:/devkitPro/libctru` (Same precaution as above)
 3. The `portlibs` folder can be copied over and merged with the existing folder `C:/devkitPro/portlibs`. 2017 libctru/devkitARM uses "armv6k", whereas current libctru/devkitARM uses "3ds".
-
-Alternatively, archives of libctru, devkitARM, and related things can be found here: <https://wii.leseratte10.de/devkitPro/>
 
 ### Building
 
