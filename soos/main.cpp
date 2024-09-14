@@ -387,11 +387,6 @@ extern "C" u32 __get_bytes_per_pixel(GSPGPU_FramebufferFormats format);
 
 const int port = 6464;
 
-// GPU 'Capture Info' object.
-// Data about framebuffers from the GSP.
-static GSPGPU_CaptureInfo capin;
-static GSPGPU_CaptureInfo oldcapin;
-
 // Whether or not this is running on an 'Old' 3DS
 static int isold = 1;
 
@@ -1019,85 +1014,105 @@ u8 getFormatBpp(u32 my_format)
     }
 }
 
-// If framebuffers changed, do APT stuff (if necessary)
-void netfuncTestFramebuffer(u32* procid, GSPGPU_CaptureInfo new_captureinfo, GSPGPU_CaptureInfo old_captureinfo)
+/**
+ * Analyze information for hints that the procId we are using has just become outdated.
+ *
+ * Currently, this is done by comparing whether the Capture Info has changed.
+ * That's a pretty good indicator, especially the framebuf0_vaddr and framebuf1_vaddr.
+ * Though it returns a lot of false-positives, probably.
+ * And this strategy isn't perfect anyway.
+ */
+bool outdatedProcIdHint(u32* procid, GSPGPU_CaptureInfo newCapInfo, GSPGPU_CaptureInfo oldCapInfo)
 {
-    bool is_changed = false;
+    bool isCaptureInfoChanged = false;
 
-    for(int s = 0; s < 2; s++)
+    // GSPGPU_CaptureInfo struct size is a multiple of 4, so this is fine.
+    for(u32 s = 0; s < (sizeof(GSPGPU_CaptureInfo)/4); s++)
     {
-        if(new_captureinfo.screencapture[s].framebuf0_vaddr != old_captureinfo.screencapture[s].framebuf0_vaddr)
+        if(*(u32*)&newCapInfo != *(u32*)&oldCapInfo)
         {
-            old_captureinfo.screencapture[s].framebuf0_vaddr = new_captureinfo.screencapture[s].framebuf0_vaddr;
-            is_changed = true;
-        }
-        if(new_captureinfo.screencapture[s].framebuf_widthbytesize != old_captureinfo.screencapture[s].framebuf_widthbytesize)
-        {
-            old_captureinfo.screencapture[s].framebuf_widthbytesize = new_captureinfo.screencapture[s].framebuf_widthbytesize;
-            is_changed = true;
-        }
-        if(new_captureinfo.screencapture[s].format != old_captureinfo.screencapture[s].format)
-        {
-            old_captureinfo.screencapture[s].format = new_captureinfo.screencapture[s].format;
-            is_changed = true;
+            isCaptureInfoChanged = true;
+            break;
         }
     }
 
-    if(is_changed)
+    return isCaptureInfoChanged;
+}
+
+/**
+ * Get procId of the current process in the foreground.
+ * (The process which the current framebuffers belong to.)
+ *
+ * Note: This isn't necessary if the framebuffer is in VRAM,
+ * as we already have read-access to that.
+ *
+ * Currently, the way of doing this is pretty hacky (but still Luma3DS-compatible).
+ * And I don't think it works in all cases.
+ * It relies on weird assumptions about AppID that I don't fully understand.
+ * See: https://www.3dbrew.org/wiki/NS_and_APT_Services#AppIDs
+ * TODO: Is there a better way of doing this?
+ *
+ * also TODO: potential bug...
+ * The way we do things right now, we need a procId to DMA from the top framebuffer,
+ * and we need a procId to DMA from the bottom framebuffer. With the way this code currently works,
+ * we assume that those two needed procIds are the same.
+ * Is it ever the case that they are different? Because if so, that will cause issues.
+ * Specifically, DMA requests for one of the two screens will just fail.
+ * That might be what's happening in Super Smash Bros, but I haven't looked into it.
+ */
+void getNewProcId(u32* procid, GSPGPU_CaptureInfo new_captureinfo)
+{
+    *procid = 0;
+
+    //test for VRAM
+    if( (u32)(new_captureinfo.screencapture[0].framebuf0_vaddr) < 0x1F600000 )
     {
-        *procid = 0;
+        // nothing to do?
+        // If the framebuffer is in VRAM, we don't have to do anything special(...?)
+        // (Such is the case for all retail applets, apparently.)
+    }
+    else //use APT fuckery, auto-assume this is an application
+    {
+        // Notif LED = Flashing red and green
+        memset(&pat.r[0], 0xFF, 16);
+        memset(&pat.r[16], 0, 16);
+        memset(&pat.g[0], 0, 16);
+        memset(&pat.g[16], 0xFF, 16);
+        memset(&pat.b[0], 0, 32);
+        pat.ani = 0x2004;
+        PatApply();
 
-        //test for VRAM
-        if( (u32)(new_captureinfo.screencapture[0].framebuf0_vaddr) < 0x1F600000 )
+        u64 progid = -1ULL;
+        bool loaded = false;
+        u8 mediatype = 0;
+
+        while(1)
         {
-            // nothing to do?
-            // If the framebuffer is in VRAM, we don't have to do anything special(...?)
-            // (Such is the case for all retail applets, apparently.)
-            tryStopDma(&dmahand);
-        }
-        else //use APT fuckery, auto-assume this is an application
-        {
-            // Notif LED = Flashing red and green
-            memset(&pat.r[0], 0xFF, 16);
-            memset(&pat.r[16], 0, 16);
-            memset(&pat.g[0], 0, 16);
-            memset(&pat.g[16], 0xFF, 16);
-            memset(&pat.b[0], 0, 32);
-            pat.ani = 0x2004;
-            PatApply();
-
-            u64 progid = -1ULL;
-            bool loaded = false;
-            u8 mediatype = 0;
-
+            // loaded = Registration Status(?) of the specified application.
+            loaded = false;
             while(1)
             {
-                // loaded = Registration Status(?) of the specified application.
-                loaded = false;
-                while(1)
-                {
-                    NS_APPID appid;
-                    if(APT_GetAppletManInfo(APTPOS_NONE, nullptr, nullptr, nullptr, &appid) < 0)
-                        break;
-                    appid = (NS_APPID)(appid & 0xFFFF);
-                    if(APT_GetAppletInfo(appid, &progid, &mediatype, &loaded, nullptr, nullptr) < 0)
-                        break;
-                    if(loaded)
-                        break;
-                    svcSleepThread(15e6);
-                }
-                if(!loaded)
+                NS_APPID appid;
+                if(APT_GetAppletManInfo(APTPOS_NONE, nullptr, nullptr, nullptr, &appid) < 0)
                     break;
-                // see: https://github.com/ChainSwordCS/ChirunoMod/issues/11
-                //if(mediatype == 2)
-                //    progid = 0; // Game Card
-                if(NS_LaunchTitle(progid, 0, procid) >= 0)
+                appid = (NS_APPID)(appid & 0xFFFF);
+                if(APT_GetAppletInfo(appid, &progid, &mediatype, &loaded, nullptr, nullptr) < 0)
                     break;
+                if(loaded)
+                    break;
+                svcSleepThread(15e6);
             }
             if(!loaded)
-                format[0] = 0xF00FCACE; //invalidate
-            PatStay(0x00FF00); // Notif LED = Green
+                break;
+            // see: https://github.com/ChainSwordCS/ChirunoMod/issues/11
+            //if(mediatype == 2)
+            //    progid = 0; // Game Card
+            if(NS_LaunchTitle(progid, 0, procid) >= 0)
+                break;
         }
+        if(!loaded)
+            format[0] = 0xF00FCACE; //invalidate
+        PatStay(0x00FF00); // Notif LED = Green
     }
     return;
 }
@@ -1137,6 +1152,7 @@ void newThreadMainFunction(void* __dummy_arg__)
 
     PatStay(0x00FF00); // Notif LED = Green
 
+    // Wait for the signal to start capturing and streaming frames.
     while(cfgblk[0] == 0)
     {
         if(soc->avail())
@@ -1159,17 +1175,15 @@ void newThreadMainFunction(void* __dummy_arg__)
         if(!soc) break;
     }
 
-    // properly initialize oldcapin first
-    while(true)
-    {
-        if(GSPGPU_ImportDisplayCaptureInfo(&capin) >= 0)
-            if(GSPGPU_ImportDisplayCaptureInfo(&oldcapin) >= 0)
-                break;
-    }
+    GSPGPU_CaptureInfo capInfo[2];
+    memset(&capInfo[0], 0, sizeof(GSPGPU_CaptureInfo));
+    memset(&capInfo[1], 0, sizeof(GSPGPU_CaptureInfo));
+    // indicates which capInfo buffer was last updated.
+    bool c = (bool)0;
 
-    // ?
-    format[0] = capin.screencapture[0].format & 0b111;
-    format[1] = capin.screencapture[1].format & 0b111;
+    // fallback values
+    format[0] = capInfo[(u8)c].screencapture[0].format & 0b111;
+    format[1] = capInfo[(u8)c].screencapture[1].format & 0b111;
 
     // interlacing is disabled on o3DS and 24bpp frames
     if(cfgblk[5] && !isold && (format[scr] != 1))
@@ -1177,15 +1191,16 @@ void newThreadMainFunction(void* __dummy_arg__)
     else
         isDmaSetForInterlaced = false;
 
-    updateDmaCfgBpp(dma_config[0], getFormatBpp(format[0]), cfgblk[5], capin.screencapture[0].framebuf_widthbytesize);
-    updateDmaCfgBpp(dma_config[1], getFormatBpp(format[1]), cfgblk[5], capin.screencapture[1].framebuf_widthbytesize);
+    updateDmaCfgBpp(dma_config[0], getFormatBpp(format[0]), cfgblk[5], capInfo[(u8)c].screencapture[0].framebuf_widthbytesize);
+    updateDmaCfgBpp(dma_config[1], getFormatBpp(format[1]), cfgblk[5], capInfo[(u8)c].screencapture[1].framebuf_widthbytesize);
 
+    u8 mainLoopCount = 0;
     u8 frameCount = 0;
     u8 priorityScreenFrames = 0;
     bool gbvcmode = false;
     bool gbvcmode_queuefulltopscreen = false;
 
-    // Infinite loop unless it crashes or is halted by another application.
+    // thread main loop
     while(threadrunning)
     {
         PatStay(0x00FF00); // Notif LED = Green
@@ -1197,9 +1212,8 @@ void newThreadMainFunction(void* __dummy_arg__)
             int ret_nwfs = netfuncWaitForSettings();
             if(ret_nwfs < 0)
             {
-                delete soc;
-                soc = nullptr;
-                break;
+                tryStopDma(&dmahand);
+                getNewProcId(&procid, capInfo[(u8)c]);
             }
             /* interlacing is disabled on o3DS
             else if(ret_nwfs == 9)
@@ -1218,12 +1232,26 @@ void newThreadMainFunction(void* __dummy_arg__)
         sendDebugFrametimeStats(timems_processframe,timems_writetosocbuf,&timems_dmaasync,timems_formatconvert);
 #endif
 
-        if(GSPGPU_ImportDisplayCaptureInfo(&capin) >= 0)
+        if(GSPGPU_ImportDisplayCaptureInfo(&capInfo[(u8)!c]) < 0)
         {
-            netfuncTestFramebuffer(&procid,capin,oldcapin);
+            yield();
+        }
+        else
+        {
+            /**
+             * capInfo[(u8)c] is up to date
+             * capInfo[(u8)!c] is outdated
+             */
+            c = !c;
 
-            format[0] = capin.screencapture[0].format & 0b111;
-            format[1] = capin.screencapture[1].format & 0b111;
+            if(outdatedProcIdHint(&procid,capInfo[(u8)c],capInfo[(u8)!c]))
+            {
+                tryStopDma(&dmahand);
+                getNewProcId(&procid, capInfo[(u8)c]);
+            }
+
+            format[0] = capInfo[(u8)c].screencapture[0].format & 0b111;
+            format[1] = capInfo[(u8)c].screencapture[1].format & 0b111;
 
             // interlacing is disabled on o3DS and 24bpp frames
             if(cfgblk[5] && !isold && (getFormatBpp(format[scr]) != 24))
@@ -1243,8 +1271,8 @@ void newThreadMainFunction(void* __dummy_arg__)
             if(gbvcmode && !gbvcmode_queuefulltopscreen)
             {
                 gbvcmode = true;
-                updateDmaCfg_GBVC(dma_config[0], getFormatBpp(format[1]), isDmaSetForInterlaced?1:0, capin.screencapture[1].framebuf_widthbytesize);
-                updateDmaCfgBpp(dma_config[1], getFormatBpp(format[1]), isDmaSetForInterlaced?1:0, capin.screencapture[1].framebuf_widthbytesize);
+                updateDmaCfg_GBVC(dma_config[0], getFormatBpp(format[0]), isDmaSetForInterlaced?1:0, capInfo[(u8)c].screencapture[0].framebuf_widthbytesize);
+                updateDmaCfgBpp(dma_config[1], getFormatBpp(format[1]), isDmaSetForInterlaced?1:0, capInfo[(u8)c].screencapture[1].framebuf_widthbytesize);
             }
             else
             {
@@ -1252,14 +1280,14 @@ void newThreadMainFunction(void* __dummy_arg__)
                 switch(cfgblk[3])
                 {
                 case 1:
-                    updateDmaCfgBpp(dma_config[0], getFormatBpp(format[0]), isDmaSetForInterlaced?1:0, capin.screencapture[0].framebuf_widthbytesize);
+                    updateDmaCfgBpp(dma_config[0], getFormatBpp(format[0]), isDmaSetForInterlaced?1:0, capInfo[(u8)c].screencapture[0].framebuf_widthbytesize);
                     break;
                 case 2:
-                    updateDmaCfgBpp(dma_config[1], getFormatBpp(format[1]), isDmaSetForInterlaced?1:0, capin.screencapture[1].framebuf_widthbytesize);
+                    updateDmaCfgBpp(dma_config[1], getFormatBpp(format[1]), isDmaSetForInterlaced?1:0, capInfo[(u8)c].screencapture[1].framebuf_widthbytesize);
                     break;
                 default:
-                    updateDmaCfgBpp(dma_config[0], getFormatBpp(format[0]), isDmaSetForInterlaced?1:0, capin.screencapture[0].framebuf_widthbytesize);
-                    updateDmaCfgBpp(dma_config[1], getFormatBpp(format[1]), isDmaSetForInterlaced?1:0, capin.screencapture[1].framebuf_widthbytesize);
+                    updateDmaCfgBpp(dma_config[0], getFormatBpp(format[0]), isDmaSetForInterlaced?1:0, capInfo[(u8)c].screencapture[0].framebuf_widthbytesize);
+                    updateDmaCfgBpp(dma_config[1], getFormatBpp(format[1]), isDmaSetForInterlaced?1:0, capInfo[(u8)c].screencapture[1].framebuf_widthbytesize);
                     break;
                 }
             }
@@ -1284,7 +1312,7 @@ void newThreadMainFunction(void* __dummy_arg__)
             int imgsize = 0;
 
             if(isold == 0){
-                svcFlushProcessDataCache(0xFFFF8001, (u8*)screenbuf, capin.screencapture[scr].framebuf_widthbytesize * 400);
+                svcFlushProcessDataCache(0xFFFF8001, (u8*)screenbuf, capInfo[(u8)c].screencapture[scr].framebuf_widthbytesize * 400);
             }
 
             // todo: bad code :)
@@ -1363,8 +1391,8 @@ void newThreadMainFunction(void* __dummy_arg__)
                     scr = 1;
             }
 
-            siz = (capin.screencapture[scr].framebuf_widthbytesize * stride[scr]); // Size of the entire frame (in bytes)
-            bsiz = capin.screencapture[scr].framebuf_widthbytesize / 240; // bytes per pixel (dumb)
+            siz = (capInfo[(u8)c].screencapture[scr].framebuf_widthbytesize * stride[scr]); // Size of the entire frame (in bytes)
+            bsiz = capInfo[(u8)c].screencapture[scr].framebuf_widthbytesize / 240; // bytes per pixel (dumb)
             scrw = 240; // sure
             bits = 4 << bsiz; // bpp (dumb)
 
@@ -1373,7 +1401,7 @@ void newThreadMainFunction(void* __dummy_arg__)
             if(procid) if(svcOpenProcess(&prochand, procid) < 0) procid = 0;
 
             u32 srcprochand = prochand ? prochand : 0xFFFF8001;
-            u8* srcaddr = (u8*)capin.screencapture[scr].framebuf0_vaddr + (siz * offs[scr]);
+            u8* srcaddr = (u8*)capInfo[(u8)c].screencapture[scr].framebuf0_vaddr + (siz * offs[scr]);
 
 #if DEBUG_VERBOSE==1
             osTickCounterUpdate(&tick_ctr_2_dma);
@@ -1384,7 +1412,7 @@ void newThreadMainFunction(void* __dummy_arg__)
                 //siz = (getFormatBpp(format[scr]) / 8) * 160 * 144;
                 siz = (getFormatBpp(format[scr]) / 8) * scrw * 160;
                 //srcaddr += (siz * 120) + (getFormatBpp(format[scr])/8) * 48;
-                srcaddr += capin.screencapture[scr].framebuf_widthbytesize * 120 + (getFormatBpp(format[scr])/8)*48;
+                srcaddr += capInfo[(u8)c].screencapture[scr].framebuf_widthbytesize * 120 + (getFormatBpp(format[scr])/8)*48;
             }
             else
             {
@@ -1434,15 +1462,22 @@ void newThreadMainFunction(void* __dummy_arg__)
                 prochand = 0;
             }
 
-            // If size is 0, don't send the packet.
-            if(soc->getPakSize())
+
+
+
+
+
+            /**
+             * send frame to client (while waiting for DMA)
+             * (note: DMA doesn't actually take very long.)
+             */
+
+            if(soc->getPakSize()) // If size == 0, don't send
             {
 #if DEBUG_VERBOSE==1
                 osTickCounterUpdate(&tick_ctr_1);
 #endif
-
                 soc->wribuf();
-
 #if DEBUG_VERBOSE==1
                 osTickCounterUpdate(&tick_ctr_1);
                 timems_writetosocbuf = osTickCounterRead(&tick_ctr_1);
@@ -1455,7 +1490,6 @@ void newThreadMainFunction(void* __dummy_arg__)
                 // 5 x 10 ^ 6 nanoseconds (iirc)
             }
         }
-        else yield();
     }
     // Notif LED = Flashing yellow and purple
     memset(&pat.r[0], 0xFF, 16);
@@ -1534,7 +1568,6 @@ int main()
 #endif
 
     memset(&pat, 0, sizeof(pat));
-    memset(&capin, 0, sizeof(capin));
     memset(cfgblk, 0, sizeof(cfgblk));
 
     u32 soc_service_buf_siz = 0;
