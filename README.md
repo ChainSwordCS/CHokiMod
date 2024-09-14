@@ -62,21 +62,28 @@ If you'd like to grab a nightly build, a CIA file that's updated nearly every co
 
 It's not recommended to set up a build environment and build the project manually, as it's a bit of a chore.
 
-### Prerequisites
+### Prerequisites / Build Dependencies
 
 * git
-* [makerom](https://github.com/3DSGuy/Project_CTR/releases?q=makerom) in PATH
-* [bannertool](https://www.gamebrew.org/wiki/Bannertool_3DS) in PATH (alternative link: https://github.com/Epicpkmn11/bannertool)
-* Legacy versions of devkitARM and libctru (detailed below)
-* Libraries: 3ds-libjpeg-turbo and 3ds-zlib (should be automatically handled by devkitPro)
+* devkitPro stuff (latest versions of msys2 and cmake) - https://devkitpro.org/wiki/Getting_Started
+* devkitARM r46 (2017.01.16) - https://wii.leseratte10.de/devkitPro/devkitARM/r46%20%282017%29/
+* libctru 1.2.1 (2017.02.20) - https://wii.leseratte10.de/devkitPro/libctru/2017/
+* in `/devkitPro/tools/bin/` or in PATH ...
+    * makerom, [latest version](https://github.com/3DSGuy/Project_CTR/releases?q=makerom), in `/devkitPro/tools/bin/` or in PATH
+    * bannertool, version [1.2.0](https://www.gamebrew.org/wiki/Bannertool_3DS) or [compatible fork](https://github.com/Epicpkmn11/bannertool), in `/devkitPro/tools/bin/` or in PATH
+* in `/devkitPro/portlibs/armv6k/` ...
+    * 3ds-zlib (aka libzip), any version <pre>//TODO: optional?</pre>
+    * 3ds-libjpeg-turbo (aka libturbojpeg), either A or B detailed as follows:
+        a. v??? (2016.??.??), from the 3ds_portlibs git repo, compiled with a compatible version of devkitARM, preferably devkitARM r46.
+        b. latest version from devkitPro, compiled with a compatible version of devkitARM.
 
-Currently, all active branches need to be compiled with a legacy version of the libctru library and the devkitARM toolchain. Specifically:
-* devkitARM r46
-* libctru 1.2.1
+This project requires legacy versions of some dependencies to build and to function as intended. If using a later version of said dependencies, your mileage may vary.
+
+#### pre-made downloads
+
+// TODO: update this.
 
 An archive containing these can be downloaded here (Windows only): <https://chainswordcs.com/dl/hzmod_dependencies_2017_v1.zip>
-
-Alternatively, archives of libctru, devkitARM, and related things can be found here: <https://wii.leseratte10.de/devkitPro/>
 
 Installation (tailored to Windows users):
 1. Contents of the `devkitarm-r46` folder should be moved to `C:/devkitPro/devkitARM` (Please copy or rename the up-to-date devkitARM folder so it can be restored if you need)
