@@ -22,45 +22,62 @@
 
 #include <3ds.h>
 
-// Note: in modern libctru, DmaConfig is its own object type.
-// https://www.3dbrew.org/wiki/Corelink_DMA_Engines
-// https://github.com/devkitPro/libctru/blob/master/libctru/include/3ds/svc.h
 
+/**
+ * DmaConfig struct. Based on documentation by 3dbrew.org and by libctru / devkitPro.
+ * Implemented here for ease of use with legacy versions of libctru, for the time being.
+ *
+ * For more information, see:
+ * - https://www.3dbrew.org/wiki/Corelink_DMA_Engines
+ * - https://libctru.devkitpro.org/structDmaConfig.html
+ * - https://github.com/devkitPro/libctru/blob/master/libctru/include/3ds/svc.h
+ *
+ * Note: as of 2024.09.12, the libctru docs say it's srcCfg before dstCfg,
+ * but 3dbrew.org says it's dstCfg before srcCfg.
+ * I believe the libctru docs are incorrect about this, but I'm not certain.
+ */
+typedef struct {
+    s8 channelId;
+    s8 endianSwapSize;
+    u8 flags;
+    const u8 _padding;
 
+    //DmaDeviceConfig_ dstCfg;
+    s8 dst_deviceId;
+    s8 dst_allowedAlignments;
+    s16 dst_burstSize;
+    s16 dst_transferSize;
+    s16 dst_burstStride;
+    s16 dst_transferStride;
 
-// DMA Config Block offset defines
+    //DmaDeviceConfig_ srcCfg;
+    s8 src_deviceId;
+    s8 src_allowedAlignments;
+    s16 src_burstSize;
+    s16 src_transferSize;
+    s16 src_burstStride;
+    s16 src_transferStride;
+} DmaConfig_;
 
-// -1 = Auto-assign to a free channel (Arm11: 3-7, Arm9:0-1)
-#define CFG_OFFS_CHANNEL_SEL 0
-// Endian swap size. 0 = None, 2 = 16-bit, 4 = 32-bit, 8 = 64-bit
-#define CFG_OFFS_ENDIAN_SWAP_SIZE 1
-// Flags
-#define CFG_OFFS_FLAGS 2
-
-// Destination Config block
-
-// peripheral ID. FF for ram (it's forced to FF anyway)
-#define CFG_OFFS_DST_PERIPHERAL_ID 4
-// Allowed Alignments. Defaults to "1|2|4|8" (15). Also acceptable = 4, 8, "4|8" (12)
-#define CFG_OFFS_DST_ALLOWED_BURST_SIZES 5
- // burstSize? (Number of bytes transferred in a burst loop. Can be 0, in which case the max allowed alignment is used as a unit.)
-#define CFG_OFFS_DST_S16_GATHER_GRANULE_SIZE 6
-// burstStride? (Burst loop stride, can be <= 0.)
-#define CFG_OFFS_DST_S16_GATHER_STRIDE 8
-// transferSize? (Number of bytes transferred in a "transfer" loop, which is made of burst loops.)
-#define CFG_OFFS_DST_S16_SCATTER_GRANULE_SIZE 10
-// transferStride? ("Transfer" loop stride, can be <= 0.)
-#define CFG_OFFS_DST_S16_SCATTER_STRIDE 12
-
-// Source Config block
-#define CFG_OFFS_SRC_PERIPHERAL_ID 14
-#define CFG_OFFS_SRC_ALLOWED_BURST_SIZES 15
-#define CFG_OFFS_SRC_S16_GATHER_GRANULE_SIZE 16
-#define CFG_OFFS_SRC_S16_GATHER_STRIDE 18
-#define CFG_OFFS_SRC_S16_SCATTER_GRANULE_SIZE 20
-#define CFG_OFFS_SRC_S16_SCATTER_STRIDE 22
-
-
+/**
+ * unused
+ *
+ * todo: are transferSize and burstStride erroneously switched around?
+ *
+ * mini doc:
+ *  burstSize: Number of bytes transferred in a burst-loop. Can be 0, in which case the max allowed alignment is used as a unit.
+ *  burstStride: Burst loop stride, can be <= 0.
+ *  transferSize: Number of bytes transferred in a transfer-loop, which is comprised of one or more burst-loops.
+ *  transferStride: Transfer-loop stride, can be <= 0.
+ */
+typedef struct {
+    s8 deviceId; // aka "Peripheral ID"
+    s8 allowedAlignments; // aka "Allowed Burst Sizes". Default is 1|2|4|8 (which equals 15)
+    s16 burstSize; // aka "Gather Granule Size"
+    s16 transferSize; // aka "Scatter Granule Size"
+    s16 burstStride; // aka "Gather Stride"
+    s16 transferStride; // aka "Scatter Stride"
+} DmaDeviceConfig_;
 
 // Initialize DMA Config Block.
 // No need to memset before calling.

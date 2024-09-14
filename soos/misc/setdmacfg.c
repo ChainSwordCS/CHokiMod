@@ -29,20 +29,24 @@ inline void initCustomDmaCfg(u8* dmacfgblk)
 {
     memset(dmacfgblk, 0, 0x18);
 
-    dmacfgblk[CFG_OFFS_CHANNEL_SEL] = -1;
-    dmacfgblk[CFG_OFFS_FLAGS] = 0b11000100;
+    DmaConfig_ *dmacfg = (DmaConfig_*) &dmacfgblk;
 
-    dmacfgblk[CFG_OFFS_DST_PERIPHERAL_ID] = 0xFF;
-    dmacfgblk[CFG_OFFS_DST_ALLOWED_BURST_SIZES] = 8|4|2|1;
+    dmacfg->channelId = -1;
+    dmacfg->flags = 0b11000100;
 
-    dmacfgblk[CFG_OFFS_SRC_PERIPHERAL_ID] = 0xFF;
-    dmacfgblk[CFG_OFFS_SRC_ALLOWED_BURST_SIZES] = 8|4|2|1;
+    dmacfg->src_deviceId = 0xFF;
+    dmacfg->src_allowedAlignments = 8|4|2|1;
+
+    dmacfg->dst_deviceId = 0xFF;
+    dmacfg->dst_allowedAlignments = 8|4|2|1;
 
     return;
 }
 
 void updateDmaCfgBpp(u8* dmacfgblk, u8 source_bpp, u8 interlaced, u32 rowstride)
 {
+    DmaConfig_ *dmacfg = (DmaConfig_*) &dmacfgblk;
+
     u8 destination_bpp;
 
     // For 32-bit (RGBA8) this skips every fourth byte (the AFAIK unused Alpha channel)
@@ -82,20 +86,20 @@ void updateDmaCfgBpp(u8* dmacfgblk, u8 source_bpp, u8 interlaced, u32 rowstride)
         //printf("rowstride/2=%i\n", rowstride);
     }
 
-    dmacfgblk[1+CFG_OFFS_DST_S16_GATHER_GRANULE_SIZE] = destination_bytesperpixel;
-    dmacfgblk[1+CFG_OFFS_DST_S16_GATHER_STRIDE] = destination_bytesperpixel;
+    dmacfg->dst_burstSize = destination_bytesperpixel;
+    dmacfg->dst_burstStride = destination_bytesperpixel;
 
-    ((u16*)dmacfgblk)[CFG_OFFS_DST_S16_SCATTER_GRANULE_SIZE/2] = destination_bytesperpixel * width;
-    ((u16*)dmacfgblk)[CFG_OFFS_DST_S16_SCATTER_STRIDE/2] = destination_bytesperpixel * width;
+    dmacfg->dst_transferSize = destination_bytesperpixel * width;
+    dmacfg->dst_transferStride = destination_bytesperpixel * width;
 
-    dmacfgblk[1+CFG_OFFS_SRC_S16_GATHER_GRANULE_SIZE] = destination_bytesperpixel;
+    dmacfg->src_burstSize = destination_bytesperpixel;
 
     if(interlaced)
-        dmacfgblk[1+CFG_OFFS_SRC_S16_GATHER_STRIDE] = source_bytesperpixel * 2;
+        dmacfg->src_burstStride = source_bytesperpixel * 2;
     else
-        dmacfgblk[1+CFG_OFFS_SRC_S16_GATHER_STRIDE] = source_bytesperpixel;
+        dmacfg->src_burstStride = source_bytesperpixel;
 
-    ((u16*)dmacfgblk)[CFG_OFFS_SRC_S16_SCATTER_GRANULE_SIZE/2] = destination_bytesperpixel * width;
-    ((u16*)dmacfgblk)[CFG_OFFS_SRC_S16_SCATTER_STRIDE/2] = rowstride;
+    dmacfg->src_transferSize = destination_bytesperpixel * width;
+    dmacfg->src_transferStride = rowstride;
     //((u16*)dmacfgblk)[CFG_OFFS_SRC_S16_SCATTER_STRIDE/2] = source_bytesperpixel * width;
 }
