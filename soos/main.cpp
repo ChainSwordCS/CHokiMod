@@ -607,17 +607,16 @@ int netfuncWaitForSettings()
 
                 switch(i)
                 {
-                case 0x01: // JPEG Quality (1-100%)
-                    // Error-Checking
+                case 1: // JPEG Quality (1-100%)
+                case 8:
                     if(j > 100)
-                        cfgblk[1] = 100;
+                        j = 100;
                     else if(j < 1)
-                        cfgblk[1] = 1;
-                    else
-                        cfgblk[1] = j;
+                        j = 1;
+                    cfgblk[i] = j;
                     return 1;
 
-                case 0x02: // CPU Cap value / CPU Limit / App Resource Limit
+                case 2: // CPU Cap value / CPU Limit / App Resource Limit
 
                     // Redundancy check
                     if(j == cfgblk[2])
@@ -645,17 +644,19 @@ int netfuncWaitForSettings()
 
                     return 1;
 
-                case 0x03: // Which Screen
+                case 3: // Which Screen(s)
                     if(j != 0 && j < 4)
                         cfgblk[3] = j;
                     return 1;
 
-                case 0x04: // Image Format (JPEG or TGA?)
-                    if(j < 2)
-                        cfgblk[4] = j;
+                case 4: // Image Format (JPEG or TGA?)
+                case 9:
+                    if(j > 1)
+                        j = 0;
+                    cfgblk[i] = j;
                     return 1;
 
-                case 0x05: // Request to use Interlacing (yes or no)
+                case 5: // Request to use Interlacing (yes or no)
                     j = j?1:0;
 
                     if(isold)
@@ -673,6 +674,20 @@ int netfuncWaitForSettings()
                     {
                         cfgblk[5] = j;
                     }
+                    return 1;
+
+                case 6: // priority screen
+                    if(j > 1)
+                        j = 0;
+                    cfgblk[i] = j;
+                    return 1;
+
+                case 7: // priority factor
+                    cfgblk[i] = j;
+                    return 1;
+
+                case 10: // use separate quality settings per screen?
+                    cfgblk[i] = j?1:0;
                     return 1;
 
                 default:
@@ -886,6 +901,12 @@ void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* scrw, u32
         break;
     }
 
+    u8 qual;
+    if(cfgblk[10])
+        qual = cfgblk[scr?8:1];
+    else
+        qual = cfgblk[1];
+
 #if DEBUG_VERBOSE==1
     osTickCounterUpdate(&tick_ctr_1);
     *timems_fc = osTickCounterRead(&tick_ctr_1);
@@ -893,7 +914,7 @@ void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* scrw, u32
 
     u8* destaddr = soc->bufferptr + bufsoc_pak_data_offset;
 
-    if(!tjCompress2(jencode, (u8*)screenbuf, *scrw, (*bsiz) * (*scrw), stride[scr], tjpixelformat, &destaddr, (u32*)imgsize, TJSAMP_420, cfgblk[1], TJFLAG_NOREALLOC | TJFLAG_FASTDCT))
+    if(!tjCompress2(jencode, (u8*)screenbuf, *scrw, (*bsiz) * (*scrw), stride[scr], tjpixelformat, &destaddr, (u32*)imgsize, TJSAMP_420, qual, TJFLAG_NOREALLOC | TJFLAG_FASTDCT))
     {
 #if DEBUG_VERBOSE==1
         osTickCounterUpdate(&tick_ctr_1);
@@ -1089,6 +1110,9 @@ void newThreadMainFunction(void* __dummy_arg__)
     updateDmaCfgBpp(dma_config[0], getFormatBpp(format[0]), cfgblk[5], capin.screencapture[0].framebuf_widthbytesize);
     updateDmaCfgBpp(dma_config[1], getFormatBpp(format[1]), cfgblk[5], capin.screencapture[1].framebuf_widthbytesize);
 
+    u8 frameCount = 0;
+    u8 priorityScreenFrames = 0;
+
     // Infinite loop unless it crashes or is halted by another application.
     while(threadrunning)
     {
@@ -1153,6 +1177,7 @@ void newThreadMainFunction(void* __dummy_arg__)
             for(int i = 0; i < 60; i++) // Should cover all cases.
             {
                 svcGetDmaState(&dmaState, dmahand);
+                dmaState = dmaState & 0xFF;
                 if(dmaState == 4 || dmaState == 0) // 4 = DMASTATE_DONE; 0 = why dude
                     break;
                 svcSleepThread(5e4); // Going higher (5e6, for example) may result in crashes.
@@ -1171,13 +1196,19 @@ void newThreadMainFunction(void* __dummy_arg__)
                 svcFlushProcessDataCache(0xFFFF8001, (u8*)screenbuf, capin.screencapture[scr].framebuf_widthbytesize * 400);
             }
 
+            u8 imgfmt;
+                if(cfgblk[10])
+                    imgfmt = cfgblk[scr?9:4];
+                else
+                    imgfmt = cfgblk[4];
+
             // interlaced
             if(isStoredFrameInterlaced)
             {
                 scrw = scrw / 2;
             }
 
-            switch(cfgblk[4])
+            switch(imgfmt)
             {
             case 0:
                 makeJpegImage(&timems_formatconvert, &timems_processframe, scr, &scrw, &bsiz, &imgsize, format, isStoredFrameInterlaced, interlacedRowSwitch);
@@ -1205,12 +1236,27 @@ void newThreadMainFunction(void* __dummy_arg__)
             // screen switch
             if(interlacedRowSwitch == false || cfgblk[5] == 0)
             {
-                if(cfgblk[3] == 1) // Top Screen Only
+                frameCount++;
+                if(cfgblk[3] == 3) // Both Screens
+                {
+                    if(scr == cfgblk[6])
+                    {
+                        priorityScreenFrames++;
+                        if(priorityScreenFrames >= cfgblk[7])
+                        {
+                            priorityScreenFrames = 0;
+                            scr = !scr;
+                        }
+                    }
+                    else
+                    {
+                        scr = !scr;
+                    }
+                }
+                else if(cfgblk[3] == 1) // Top Screen Only
                     scr = 0;
                 else if(cfgblk[3] == 2) // Bottom Screen Only
                     scr = 1;
-                else if(cfgblk[3] == 3) // Both Screens
-                    scr = !scr;
             }
 
             siz = (capin.screencapture[scr].framebuf_widthbytesize * stride[scr]); // Size of the entire frame (in bytes)
@@ -1354,6 +1400,10 @@ int main()
     // cfgblk sane defaults
     cfgblk[1] = 70;
     cfgblk[3] = 1;
+    cfgblk[6] = 0;
+    cfgblk[7] = 1;
+    cfgblk[8] = 70;
+    cfgblk[9] = 1;
 
 #if DEBUG_BASIC==1
     f = fopen("HzLog.log", "a");
