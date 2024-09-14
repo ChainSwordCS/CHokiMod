@@ -90,3 +90,5 @@ void initCustomDmaCfg(u8*);
 // u8 interlaced = Do we want to output interlaced video? (1 = yes, 0 = no)
 // u32 rowstride = Stride, as specified in the CaptureInfo
 void updateDmaCfgBpp(u8*,u8,u8,u32);
+
+void updateDmaCfg_GBVC(u8*,u8,u8,u32);

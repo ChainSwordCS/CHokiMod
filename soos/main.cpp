@@ -690,6 +690,13 @@ int netfuncWaitForSettings()
                     cfgblk[i] = j?1:0;
                     return 1;
 
+                case 11: // Special capture behavior for GB Virtual Console
+                    if(j == 2) // force-enable
+                        cfgblk[i] = 2;
+                    else
+                        cfgblk[i] = 0;
+                    return 1;
+
                 default:
                     // Invalid subtype for "Settings" packet-type
                     return 1;
@@ -830,6 +837,69 @@ void makeTargaImage(double* timems_fc, double* timems_pf, int scr, u32* scrw, u3
 
     // horizontal offset. redundant in chirunomod.
     img.origin_y = (scr * 400) + (stride[scr] * offs[scr]);
+
+
+    tga_write_to_FILE((soc->bufferptr+bufsoc_pak_data_offset), &img, imgsize);
+
+#if DEBUG_VERBOSE==1
+    osTickCounterUpdate(&tick_ctr_1);
+    *timems_pf = osTickCounterRead(&tick_ctr_1);
+#endif
+
+    u8 subtype_aka_flags = 0b00001000 + (scr * 0b00010000) + (format[scr] & 0b111);
+    if(isInterlaced)
+        subtype_aka_flags += 0b00100000 + (interlacedRowSwitch?0:0b01000000);
+
+    soc->setPakType(01);
+    soc->setPakSubtype(subtype_aka_flags);
+    soc->setPakSize(*imgsize);
+
+    return;
+}
+
+void makeTargaImageGBVC(double* timems_fc, double* timems_pf, int scr, u32* scrw, u32* bits, int* imgsize, u32* myformat, bool isInterlaced, bool interlacedRowSwitch)
+{
+#if DEBUG_VERBOSE==1
+    *timems_fc = 0;
+    osTickCounterUpdate(&tick_ctr_1);
+#endif
+
+    u32 newbits = *bits;
+
+    switch(myformat[scr] & 0b111)
+    {
+    case 0: // RGBA8
+        newbits = 32;
+        break;
+
+    case 1: // RGB8
+        newbits = 24;
+        break;
+
+    case 2: // RGB565
+        newbits = 17;
+        break;
+
+    case 3: // RGB5A1
+        newbits = 16;
+        break;
+
+    case 4: // RGBA4
+        newbits = 18;
+        break;
+
+    default:
+        // Invalid
+        break;
+    }
+
+    init_tga_image(&img, (u8*)screenbuf, *scrw, 160, newbits);
+    img.image_type = TGA_IMAGE_TYPE_BGR_RLE;
+
+    // horizontal offset. redundant in chirunomod.
+    //img.origin_y = (scr * 400) + (stride[scr] * offs[scr]);
+    img.origin_y = 120;
+    img.origin_x = 48;
 
     tga_write_to_FILE((soc->bufferptr+bufsoc_pak_data_offset), &img, imgsize);
 
@@ -1112,6 +1182,8 @@ void newThreadMainFunction(void* __dummy_arg__)
 
     u8 frameCount = 0;
     u8 priorityScreenFrames = 0;
+    bool gbvcmode = false;
+    bool gbvcmode_queuefulltopscreen = false;
 
     // Infinite loop unless it crashes or is halted by another application.
     while(threadrunning)
@@ -1159,18 +1231,37 @@ void newThreadMainFunction(void* __dummy_arg__)
             else
                 isDmaSetForInterlaced = false;
 
-            switch(cfgblk[3])
+            if(cfgblk[11] == 2)
+                gbvcmode = true;
+
+            if((frameCount&32)-1 == 0)
+                gbvcmode_queuefulltopscreen = true;
+            else
+                gbvcmode_queuefulltopscreen = false;
+
+
+            if(gbvcmode && !gbvcmode_queuefulltopscreen)
             {
-            case 1:
-                updateDmaCfgBpp(dma_config[0], getFormatBpp(format[0]), isDmaSetForInterlaced?1:0, capin.screencapture[0].framebuf_widthbytesize);
-                break;
-            case 2:
+                gbvcmode = true;
+                updateDmaCfg_GBVC(dma_config[0], getFormatBpp(format[1]), isDmaSetForInterlaced?1:0, capin.screencapture[1].framebuf_widthbytesize);
                 updateDmaCfgBpp(dma_config[1], getFormatBpp(format[1]), isDmaSetForInterlaced?1:0, capin.screencapture[1].framebuf_widthbytesize);
-                break;
-            default:
-                updateDmaCfgBpp(dma_config[0], getFormatBpp(format[0]), isDmaSetForInterlaced?1:0, capin.screencapture[0].framebuf_widthbytesize);
-                updateDmaCfgBpp(dma_config[1], getFormatBpp(format[1]), isDmaSetForInterlaced?1:0, capin.screencapture[1].framebuf_widthbytesize);
-                break;
+            }
+            else
+            {
+                gbvcmode = false;
+                switch(cfgblk[3])
+                {
+                case 1:
+                    updateDmaCfgBpp(dma_config[0], getFormatBpp(format[0]), isDmaSetForInterlaced?1:0, capin.screencapture[0].framebuf_widthbytesize);
+                    break;
+                case 2:
+                    updateDmaCfgBpp(dma_config[1], getFormatBpp(format[1]), isDmaSetForInterlaced?1:0, capin.screencapture[1].framebuf_widthbytesize);
+                    break;
+                default:
+                    updateDmaCfgBpp(dma_config[0], getFormatBpp(format[0]), isDmaSetForInterlaced?1:0, capin.screencapture[0].framebuf_widthbytesize);
+                    updateDmaCfgBpp(dma_config[1], getFormatBpp(format[1]), isDmaSetForInterlaced?1:0, capin.screencapture[1].framebuf_widthbytesize);
+                    break;
+                }
             }
 
             int dmaState = 0;
@@ -1196,11 +1287,21 @@ void newThreadMainFunction(void* __dummy_arg__)
                 svcFlushProcessDataCache(0xFFFF8001, (u8*)screenbuf, capin.screencapture[scr].framebuf_widthbytesize * 400);
             }
 
+            // todo: bad code :)
+
             u8 imgfmt;
+            if(gbvcmode && scr == 0 && !gbvcmode_queuefulltopscreen)
+            {
+                scrw = 144;
+                imgfmt = 1;
+            }
+            else
+            {
                 if(cfgblk[10])
                     imgfmt = cfgblk[scr?9:4];
                 else
                     imgfmt = cfgblk[4];
+            }
 
             // interlaced
             if(isStoredFrameInterlaced)
@@ -1214,7 +1315,10 @@ void newThreadMainFunction(void* __dummy_arg__)
                 makeJpegImage(&timems_formatconvert, &timems_processframe, scr, &scrw, &bsiz, &imgsize, format, isStoredFrameInterlaced, interlacedRowSwitch);
                 break;
             case 1:
-                makeTargaImage(&timems_formatconvert, &timems_processframe, scr, &scrw, &bits, &imgsize, format, isStoredFrameInterlaced, interlacedRowSwitch);
+                if(gbvcmode && scr == 0 && !gbvcmode_queuefulltopscreen)
+                    makeTargaImageGBVC(&timems_formatconvert, &timems_processframe, scr, &scrw, &bits, &imgsize, format, isStoredFrameInterlaced, interlacedRowSwitch);
+                else
+                    makeTargaImage(&timems_formatconvert, &timems_processframe, scr, &scrw, &bits, &imgsize, format, isStoredFrameInterlaced, interlacedRowSwitch);
                 break;
             default:
                 break; // This case shouldn't occur.
@@ -1275,7 +1379,17 @@ void newThreadMainFunction(void* __dummy_arg__)
             osTickCounterUpdate(&tick_ctr_2_dma);
 #endif
 
-            siz = (getFormatBpp(format[scr]) / 8) * scrw * stride[scr];
+            if(gbvcmode && scr == 0 && !gbvcmode_queuefulltopscreen)
+            {
+                //siz = (getFormatBpp(format[scr]) / 8) * 160 * 144;
+                siz = (getFormatBpp(format[scr]) / 8) * scrw * 160;
+                //srcaddr += (siz * 120) + (getFormatBpp(format[scr])/8) * 48;
+                srcaddr += capin.screencapture[scr].framebuf_widthbytesize * 120 + (getFormatBpp(format[scr])/8)*48;
+            }
+            else
+            {
+                siz = (getFormatBpp(format[scr]) / 8) * scrw * stride[scr];
+            }
 
             if(isDmaSetForInterlaced)
             {
