@@ -29,7 +29,7 @@ inline void initCustomDmaCfg(u8* dmacfgblk)
 {
     memset(dmacfgblk, 0, 0x18);
 
-    DmaConfig_ *dmacfg = (DmaConfig_*) &dmacfgblk;
+    DmaConfig_* dmacfg = (DmaConfig_*)dmacfgblk;
 
     dmacfg->channelId = -1;
     dmacfg->flags = 0b11000100;
@@ -45,7 +45,7 @@ inline void initCustomDmaCfg(u8* dmacfgblk)
 
 void updateDmaCfgBpp(u8* dmacfgblk, u8 source_bpp, u8 interlaced, u32 rowstride)
 {
-    DmaConfig_ dmacfg = *(DmaConfig_*)&dmacfgblk;
+    DmaConfig_* dmacfg = (DmaConfig_*)dmacfgblk;
 
     u8 destination_bpp;
 
@@ -86,21 +86,21 @@ void updateDmaCfgBpp(u8* dmacfgblk, u8 source_bpp, u8 interlaced, u32 rowstride)
         //printf("rowstride/2=%i\n", rowstride);
     }
 
-    dmacfg.dst_burstSize = destination_bytesperpixel;
-    dmacfg.dst_burstStride = destination_bytesperpixel;
+    dmacfg->dst_burstSize = destination_bytesperpixel;
+    dmacfg->dst_burstStride = destination_bytesperpixel;
 
-    dmacfg.dst_transferSize = destination_bytesperpixel * width;
-    dmacfg.dst_transferStride = destination_bytesperpixel * width;
+    dmacfg->dst_transferSize = destination_bytesperpixel * width;
+    dmacfg->dst_transferStride = destination_bytesperpixel * width;
 
-    dmacfg.src_burstSize = destination_bytesperpixel;
+    dmacfg->src_burstSize = destination_bytesperpixel;
 
     if(interlaced)
-        dmacfg.src_burstStride = source_bytesperpixel * 2;
+        dmacfg->src_burstStride = source_bytesperpixel * 2;
     else
-        dmacfg.src_burstStride = source_bytesperpixel;
+        dmacfg->src_burstStride = source_bytesperpixel;
 
-    dmacfg.src_transferSize = destination_bytesperpixel * width;
-    dmacfg.src_transferStride = rowstride;
+    dmacfg->src_transferSize = destination_bytesperpixel * width;
+    dmacfg->src_transferStride = rowstride;
     //((u16*)dmacfgblk)[CFG_OFFS_SRC_S16_SCATTER_STRIDE/2] = source_bytesperpixel * width;
 }
 
@@ -113,24 +113,24 @@ void updateDmaCfg_GBVC(u8* dmacfgblk, u8 source_bpp, u8 interlaced, u32 rowstrid
     }
     else
     {
-        DmaConfig_ dmacfg = *(DmaConfig_*)&dmacfgblk;
+        DmaConfig_* dmacfg = (DmaConfig_*)dmacfgblk;
 
         const u8 width = 144; // vertical resolution of GB screen
 
-        dmacfg.dst_burstSize = 2;
-        dmacfg.dst_burstStride = 2;
+        dmacfg->dst_burstSize = 2;
+        dmacfg->dst_burstStride = 2;
 
-        dmacfg.dst_transferSize = 2 * width;
-        dmacfg.dst_transferStride = 2 * width;
+        dmacfg->dst_transferSize = 2 * width;
+        dmacfg->dst_transferStride = 2 * width;
 
-        dmacfg.src_burstSize = 2;
+        dmacfg->src_burstSize = 2;
 
         if(interlaced)
-            dmacfg.src_burstStride = 2 * 2;
+            dmacfg->src_burstStride = 2 * 2;
         else
-            dmacfg.src_burstStride = 2;
+            dmacfg->src_burstStride = 2;
 
-        dmacfg.src_transferSize = 2 * width;
-        dmacfg.src_transferStride = rowstride; // 240 - 160 = 80 pixels to skip
+        dmacfg->src_transferSize = 2 * width;
+        dmacfg->src_transferStride = rowstride; // 240 - 160 = 80 pixels to skip
     }
 }

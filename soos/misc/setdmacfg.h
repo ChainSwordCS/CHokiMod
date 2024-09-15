@@ -40,22 +40,22 @@ typedef struct {
     s8 channelId;
     s8 endianSwapSize;
     u8 flags;
-    const u8 _padding;
+    u8 _padding;
 
     //DmaDeviceConfig_ dstCfg;
     s8 dst_deviceId;
     s8 dst_allowedAlignments;
     s16 dst_burstSize;
-    s16 dst_burstStride;
     s16 dst_transferSize;
+    s16 dst_burstStride;
     s16 dst_transferStride;
 
     //DmaDeviceConfig_ srcCfg;
     s8 src_deviceId;
     s8 src_allowedAlignments;
     s16 src_burstSize;
-    s16 src_burstStride;
     s16 src_transferSize;
+    s16 src_burstStride;
     s16 src_transferStride;
 } DmaConfig_;
 

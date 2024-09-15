@@ -1199,6 +1199,7 @@ void newThreadMainFunction(void* __dummy_arg__)
     u8 priorityScreenFrames = 0;
     bool gbvcmode = false;
     bool gbvcmode_queuefulltopscreen = false;
+    u8 imgfmt = 0;
 
     // thread main loop
     while(threadrunning)
@@ -1260,39 +1261,6 @@ void newThreadMainFunction(void* __dummy_arg__)
             else
                 isDmaSetForInterlaced = false;
 
-            if(cfgblk[11] == 2)
-                gbvcmode = true;
-
-            if((frameCount%32)-1 == 0)
-                gbvcmode_queuefulltopscreen = true;
-            else
-                gbvcmode_queuefulltopscreen = false;
-
-
-            if(gbvcmode && !gbvcmode_queuefulltopscreen)
-            {
-                gbvcmode = true;
-                updateDmaCfg_GBVC(dma_config[0], getFormatBpp(format[0]), isDmaSetForInterlaced?1:0, capInfo[(u8)c].screencapture[0].framebuf_widthbytesize);
-                updateDmaCfgBpp(dma_config[1], getFormatBpp(format[1]), isDmaSetForInterlaced?1:0, capInfo[(u8)c].screencapture[1].framebuf_widthbytesize);
-            }
-            else
-            {
-                gbvcmode = false;
-                switch(cfgblk[3])
-                {
-                case 1:
-                    updateDmaCfgBpp(dma_config[0], getFormatBpp(format[0]), isDmaSetForInterlaced?1:0, capInfo[(u8)c].screencapture[0].framebuf_widthbytesize);
-                    break;
-                case 2:
-                    updateDmaCfgBpp(dma_config[1], getFormatBpp(format[1]), isDmaSetForInterlaced?1:0, capInfo[(u8)c].screencapture[1].framebuf_widthbytesize);
-                    break;
-                default:
-                    updateDmaCfgBpp(dma_config[0], getFormatBpp(format[0]), isDmaSetForInterlaced?1:0, capInfo[(u8)c].screencapture[0].framebuf_widthbytesize);
-                    updateDmaCfgBpp(dma_config[1], getFormatBpp(format[1]), isDmaSetForInterlaced?1:0, capInfo[(u8)c].screencapture[1].framebuf_widthbytesize);
-                    break;
-                }
-            }
-
             int dmaState = 0;
             for(int i = 0; i < 60; i++) // Should cover all cases.
             {
@@ -1314,22 +1282,6 @@ void newThreadMainFunction(void* __dummy_arg__)
 
             if(isold == 0){
                 svcFlushProcessDataCache(0xFFFF8001, (u8*)screenbuf, capInfo[(u8)c].screencapture[scr].framebuf_widthbytesize * 400);
-            }
-
-            // todo: bad code :)
-
-            u8 imgfmt;
-            if(gbvcmode && scr == 0 && !gbvcmode_queuefulltopscreen)
-            {
-                scrw = 144;
-                imgfmt = 1;
-            }
-            else
-            {
-                if(cfgblk[10])
-                    imgfmt = cfgblk[scr?9:4];
-                else
-                    imgfmt = cfgblk[4];
             }
 
             // interlaced
@@ -1392,11 +1344,52 @@ void newThreadMainFunction(void* __dummy_arg__)
                     scr = 1;
             }
 
+            /**
+             * Activate special GBVC mode
+             * Slightly smart; only active when top screen is RGB5A1.
+             * This is also to sidestep weird DMA-related crashing issues in RGB8 cases.
+             */
+            if((cfgblk[11] == 2) && (format[0] == 3))
+            {
+                gbvcmode = true;
+                if((frameCount%32)-1 == 0)
+                    gbvcmode_queuefulltopscreen = true;
+                else
+                    gbvcmode_queuefulltopscreen = false;
+            }
+            else
+            {
+                gbvcmode = false;
+                gbvcmode_queuefulltopscreen = false;
+            }
+
+
+            if(gbvcmode && !gbvcmode_queuefulltopscreen)
+            {
+                updateDmaCfg_GBVC(dma_config[0], getFormatBpp(format[0]), isDmaSetForInterlaced?1:0, capInfo[(u8)c].screencapture[0].framebuf_widthbytesize);
+                updateDmaCfgBpp(dma_config[1], getFormatBpp(format[1]), isDmaSetForInterlaced?1:0, capInfo[(u8)c].screencapture[1].framebuf_widthbytesize);
+            }
+            else
+            {
+                switch(cfgblk[3])
+                {
+                case 1:
+                    updateDmaCfgBpp(dma_config[0], getFormatBpp(format[0]), isDmaSetForInterlaced?1:0, capInfo[(u8)c].screencapture[0].framebuf_widthbytesize);
+                    break;
+                case 2:
+                    updateDmaCfgBpp(dma_config[1], getFormatBpp(format[1]), isDmaSetForInterlaced?1:0, capInfo[(u8)c].screencapture[1].framebuf_widthbytesize);
+                    break;
+                default:
+                    updateDmaCfgBpp(dma_config[0], getFormatBpp(format[0]), isDmaSetForInterlaced?1:0, capInfo[(u8)c].screencapture[0].framebuf_widthbytesize);
+                    updateDmaCfgBpp(dma_config[1], getFormatBpp(format[1]), isDmaSetForInterlaced?1:0, capInfo[(u8)c].screencapture[1].framebuf_widthbytesize);
+                    break;
+                }
+            }
+
             siz = (capInfo[(u8)c].screencapture[scr].framebuf_widthbytesize * stride[scr]); // Size of the entire frame (in bytes)
             bsiz = capInfo[(u8)c].screencapture[scr].framebuf_widthbytesize / 240; // bytes per pixel (dumb)
             scrw = 240; // sure
             bits = 4 << bsiz; // bpp (dumb)
-
 
             Handle prochand = 0;
             if(procid) if(svcOpenProcess(&prochand, procid) < 0) procid = 0;
@@ -1404,21 +1397,30 @@ void newThreadMainFunction(void* __dummy_arg__)
             u32 srcprochand = prochand ? prochand : 0xFFFF8001;
             u8* srcaddr = (u8*)capInfo[(u8)c].screencapture[scr].framebuf0_vaddr + (siz * offs[scr]);
 
-#if DEBUG_VERBOSE==1
-            osTickCounterUpdate(&tick_ctr_2_dma);
-#endif
-
+            u32 tempstride; // for "workaround for DMA siz bug"
             if(gbvcmode && scr == 0 && !gbvcmode_queuefulltopscreen)
             {
+                imgfmt = 1;
+                scrw = 144;
                 //siz = (getFormatBpp(format[scr]) / 8) * 160 * 144;
                 siz = 2 * 144 * 160;
                 //srcaddr += (siz * 120) + (getFormatBpp(format[scr])/8) * 48;
                 srcaddr += capInfo[(u8)c].screencapture[scr].framebuf_widthbytesize * 120 + (getFormatBpp(format[scr])/8)*48;
+                tempstride = 160;
             }
             else
             {
+                if(cfgblk[10])
+                    imgfmt = cfgblk[scr?9:4];
+                else
+                    imgfmt = cfgblk[4];
                 siz = (getFormatBpp(format[scr]) / 8) * scrw * stride[scr];
+                tempstride = stride[scr];
             }
+
+#if DEBUG_VERBOSE==1
+            osTickCounterUpdate(&tick_ctr_2_dma);
+#endif
 
             if(isDmaSetForInterlaced)
             {
@@ -1434,8 +1436,7 @@ void newThreadMainFunction(void* __dummy_arg__)
             }
 
             // workaround for DMA Siz Bug (refer to docs)
-            siz += (getFormatBpp(format[scr])/8) * (16 * stride[scr] - 16);
-
+            siz += (getFormatBpp(format[scr])/8) * (16 * tempstride - 16);
 
             int ret_dma = svcStartInterProcessDma(&dmahand,0xFFFF8001,screenbuf,srcprochand,srcaddr,siz,dma_config[scr]);
 
