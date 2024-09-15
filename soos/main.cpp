@@ -887,7 +887,7 @@ void makeTargaImageGBVC(double* timems_fc, double* timems_pf, int scr, u32* scrw
         // Invalid
         break;
     }
-
+                                       // 144
     init_tga_image(&img, (u8*)screenbuf, *scrw, 160, newbits);
     img.image_type = TGA_IMAGE_TYPE_BGR_RLE;
 
@@ -1212,8 +1212,9 @@ void newThreadMainFunction(void* __dummy_arg__)
             int ret_nwfs = netfuncWaitForSettings();
             if(ret_nwfs < 0)
             {
-                tryStopDma(&dmahand);
-                getNewProcId(&procid, capInfo[(u8)c]);
+                delete soc;
+                soc = nullptr;
+                break;
             }
             /* interlacing is disabled on o3DS
             else if(ret_nwfs == 9)
@@ -1262,7 +1263,7 @@ void newThreadMainFunction(void* __dummy_arg__)
             if(cfgblk[11] == 2)
                 gbvcmode = true;
 
-            if((frameCount&32)-1 == 0)
+            if((frameCount%32)-1 == 0)
                 gbvcmode_queuefulltopscreen = true;
             else
                 gbvcmode_queuefulltopscreen = false;
@@ -1410,7 +1411,7 @@ void newThreadMainFunction(void* __dummy_arg__)
             if(gbvcmode && scr == 0 && !gbvcmode_queuefulltopscreen)
             {
                 //siz = (getFormatBpp(format[scr]) / 8) * 160 * 144;
-                siz = (getFormatBpp(format[scr]) / 8) * scrw * 160;
+                siz = 2 * 144 * 160;
                 //srcaddr += (siz * 120) + (getFormatBpp(format[scr])/8) * 48;
                 srcaddr += capInfo[(u8)c].screencapture[scr].framebuf_widthbytesize * 120 + (getFormatBpp(format[scr])/8)*48;
             }
