@@ -490,6 +490,32 @@ void waitforDMAtoFinish(void* __dummy_arg__)
     return;
 }
 
+//void debugPrintRemote(const char *debug_string)
+void debugPrintRemote(char* c, ...)
+{
+    int len = 0;
+
+    va_list args;
+    va_start(args, c);
+
+    len = vsprintf((char*)(soc->bufferptr+bufsoc_pak_data_offset), c, args);
+
+    va_end(args);
+
+    if(len < 0)
+    {
+        puts("debugPrintRemote: out of memory?");
+        return;
+    }
+
+    soc->setPakType(0xFF);
+    soc->setPakSubtype(03);
+    soc->setPakSize(len);
+
+    soc->wribuf();
+    return;
+}
+
 // Essentially puts() with an extra step.
 void debugPrint(u8 log_level, const char *debug_string)
 {
@@ -1204,9 +1230,10 @@ void newThreadMainFunction(void* __dummy_arg__)
     // thread main loop
     while(threadrunning)
     {
+        if(!soc) break;
+
         PatStay(0x00FF00); // Notif LED = Green
 
-        if(!soc) break;
         while(soc->avail())
         { // ?
 
@@ -1261,21 +1288,29 @@ void newThreadMainFunction(void* __dummy_arg__)
             else
                 isDmaSetForInterlaced = false;
 
-            int dmaState = 0;
+
+            /**
+             * If we're outrunning DMA, stall for a bit and then svcStopDma.
+             * TODO: make this code wait indefinitely, until the DMA transfer finishes.
+             */
+            u32 dmaState = 0;
             for(int i = 0; i < 60; i++) // Should cover all cases.
             {
                 svcGetDmaState(&dmaState, dmahand);
-                dmaState = dmaState & 0xFF;
-                if(dmaState == 4 || dmaState == 0) // 4 = DMASTATE_DONE; 0 = why dude
+                if((dmaState&0xFF == 4) || (dmaState&0xFF == 0)) // 4 = DMASTATE_DONE; 0 = why dude
                     break;
                 svcSleepThread(5e4); // Going higher (5e6, for example) may result in crashes.
             }
 
-            tryStopDma(&dmahand);
+            svcGetDmaState(&dmaState, dmahand);
+            svcStopDma(dmahand);
+            svcCloseHandle(dmahand);
+            dmahand = 0;
 
 #if DEBUG_BASIC==1
-            if(dmaState != 4 && dmaState != 0)
-                printf("DMA transfer not finished, stopping manually...\ndmaState=%i\n", dmaState);
+            if(dmaState != 4)
+                debugPrintRemote("Warning: dmaState=$%.2X (ret=%.8X)", (u8)(dmaState&0xFF), dmaState);
+                //printf("Warning: dmaState=$%.2X (ret=%.8X)", (u8)(dmaState&0xFF), dmaState);
 #endif
 
             int imgsize = 0;
