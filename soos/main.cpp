@@ -109,7 +109,7 @@ void newThreadMainFunction(void*);
 
 // Helper functions for netfunc
 inline int netfuncWaitForSettings();
-void makeTargaImage(double*,double*,int,u32*,u32*,int*,u32*,bool,bool);
+void makeTargaImage(double* timems_fc, double* timems_pf, int scr, u32* scrw, u32 scrh, int offsY, int offsX, u32* bits, int* imgsize, u32* myformat, bool isInterlaced, bool interlacedRowSwitch);
 void makeJpegImage(double*,double*,int,u32*,u32*,int*,u32*,bool,bool);
 void netfuncTestFramebuffer(u32*, GSPGPU_CaptureInfo, GSPGPU_CaptureInfo);
 
@@ -817,7 +817,7 @@ int allocateScreenbufMem(u32** myscreenbuf)
     }
 }
 
-void makeTargaImage(double* timems_fc, double* timems_pf, int scr, u32* scrw, u32* bits, int* imgsize, u32* myformat, bool isInterlaced, bool interlacedRowSwitch)
+void makeTargaImage(double* timems_fc, double* timems_pf, int scr, u32* scrw, u32 scrh, int offsY, int offsX, u32* bits, int* imgsize, u32* myformat, bool isInterlaced, bool interlacedRowSwitch)
 {
 #if DEBUG_VERBOSE==1
     *timems_fc = 0;
@@ -853,74 +853,11 @@ void makeTargaImage(double* timems_fc, double* timems_pf, int scr, u32* scrw, u3
         break;
     }
 
-    init_tga_image(&img, (u8*)screenbuf, *scrw, stride[scr], newbits);
+    init_tga_image(&img, (u8*)screenbuf, *scrw, scrh, newbits);
     img.image_type = TGA_IMAGE_TYPE_BGR_RLE;
 
-    // horizontal offset. redundant in chirunomod.
-    img.origin_y = (scr * 400) + (stride[scr] * offs[scr]);
-
-
-    tga_write_to_FILE((soc->bufferptr+bufsoc_pak_data_offset), &img, imgsize);
-
-#if DEBUG_VERBOSE==1
-    osTickCounterUpdate(&tick_ctr_1);
-    *timems_pf = osTickCounterRead(&tick_ctr_1);
-#endif
-
-    u8 subtype_aka_flags = 0b00001000 + (scr * 0b00010000) + (format[scr] & 0b111);
-    if(isInterlaced)
-        subtype_aka_flags += 0b00100000 + (interlacedRowSwitch?0:0b01000000);
-
-    soc->setPakType(01);
-    soc->setPakSubtype(subtype_aka_flags);
-    soc->setPakSize(*imgsize);
-
-    return;
-}
-
-void makeTargaImageGBVC(double* timems_fc, double* timems_pf, int scr, u32* scrw, u32* bits, int* imgsize, u32* myformat, bool isInterlaced, bool interlacedRowSwitch)
-{
-#if DEBUG_VERBOSE==1
-    *timems_fc = 0;
-    osTickCounterUpdate(&tick_ctr_1);
-#endif
-
-    u32 newbits = *bits;
-
-    switch(myformat[scr] & 0b111)
-    {
-    case 0: // RGBA8
-        newbits = 32;
-        break;
-
-    case 1: // RGB8
-        newbits = 24;
-        break;
-
-    case 2: // RGB565
-        newbits = 17;
-        break;
-
-    case 3: // RGB5A1
-        newbits = 16;
-        break;
-
-    case 4: // RGBA4
-        newbits = 18;
-        break;
-
-    default:
-        // Invalid
-        break;
-    }
-                                       // 144
-    init_tga_image(&img, (u8*)screenbuf, *scrw, 160, newbits);
-    img.image_type = TGA_IMAGE_TYPE_BGR_RLE;
-
-    // horizontal offset. redundant in chirunomod.
-    //img.origin_y = (scr * 400) + (stride[scr] * offs[scr]);
-    img.origin_y = 120;
-    img.origin_x = 48;
+    img.origin_y = offsY;
+    img.origin_x = offsX;
 
     tga_write_to_FILE((soc->bufferptr+bufsoc_pak_data_offset), &img, imgsize);
 
@@ -1217,8 +1154,8 @@ void newThreadMainFunction(void* __dummy_arg__)
     else
         isDmaSetForInterlaced = false;
 
-    updateDmaCfgBpp(dma_config[0], getFormatBpp(format[0]), cfgblk[5], capInfo[(u8)c].screencapture[0].framebuf_widthbytesize);
-    updateDmaCfgBpp(dma_config[1], getFormatBpp(format[1]), cfgblk[5], capInfo[(u8)c].screencapture[1].framebuf_widthbytesize);
+    //updateDmaCfg(dma_config[0], getFormatBpp(format[0]), cfgblk[5], capInfo[(u8)c].screencapture[0].framebuf_widthbytesize, scrw);
+    //updateDmaCfg(dma_config[1], getFormatBpp(format[1]), cfgblk[5], capInfo[(u8)c].screencapture[1].framebuf_widthbytesize, scrw);
 
     u8 mainLoopCount = 0;
     u8 frameCount = 0;
@@ -1288,30 +1225,32 @@ void newThreadMainFunction(void* __dummy_arg__)
             else
                 isDmaSetForInterlaced = false;
 
-
             /**
              * If we're outrunning DMA, stall for a bit and then svcStopDma.
-             * TODO: make this code wait indefinitely, until the DMA transfer finishes.
+             * Really we could wait indefinitely, but I'd prefer to have a sorta
+             * timeout system in place, as I do here.
              */
-            u32 dmaState = 0;
-            for(int i = 0; i < 60; i++) // Should cover all cases.
+            if(dmahand)
             {
+                u32 dmaState = 0xF00FCACE;
                 svcGetDmaState(&dmaState, dmahand);
-                if((dmaState&0xFF == 4) || (dmaState&0xFF == 0)) // 4 = DMASTATE_DONE; 0 = why dude
-                    break;
-                svcSleepThread(5e4); // Going higher (5e6, for example) may result in crashes.
-            }
-
-            svcGetDmaState(&dmaState, dmahand);
-            svcStopDma(dmahand);
-            svcCloseHandle(dmahand);
-            dmahand = 0;
+                for(int i = 0; i < 420; i++)
+                {
+                    if((dmaState&0xFF) != 3)
+                        break;
+                    svcSleepThread(5e4); // Going higher (5e6, for example) may result in crashes.
+                    svcGetDmaState(&dmaState, dmahand);
+                }
+                svcStopDma(dmahand);
+                svcCloseHandle(dmahand);
+                dmahand = 0;
 
 #if DEBUG_BASIC==1
-            if(dmaState != 4)
-                debugPrintRemote("Warning: dmaState=$%.2X (ret=%.8X)", (u8)(dmaState&0xFF), dmaState);
-                //printf("Warning: dmaState=$%.2X (ret=%.8X)", (u8)(dmaState&0xFF), dmaState);
+                if((dmaState&0xFF) != 4 && (dmaState&0xFF) != 3)
+                    debugPrintRemote("Warning: dmaState=$%.2X (ret=%.8X)", (u8)(dmaState&0xFF), dmaState);
+                    //printf("Warning: dmaState=$%.2X (ret=%.8X)", (u8)(dmaState&0xFF), dmaState);
 #endif
+            }
 
             int imgsize = 0;
 
@@ -1325,16 +1264,29 @@ void newThreadMainFunction(void* __dummy_arg__)
                 scrw = scrw / 2;
             }
 
+            u32 scrh;
+            int offsY;
+            int offsX;
+            if(gbvcmode && scr == 0 && !gbvcmode_queuefulltopscreen)
+            {
+                scrh = 160;
+                offsY = 120;
+                offsX = 48;
+            }
+            else
+            {
+                scrh = stride[scr];
+                offsY = (scr * 400) + (stride[scr] * offs[scr]);
+                offsX = 0;
+            }
+
             switch(imgfmt)
             {
             case 0:
                 makeJpegImage(&timems_formatconvert, &timems_processframe, scr, &scrw, &bsiz, &imgsize, format, isStoredFrameInterlaced, interlacedRowSwitch);
                 break;
             case 1:
-                if(gbvcmode && scr == 0 && !gbvcmode_queuefulltopscreen)
-                    makeTargaImageGBVC(&timems_formatconvert, &timems_processframe, scr, &scrw, &bits, &imgsize, format, isStoredFrameInterlaced, interlacedRowSwitch);
-                else
-                    makeTargaImage(&timems_formatconvert, &timems_processframe, scr, &scrw, &bits, &imgsize, format, isStoredFrameInterlaced, interlacedRowSwitch);
+                makeTargaImage(&timems_formatconvert, &timems_processframe, scr, &scrw, scrh, offsY, offsX, &bits, &imgsize, format, isStoredFrameInterlaced, interlacedRowSwitch);
                 break;
             default:
                 break; // This case shouldn't occur.
@@ -1398,29 +1350,6 @@ void newThreadMainFunction(void* __dummy_arg__)
                 gbvcmode_queuefulltopscreen = false;
             }
 
-
-            if(gbvcmode && !gbvcmode_queuefulltopscreen)
-            {
-                updateDmaCfg_GBVC(dma_config[0], getFormatBpp(format[0]), isDmaSetForInterlaced?1:0, capInfo[(u8)c].screencapture[0].framebuf_widthbytesize);
-                updateDmaCfgBpp(dma_config[1], getFormatBpp(format[1]), isDmaSetForInterlaced?1:0, capInfo[(u8)c].screencapture[1].framebuf_widthbytesize);
-            }
-            else
-            {
-                switch(cfgblk[3])
-                {
-                case 1:
-                    updateDmaCfgBpp(dma_config[0], getFormatBpp(format[0]), isDmaSetForInterlaced?1:0, capInfo[(u8)c].screencapture[0].framebuf_widthbytesize);
-                    break;
-                case 2:
-                    updateDmaCfgBpp(dma_config[1], getFormatBpp(format[1]), isDmaSetForInterlaced?1:0, capInfo[(u8)c].screencapture[1].framebuf_widthbytesize);
-                    break;
-                default:
-                    updateDmaCfgBpp(dma_config[0], getFormatBpp(format[0]), isDmaSetForInterlaced?1:0, capInfo[(u8)c].screencapture[0].framebuf_widthbytesize);
-                    updateDmaCfgBpp(dma_config[1], getFormatBpp(format[1]), isDmaSetForInterlaced?1:0, capInfo[(u8)c].screencapture[1].framebuf_widthbytesize);
-                    break;
-                }
-            }
-
             siz = (capInfo[(u8)c].screencapture[scr].framebuf_widthbytesize * stride[scr]); // Size of the entire frame (in bytes)
             bsiz = capInfo[(u8)c].screencapture[scr].framebuf_widthbytesize / 240; // bytes per pixel (dumb)
             scrw = 240; // sure
@@ -1442,6 +1371,9 @@ void newThreadMainFunction(void* __dummy_arg__)
                 //srcaddr += (siz * 120) + (getFormatBpp(format[scr])/8) * 48;
                 srcaddr += capInfo[(u8)c].screencapture[scr].framebuf_widthbytesize * 120 + (getFormatBpp(format[scr])/8)*48;
                 tempstride = 160;
+
+                updateDmaCfg(dma_config[0], getFormatBpp(format[0]), isDmaSetForInterlaced?1:0, capInfo[(u8)c].screencapture[0].framebuf_widthbytesize, 144);
+                updateDmaCfg(dma_config[1], getFormatBpp(format[1]), isDmaSetForInterlaced?1:0, capInfo[(u8)c].screencapture[1].framebuf_widthbytesize, 240);
             }
             else
             {
@@ -1451,6 +1383,9 @@ void newThreadMainFunction(void* __dummy_arg__)
                     imgfmt = cfgblk[4];
                 siz = (getFormatBpp(format[scr]) / 8) * scrw * stride[scr];
                 tempstride = stride[scr];
+
+                updateDmaCfg(dma_config[0], getFormatBpp(format[0]), isDmaSetForInterlaced?1:0, capInfo[(u8)c].screencapture[0].framebuf_widthbytesize, scrw);
+                updateDmaCfg(dma_config[1], getFormatBpp(format[1]), isDmaSetForInterlaced?1:0, capInfo[(u8)c].screencapture[1].framebuf_widthbytesize, scrw);
             }
 
 #if DEBUG_VERBOSE==1
@@ -1471,7 +1406,7 @@ void newThreadMainFunction(void* __dummy_arg__)
             }
 
             // workaround for DMA Siz Bug (refer to docs)
-            siz += (getFormatBpp(format[scr])/8) * (16 * tempstride - 16);
+            //siz += (getFormatBpp(format[scr])/8) * (16 * tempstride - 16);
 
             int ret_dma = svcStartInterProcessDma(&dmahand,0xFFFF8001,screenbuf,srcprochand,srcaddr,siz,dma_config[scr]);
 
@@ -1508,7 +1443,7 @@ void newThreadMainFunction(void* __dummy_arg__)
              * send frame to client (while waiting for DMA)
              * (note: DMA doesn't actually take very long.)
              */
-
+            if(!soc) break;
             if(soc->getPakSize()) // If size == 0, don't send
             {
 #if DEBUG_VERBOSE==1

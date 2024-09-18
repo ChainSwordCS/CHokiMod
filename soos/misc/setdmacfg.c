@@ -43,6 +43,68 @@ inline void initCustomDmaCfg(u8* dmacfgblk)
     return;
 }
 
+void updateDmaCfg(u8* dmacfgblk, u8 src_bpp, bool interlaced, u32 rowstride, u32 width)
+{
+    DmaConfig_* dmacfg = (DmaConfig_*)dmacfgblk;
+
+    u8 src_bytesperpixel = src_bpp / 8;
+    u8 dst_bytesperpixel;
+
+    if(interlaced)
+    {
+        // somewhat slow
+
+        // still don't know exactly how this works
+        dmacfg->src_allowedAlignments = 2|1;
+        dmacfg->dst_allowedAlignments = 2|1;
+
+        if(src_bpp == 32)
+            dst_bytesperpixel = 3;
+        else
+            dst_bytesperpixel = src_bytesperpixel;
+
+        dmacfg->dst_burstSize = dst_bytesperpixel;
+        dmacfg->dst_burstStride = dst_bytesperpixel;
+
+        dmacfg->dst_transferSize = dst_bytesperpixel * width;
+        dmacfg->dst_transferStride = dst_bytesperpixel * width;
+
+        dmacfg->src_burstSize = dst_bytesperpixel;
+        dmacfg->src_burstStride = src_bytesperpixel * 2;
+
+        dmacfg->src_transferSize = dst_bytesperpixel * width;
+        dmacfg->src_transferStride = rowstride;
+    }
+    else if(src_bpp == 32) // 32bpp -> 24bpp
+    {
+        // somewhat slow
+        dst_bytesperpixel = 3;
+
+        // TODO !!!
+    }
+    else
+    {
+        // fast and simple
+
+        dst_bytesperpixel = src_bytesperpixel;
+
+        dmacfg->src_allowedAlignments = 8|4|2|1;
+        dmacfg->dst_allowedAlignments = 8|4|2|1;
+
+        dmacfg->dst_burstSize = 8;
+        dmacfg->dst_burstStride = 8;
+
+        dmacfg->dst_transferSize = dst_bytesperpixel * width;
+        dmacfg->dst_transferStride = dst_bytesperpixel * width;
+
+        dmacfg->src_burstSize = 8;
+        dmacfg->src_burstStride = 8;
+
+        dmacfg->src_transferSize = dst_bytesperpixel * width;
+        dmacfg->src_transferStride = rowstride;
+    }
+}
+
 void updateDmaCfgBpp(u8* dmacfgblk, u8 source_bpp, u8 interlaced, u32 rowstride)
 {
     DmaConfig_* dmacfg = (DmaConfig_*)dmacfgblk;

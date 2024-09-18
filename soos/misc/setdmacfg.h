@@ -84,6 +84,8 @@ typedef struct {
 // But afterwards, please call updateDmaCfg() to finish setting the variables.
 void initCustomDmaCfg(u8*);
 
+void updateDmaCfg(u8* dmacfgblk, u8 src_bpp, bool interlaced, u32 rowstride, u32 width);
+
 // Pass variables:
 // void* dmacfgblk = Pointer to DMA Config Block
 // u8 source_bpp = Bits Per Pixel of the framebuffer we want to read from.
