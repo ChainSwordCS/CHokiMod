@@ -57,6 +57,7 @@ extern "C"
 #include "misc/pattern.h"
 #include "misc/setdmacfg.h"
 #include "imanip/imanip.h"
+#include "imanip/colormap.h"
 #include "netfunc/nfhelp.h"
 
 #include "tga/targa.h"
@@ -109,7 +110,7 @@ void newThreadMainFunction(void*);
 
 // Helper functions for netfunc
 inline int netfuncWaitForSettings();
-void makeTargaImage(double* timems_fc, double* timems_pf, int scr, u32* scrw, u32 scrh, int offsY, int offsX, u32* bits, int* imgsize, u32* myformat, bool isInterlaced, bool interlacedRowSwitch);
+void makeTargaImage(double* timems_fc, double* timems_pf, int scr, u32 scrw, u32 scrh, int offsY, int offsX, u32* bits, int* imgsize, u32* myformat, bool isInterlaced, bool interlacedRowSwitch, bool makeColorMappedTga);
 void makeJpegImage(double*,double*,int,u32*,u32*,int*,u32*,bool,bool);
 void netfuncTestFramebuffer(u32*, GSPGPU_CaptureInfo, GSPGPU_CaptureInfo);
 
@@ -418,6 +419,7 @@ static u32* screenbuf = nullptr;
 static tga_image img;
 static tjhandle jencode = nullptr;
 
+static TickCounter tick_ctr_fps;
 static TickCounter tick_ctr_1;
 static TickCounter tick_ctr_2_dma;
 
@@ -817,7 +819,7 @@ int allocateScreenbufMem(u32** myscreenbuf)
     }
 }
 
-void makeTargaImage(double* timems_fc, double* timems_pf, int scr, u32* scrw, u32 scrh, int offsY, int offsX, u32* bits, int* imgsize, u32* myformat, bool isInterlaced, bool interlacedRowSwitch)
+void makeTargaImage(double* timems_fc, double* timems_pf, int scr, u32 scrw, u32 scrh, int offsY, int offsX, u32* bits, int* imgsize, u32* myformat, bool isInterlaced, bool interlacedRowSwitch, bool makeColorMappedTga)
 {
 #if DEBUG_VERBOSE==1
     *timems_fc = 0;
@@ -853,26 +855,55 @@ void makeTargaImage(double* timems_fc, double* timems_pf, int scr, u32* scrw, u3
         break;
     }
 
-    init_tga_image(&img, (u8*)screenbuf, *scrw, scrh, newbits);
-    img.image_type = TGA_IMAGE_TYPE_BGR_RLE;
+    init_tga_image(&img, (u8*)screenbuf, scrw, scrh, newbits);
 
+    img.image_type = TGA_IMAGE_TYPE_BGR_RLE;
     img.origin_y = offsY;
     img.origin_x = offsX;
 
-    tga_write_to_FILE((soc->bufferptr+bufsoc_pak_data_offset), &img, imgsize);
+    if(makeColorMappedTga)
+    {
+        void* color_map_data = nullptr;
+        u16 color_map_length;
+        u32 bufferMaxSize = 3 * 240 * (isold?50:400); // todo: put this elsewhere
+        int r = convertRawToColorMappedTga((void*)screenbuf, bufferMaxSize, scrw*scrh, &color_map_data, &color_map_length);
+        if(r >= 0)
+        {
+            img.image_type = TGA_IMAGE_TYPE_COLORMAP;
+            img.color_map_type = 1;
+            img.color_map_data = (uint8_t*)color_map_data;
+            img.color_map_origin = 0;
+            img.color_map_length = color_map_length;
+            img.color_map_depth = img.pixel_depth;
+            img.pixel_depth = 8;
+        }
+        else
+        {
+            printf("convertRawToColorMappedTga() returned -1\n");
+        }
+    }
+
+    tga_result r = tga_write_to_FILE((soc->bufferptr+bufsoc_pak_data_offset), &img, imgsize);
 
 #if DEBUG_VERBOSE==1
     osTickCounterUpdate(&tick_ctr_1);
     *timems_pf = osTickCounterRead(&tick_ctr_1);
 #endif
 
-    u8 subtype_aka_flags = 0b00001000 + (scr * 0b00010000) + (format[scr] & 0b111);
-    if(isInterlaced)
-        subtype_aka_flags += 0b00100000 + (interlacedRowSwitch?0:0b01000000);
+    if(r != TGA_NOERR)
+    {
+        printf("tga_write_to_FILE() returned err %i\n", r);
+    }
+    else
+    {
+        u8 subtype_aka_flags = 0b00001000 + (scr * 0b00010000) + (format[scr] & 0b111);
+        if(isInterlaced)
+            subtype_aka_flags += 0b00100000 + (interlacedRowSwitch?0:0b01000000);
 
-    soc->setPakType(01);
-    soc->setPakSubtype(subtype_aka_flags);
-    soc->setPakSize(*imgsize);
+        soc->setPakType(01);
+        soc->setPakSubtype(subtype_aka_flags);
+        soc->setPakSize(*imgsize);
+    }
 
     return;
 }
@@ -896,35 +927,35 @@ void makeJpegImage(double* timems_fc, double* timems_pf, int scr, u32* scrw, u32
     {
     case 0: // RGBA8
         //tjpixelformat = TJPF_RGBX;
-        tjpixelformat = TJPF_RGB;
+        tjpixelformat = TJPF_BGR;
         *bsiz = 3;
         break;
 
     case 1: // RGB8
-        tjpixelformat = TJPF_RGB;
+        tjpixelformat = TJPF_BGR;
         *bsiz = 3;
         break;
 
     case 2: // RGB565
         convert16to24_rgb565(stride[scr], *scrw, (u8*)screenbuf);
-        tjpixelformat = TJPF_RGB;
+        tjpixelformat = TJPF_BGR;
         *bsiz = 3;
         break;
 
     case 3: // RGB5A1
         convert16to24_rgb5a1(stride[scr], *scrw, (u8*)screenbuf);
-        tjpixelformat = TJPF_RGB;
+        tjpixelformat = TJPF_BGR;
         *bsiz = 3;
         break;
 
     case 4: // RGBA4
         convert16to24_rgba4(stride[scr], *scrw, (u8*)screenbuf);
-        tjpixelformat = TJPF_RGB;
+        tjpixelformat = TJPF_BGR;
         *bsiz = 3;
         break;
 
     default:
-        tjpixelformat = TJPF_RGB;
+        tjpixelformat = TJPF_BGR;
         //*bsiz = 3;
         break;
     }
@@ -1087,9 +1118,11 @@ void newThreadMainFunction(void* __dummy_arg__)
     osTickCounterStart(&tick_ctr_1);
     osTickCounterStart(&tick_ctr_2_dma);
 #endif
+    osTickCounterStart(&tick_ctr_fps);
     double timems_processframe = 0;
     double timems_writetosocbuf = 0;
     double timems_formatconvert = 0;
+    double timems_frame = 0;
 
     u32 siz = 0x80;
     u32 bsiz = 1;
@@ -1164,6 +1197,7 @@ void newThreadMainFunction(void* __dummy_arg__)
     bool gbvcmode_queuefulltopscreen = false;
     u8 imgfmt = 0;
 
+    osTickCounterUpdate(&tick_ctr_fps);
     // thread main loop
     while(threadrunning)
     {
@@ -1198,6 +1232,13 @@ void newThreadMainFunction(void* __dummy_arg__)
         sendDebugFrametimeStats(timems_processframe,timems_writetosocbuf,&timems_dmaasync,timems_formatconvert);
 #endif
 
+        // currently hard-coded to cap around 30-35-ish FPS
+        osTickCounterUpdate(&tick_ctr_fps);
+        timems_frame = osTickCounterRead(&tick_ctr_fps);
+        double frameLimitWait = 28.0 - timems_frame;
+        if(frameLimitWait > 0.5)
+            svcSleepThread(1e6 * frameLimitWait); // milliseconds to nanoseconds
+
         if(GSPGPU_ImportDisplayCaptureInfo(&capInfo[(u8)!c]) < 0)
         {
             yield();
@@ -1224,6 +1265,8 @@ void newThreadMainFunction(void* __dummy_arg__)
                 isDmaSetForInterlaced = true;
             else
                 isDmaSetForInterlaced = false;
+
+
 
             /**
              * If we're outrunning DMA, stall for a bit and then svcStopDma.
@@ -1264,11 +1307,13 @@ void newThreadMainFunction(void* __dummy_arg__)
                 scrw = scrw / 2;
             }
 
+            bool makeColorMappedTga = false;
             u32 scrh;
             int offsY;
             int offsX;
             if(gbvcmode && scr == 0 && !gbvcmode_queuefulltopscreen)
             {
+                makeColorMappedTga = true;
                 scrh = 160;
                 offsY = 120;
                 offsX = 48;
@@ -1286,7 +1331,7 @@ void newThreadMainFunction(void* __dummy_arg__)
                 makeJpegImage(&timems_formatconvert, &timems_processframe, scr, &scrw, &bsiz, &imgsize, format, isStoredFrameInterlaced, interlacedRowSwitch);
                 break;
             case 1:
-                makeTargaImage(&timems_formatconvert, &timems_processframe, scr, &scrw, scrh, offsY, offsX, &bits, &imgsize, format, isStoredFrameInterlaced, interlacedRowSwitch);
+                makeTargaImage(&timems_formatconvert, &timems_processframe, scr, scrw, scrh, offsY, offsX, &bits, &imgsize, format, isStoredFrameInterlaced, interlacedRowSwitch, makeColorMappedTga);
                 break;
             default:
                 break; // This case shouldn't occur.
