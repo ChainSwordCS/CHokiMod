@@ -54,5 +54,8 @@ int convertRawToColorMappedTga(void* buffer, u32 bufferMaxSize, u32 imgDim, void
     *color_map_data = (void*)paletteBuffer;
     *color_map_length = (u16)paletteLength;
 
+    // TODO: only do this on n3DS (?)
+    svcFlushProcessDataCache(0xFFFF8001, (u8*)buffer, bufferMaxSize);
+
     return 0;
 }
