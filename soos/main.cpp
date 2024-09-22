@@ -1232,12 +1232,17 @@ void newThreadMainFunction(void* __dummy_arg__)
         sendDebugFrametimeStats(timems_processframe,timems_writetosocbuf,&timems_dmaasync,timems_formatconvert);
 #endif
 
-        // currently hard-coded to cap around 30-35-ish FPS
+        // todo: this is hard-coded at the moment
         osTickCounterUpdate(&tick_ctr_fps);
         timems_frame = osTickCounterRead(&tick_ctr_fps);
-        double frameLimitWait = 28.0 - timems_frame;
-        if(frameLimitWait > 0.5)
+        const double minTimePerFrame = 32.0; // at 30 FPS, 1 frame is 33.3 ms
+        if(timems_frame > minTimePerFrame)
+        {
+            double frameLimitWait = minTimePerFrame - timems_frame;
+            // note: svcSleepThread isn't exact in how long it waits. i forget the details.
             svcSleepThread(1e6 * frameLimitWait); // milliseconds to nanoseconds
+            osTickCounterUpdate(&tick_ctr_fps);
+        }
 
         if(GSPGPU_ImportDisplayCaptureInfo(&capInfo[(u8)!c]) < 0)
         {
