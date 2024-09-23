@@ -869,7 +869,7 @@ void makeTargaImage(double* timems_fc, double* timems_pf, int scr, u32 scrw, u32
         int r = convertRawToColorMappedTga((void*)screenbuf, bufferMaxSize, scrw*scrh, &color_map_data, &color_map_length);
         if(r >= 0)
         {
-            img.image_type = TGA_IMAGE_TYPE_COLORMAP;
+            img.image_type = TGA_IMAGE_TYPE_COLORMAP_RLE;
             img.color_map_type = 1;
             img.color_map_data = (uint8_t*)color_map_data;
             img.color_map_origin = 0;
@@ -1235,6 +1235,7 @@ void newThreadMainFunction(void* __dummy_arg__)
         // todo: this is hard-coded at the moment
         osTickCounterUpdate(&tick_ctr_fps);
         timems_frame = osTickCounterRead(&tick_ctr_fps);
+        /*
         const double minTimePerFrame = 32.0; // at 30 FPS, 1 frame is 33.3 ms
         if(timems_frame > minTimePerFrame)
         {
@@ -1243,6 +1244,7 @@ void newThreadMainFunction(void* __dummy_arg__)
             svcSleepThread(1e6 * frameLimitWait); // milliseconds to nanoseconds
             osTickCounterUpdate(&tick_ctr_fps);
         }
+        */
 
         if(GSPGPU_ImportDisplayCaptureInfo(&capInfo[(u8)!c]) < 0)
         {
